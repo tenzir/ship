@@ -26,7 +26,9 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         input=bootstrap_input,
     )
     assert result.exit_code == 0, result.output
-    config_path = project_root / "config.yaml"
+    workspace_root = project_root / "changelog"
+    config_path = workspace_root / "config.yaml"
+    assert workspace_root.exists()
     assert config_path.exists()
 
     # Add entries via CLI, relying on defaults for type/projects.
@@ -34,7 +36,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         cli,
         [
             "--root",
-            str(project_root),
+            str(workspace_root),
             "add",
             "--title",
             "Exciting Feature",
@@ -56,7 +58,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         cli,
         [
             "--root",
-            str(project_root),
+            str(workspace_root),
             "add",
             "--title",
             "Fix ingest crash",
@@ -76,7 +78,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     )
     assert add_bugfix.exit_code == 0, add_bugfix.output
 
-    entries_dir = project_root / "entries"
+    entries_dir = workspace_root / "entries"
     entry_files = sorted(entries_dir.glob("*.md"))
     assert len(entry_files) == 2
 
@@ -99,7 +101,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         cli,
         [
             "--root",
-            str(project_root),
+            str(workspace_root),
             "release",
             "create",
             "v1.0.0",
@@ -111,7 +113,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         input="\n",  # Accept confirmation prompt.
     )
     assert release_result.exit_code == 0, release_result.output
-    release_path = project_root / "releases" / "v1.0.0.md"
+    release_path = workspace_root / "releases" / "v1.0.0.md"
     assert release_path.exists()
     release_text = release_path.read_text(encoding="utf-8")
     assert release_text.startswith("---"), release_text
@@ -121,13 +123,13 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
 
     show_result = runner.invoke(
         cli,
-        ["--root", str(project_root), "show"],
+        ["--root", str(workspace_root), "show"],
     )
     assert show_result.exit_code == 0, show_result.output
 
     export_md = runner.invoke(
         cli,
-        ["--root", str(project_root), "export", "--release", "v1.0.0"],
+        ["--root", str(workspace_root), "export", "--release", "v1.0.0"],
     )
     assert export_md.exit_code == 0, export_md.output
     assert "## Features" in export_md.output
@@ -141,7 +143,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         cli,
         [
             "--root",
-            str(project_root),
+            str(workspace_root),
             "export",
             "--release",
             "v1.0.0",
@@ -169,6 +171,6 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
 
     validate_result = runner.invoke(
         cli,
-        ["--root", str(project_root), "validate"],
+        ["--root", str(workspace_root), "validate"],
     )
     assert validate_result.exit_code == 0, validate_result.output

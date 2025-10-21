@@ -158,8 +158,22 @@ def cli(ctx: click.Context, root: Path, config: Optional[Path]) -> None:
 @click.pass_obj
 def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
     """Create or update the changelog workspace."""
+    repo_root = ctx.project_root
     config_path = ctx.config_path
-    project_root = ctx.project_root
+    default_repo_config = default_config_path(repo_root)
+
+    # When operating from a repository root, place the workspace under ./changelog/.
+    if (
+        not config_path.exists()
+        and config_path == default_repo_config
+    ):
+        workspace_root = repo_root / "changelog"
+        config_path = default_config_path(workspace_root)
+        ctx.config_path = config_path
+    else:
+        workspace_root = config_path.parent
+
+    ctx.project_root = workspace_root
 
     existing_config: Optional[Config] = None
     if config_path.exists():
@@ -169,10 +183,10 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
             )
         existing_config = load_config(config_path)
 
-    project_name_default = existing_config.workspace.name if existing_config else project_root.name
+    project_name_default = existing_config.workspace.name if existing_config else repo_root.name
     project_description_default = existing_config.workspace.description if existing_config else ""
     repo_default = existing_config.workspace.repository if existing_config else None
-    repo_guess = guess_git_remote(project_root)
+    repo_guess = guess_git_remote(repo_root)
     if repo_default is None and repo_guess:
         repo_default = repo_guess
 
@@ -189,7 +203,8 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
         or None
     )
 
-    project = _prompt_project(existing_config.project if existing_config else None, project_root)
+    slug_base = repo_root if repo_root != workspace_root else workspace_root
+    project = _prompt_project(existing_config.project if existing_config else None, slug_base)
 
     config = Config(
         workspace=WorkspaceSettings(
@@ -204,8 +219,8 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
     ctx.reset_config(config)
 
     # Ensure directories exist.
-    entry_directory(project_root).mkdir(parents=True, exist_ok=True)
-    release_directory(project_root).mkdir(parents=True, exist_ok=True)
+    entry_directory(workspace_root).mkdir(parents=True, exist_ok=True)
+    release_directory(workspace_root).mkdir(parents=True, exist_ok=True)
 
     console.print(
         Panel.fit(
