@@ -251,11 +251,11 @@ def _render_entries(entries: Iterable[Entry], release_index: dict[str, list[str]
     table.add_column("Date", style="yellow", no_wrap=True)
     table.add_column("Projects", style="green", no_wrap=True)
     table.add_column("Version", style="cyan", no_wrap=True)
-    table.add_column("Title", style="bold", overflow="fold")
+    table.add_column("Title", style="bold", overflow="fold", max_width=44)
     table.add_column("Type", style="magenta", no_wrap=True)
     table.add_column("PR", style="yellow", no_wrap=True)
-    table.add_column("Authors", style="blue", min_width=12)
-    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Authors", style="blue", overflow="fold", max_width=20)
+    table.add_column("ID", style="cyan", no_wrap=True, max_width=28)
 
     has_rows = False
     sorted_entries = sorted(
@@ -286,7 +286,7 @@ def _render_entries(entries: Iterable[Entry], release_index: dict[str, list[str]
             type_text,
             str(metadata.get("pr") or "—"),
             ", ".join(metadata.get("authors") or []) or "—",
-            entry.entry_id,
+            Text(entry.entry_id, style="cyan", overflow="ellipsis", no_wrap=True),
         )
         has_rows = True
 
