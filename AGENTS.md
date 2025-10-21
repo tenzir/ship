@@ -10,6 +10,8 @@
   with `--root changelog` so they operate on the dogfooded data and refresh
   those files alongside root docs (`README.md`, `DOCUMENTATION.md`,
   `DEVELOPMENT.md`) when behavior changes.
+- Create new entries with `uv run tenzir-changelog --root changelog add ...`; do
+  not hand-write changelog entry files.
 - `tests/` stores pytest suites that exercise flows with `CliRunner`; mirror
   module names (e.g., `test_cli.py`) and keep fixtures close to usage.
 
