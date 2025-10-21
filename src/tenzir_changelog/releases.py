@@ -3,14 +3,44 @@
 from __future__ import annotations
 
 from collections.abc import Iterable as IterableCollection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Iterable, Optional
 
 import yaml
 
-from .entries import Entry
+
+def _represent_date(dumper: yaml.SafeDumper, data: date):
+    return dumper.represent_scalar("tag:yaml.org,2002:timestamp", data.isoformat())
+
+
+yaml.SafeDumper.add_representer(date, _represent_date)
+
+NOTES_FILENAME = "notes.md"
+
+
+def _extract_release_summary(notes_path: Path) -> str:
+    if not notes_path.exists():
+        return ""
+    summary_lines: list[str] = []
+    collecting = False
+    for line in notes_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if collecting:
+                break
+            continue
+        if stripped.startswith("#"):
+            if collecting:
+                break
+            continue
+        summary_lines.append(stripped)
+        collecting = True
+    return " ".join(summary_lines).strip()
+
+
+from .entries import Entry, read_entry
 
 RELEASE_DIR = Path("releases")
 
@@ -20,11 +50,10 @@ class ReleaseManifest:
     """Representation of a release manifest."""
 
     version: str
-    title: str
-    description: str
-    project: str
     created: date
-    entries: list[str]
+    entries: list[str] = field(default_factory=list)
+    title: str = ""
+    description: str = ""
     intro: str | None = None
     path: Path | None = None
 
@@ -76,28 +105,33 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
 
         raw_description = str(data.get("description", "") or "").strip()
         raw_intro = str(data.get("intro", "") or "").strip()
-        project_value = data.get("project") or data.get("product", "")
-
         created_value = _parse_created_date(data.get("created"))
         entries_value = _normalize_entries_field(data.get("entries"))
 
         version_value = data.get("version") or path.parent.name
 
+        title_value = str(data.get("title", ""))
+        if not title_value:
+            title_value = str(version_value)
+
         manifest = ReleaseManifest(
             version=str(version_value),
-            title=str(data.get("title", "")),
-            description=raw_description,
-            project=str(project_value or ""),
             created=created_value,
             entries=entries_value,
+            title=title_value,
+            description=raw_description,
             intro=raw_intro or None,
             path=path,
         )
+        if not manifest.description:
+            summary = _extract_release_summary(_manifest_root(project_root, manifest) / NOTES_FILENAME)
+            if summary:
+                manifest.description = summary
         yield manifest
 
     markdown_paths = [
         path
-        for path in sorted(directory.glob("*/README.md"))
+        for path in sorted(directory.glob(f"*/{NOTES_FILENAME}"))
         if path.parent not in processed_dirs
     ]
     legacy_paths = sorted(directory.glob("*.md"))
@@ -112,10 +146,6 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
 
         raw_description = str(data.get("description", "") or "").strip()
         raw_intro = str(data.get("intro", "") or "").strip()
-        project_value = data.get("project")
-        if not project_value:
-            project_value = data.get("product", "")
-
         description = raw_description
         intro = raw_intro
 
@@ -147,14 +177,17 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
 
         manifest = ReleaseManifest(
             version=str(version_value),
-            title=str(data.get("title", "")),
-            description=description,
-            project=str(project_value or ""),
             created=created_value,
             entries=entries_value,
+            title=str(data.get("title", "")),
+            description=description,
             intro=intro,
             path=path,
         )
+        if not manifest.description:
+            summary = _extract_release_summary(_manifest_root(project_root, manifest) / NOTES_FILENAME)
+            if summary:
+                manifest.description = summary
         yield manifest
 
 
@@ -189,27 +222,79 @@ def write_release_manifest(
         raise FileExistsError(f"Release manifest {manifest_path} already exists")
     payload: dict[str, object] = {
         "version": manifest.version,
-        "title": manifest.title,
-        "project": manifest.project,
-        "created": manifest.created.isoformat(),
+        "created": manifest.created,
         "entries": list(manifest.entries),
     }
-    if manifest.description:
-        payload["description"] = manifest.description
     if manifest.intro:
         payload["intro"] = manifest.intro
     manifest_payload = yaml.safe_dump(payload, sort_keys=False)
     manifest_path.write_text(manifest_payload, encoding="utf-8")
 
-    readme_path = release_dir / "README.md"
-    normalized_readme = readme_content.strip()
-    if normalized_readme:
-        readme_path.write_text(normalized_readme + "\n", encoding="utf-8")
+    notes_path = release_dir / NOTES_FILENAME
+    normalized_notes = readme_content.strip()
+    if normalized_notes:
+        notes_path.write_text(normalized_notes + "\n", encoding="utf-8")
     else:
-        readme_path.write_text("", encoding="utf-8")
+        notes_path.write_text("", encoding="utf-8")
 
     manifest.path = manifest_path
     return manifest_path
+
+
+def _manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
+    """Return the base directory for a release manifest."""
+    if manifest.path is None:
+        return release_directory(project_root) / manifest.version
+    path = manifest.path
+    if path.is_dir():
+        return path
+    if path.name.lower() == "manifest.yaml":
+        return path.parent
+    return path.parent
+
+
+def resolve_release_entry_path(
+    project_root: Path, manifest: ReleaseManifest, entry_id: str
+) -> Path | None:
+    """Return the path to an entry file belonging to a release, if present."""
+    root = _manifest_root(project_root, manifest)
+    candidates = [
+        root / "entries" / f"{entry_id}.md",
+        root / f"{entry_id}.md",
+        release_directory(project_root) / manifest.version / "entries" / f"{entry_id}.md",
+        release_directory(project_root) / manifest.version / f"{entry_id}.md",
+    ]
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def load_release_entry(
+    project_root: Path, manifest: ReleaseManifest, entry_id: str
+) -> Entry | None:
+    """Load a release entry as an Entry instance."""
+    entry_path = resolve_release_entry_path(project_root, manifest, entry_id)
+    if entry_path is None:
+        return None
+    return read_entry(entry_path)
+
+
+def collect_release_entries(project_root: Path) -> dict[str, Entry]:
+    """Return a mapping of entry ids to entries across all releases."""
+    collected: dict[str, Entry] = {}
+    for manifest in iter_release_manifests(project_root):
+        for entry_id in manifest.entries:
+            if entry_id in collected:
+                continue
+            entry = load_release_entry(project_root, manifest, entry_id)
+            if entry is not None:
+                collected[entry_id] = entry
+    return collected
 
 
 def build_entry_release_index(
@@ -218,8 +303,6 @@ def build_entry_release_index(
     """Return a mapping from entry id to associated release versions."""
     index: dict[str, list[str]] = {}
     for manifest in iter_release_manifests(project_root):
-        if project and manifest.project and manifest.project != project:
-            continue
         for entry_id in manifest.entries:
             versions = index.setdefault(entry_id, [])
             if manifest.version not in versions:

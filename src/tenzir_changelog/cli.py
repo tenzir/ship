@@ -21,14 +21,15 @@ from .entries import (
     Entry,
     entry_directory,
     iter_entries,
-    read_entry,
     sort_entries_desc,
     write_entry,
 )
 from .releases import (
     ReleaseManifest,
     build_entry_release_index,
+    collect_release_entries,
     iter_release_manifests,
+    load_release_entry,
     release_directory,
     unused_entries,
     used_entry_ids,
@@ -323,17 +324,22 @@ def _render_entries(
         console.print("[yellow]No entries found.[/yellow]")
 
 
-def _render_release(manifest: ReleaseManifest, project_root: Path) -> None:
+def _render_release(
+    manifest: ReleaseManifest,
+    project_root: Path,
+    *,
+    project_id: str,
+) -> None:
     console.rule(f"Release {manifest.version}")
     header = Text.assemble(
         ("Title: ", "bold"),
-        manifest.title or "—",
+        manifest.title or manifest.version or "—",
         ("\nDescription: ", "bold"),
         manifest.description or "—",
         ("\nCreated: ", "bold"),
         manifest.created.isoformat(),
         ("\nProject: ", "bold"),
-        manifest.project or "—",
+        project_id or "—",
     )
     console.print(header)
 
@@ -355,6 +361,8 @@ def _render_release(manifest: ReleaseManifest, project_root: Path) -> None:
     table.add_column("Type", style="magenta")
     for index, entry_id in enumerate(manifest.entries, 1):
         entry = all_entries.get(entry_id)
+        if entry is None:
+            entry = load_release_entry(project_root, manifest, entry_id)
         if entry:
             table.add_row(
                 str(index),
@@ -404,10 +412,17 @@ def show(
         if not manifests:
             raise click.ClickException(f"Release '{release_version}' not found.")
         manifest = manifests[0]
-        _render_release(manifest, project_root)
+        _render_release(manifest, project_root, project_id=config.id)
         return
 
     entries = list(iter_entries(project_root))
+    entry_map = {entry.entry_id: entry for entry in entries}
+    released_entries = collect_release_entries(project_root)
+    for entry_id, entry in released_entries.items():
+        if entry_id not in entry_map:
+            entry_map[entry_id] = entry
+
+    entries = list(entry_map.values())
     release_index = build_entry_release_index(project_root, project=config.id)
     if since_version:
         excluded = _entries_before_or_equal_version(project_root, since_version)
@@ -785,9 +800,6 @@ def release_create(
     release_notes = _render_release_notes(entries_sorted, config)
     manifest_intro = custom_intro.strip() if custom_intro else ""
     readme_parts: list[str] = []
-    heading = title or version
-    if heading:
-        readme_parts.append(f"# {heading}")
     if description:
         readme_parts.append(description.strip())
     if manifest_intro:
@@ -798,11 +810,10 @@ def release_create(
 
     manifest = ReleaseManifest(
         version=version,
-        title=title,
-        description=description,
-        project=config.id,
         created=release_dt,
         entries=[entry.entry_id for entry in entries_sorted],
+        title=title or "",
+        description=description,
         intro=manifest_intro or None,
     )
 
@@ -851,12 +862,9 @@ def _export_markdown_release(
 ) -> str:
     lines: list[str] = []
     if manifest:
-        title = manifest.title or manifest.version or "Release"
-        lines.append(f"# {title}")
         if manifest.description:
-            lines.append("")
             lines.append(manifest.description.strip())
-        lines.append("")
+            lines.append("")
     else:
         lines.append("# Unreleased Changes")
         lines.append("")
@@ -902,12 +910,9 @@ def _export_markdown_compact(
 ) -> str:
     lines: list[str] = []
     if manifest:
-        title = manifest.title or manifest.version or "Release"
-        lines.append(f"# {title}")
         if manifest.description:
-            lines.append("")
             lines.append(manifest.description.strip())
-        lines.append("")
+            lines.append("")
     else:
         lines.append("# Unreleased Changes")
         lines.append("")
@@ -953,9 +958,9 @@ def _export_json_payload(
         data.update(
             {
                 "version": manifest.version,
-                "title": manifest.title,
-                "description": manifest.description,
-                "project": manifest.project,
+                "title": manifest.title or manifest.version,
+                "description": manifest.description or None,
+                "project": config.id,
                 "created": manifest.created.isoformat(),
             }
         )
@@ -1025,25 +1030,16 @@ def export_cmd(
         if not manifests:
             raise click.ClickException(f"Release '{release_version}' not found.")
         manifest = manifests[0]
-        release_dir = (
-            manifest.path.parent
-            if manifest.path
-            else release_directory(project_root) / manifest.version
-        )
-        release_entries_dir = release_dir / "entries"
         missing_entries: list[str] = []
         export_entries = []
         for entry_id in manifest.entries:
             entry = entry_map.get(entry_id)
             if entry is None:
-                entry_path = release_entries_dir / f"{entry_id}.md"
-                if not entry_path.exists():
-                    entry_path = release_dir / f"{entry_id}.md"
-                if entry_path.exists():
-                    entry = read_entry(entry_path)
-                else:
-                    missing_entries.append(entry_id)
-                    continue
+                entry = load_release_entry(project_root, manifest, entry_id)
+            if entry is None:
+                missing_entries.append(entry_id)
+                continue
+            entry_map[entry_id] = entry
             export_entries.append(entry)
         if missing_entries:
             missing_list = ", ".join(sorted(missing_entries))

@@ -73,7 +73,7 @@ Create a new change entry in `unreleased/`. Highlights:
 - **`tenzir-changelog release create`**
   Assemble a release manifest under `releases/` that lists all unused entry IDs
   for the configured project in `config.yaml`. Release metadata lands in
-  `releases/<version>/manifest.yaml`, Markdown notes render in `README.md`, and
+  `releases/<version>/manifest.yaml`, Markdown notes render in `notes.md`, and
   the command moves every file from `unreleased/` into
   `releases/<version>/entries/` so the release assets travel together. Accepts
   options for release title, version, description, and release date. You can
@@ -84,6 +84,10 @@ Create a new change entry in `unreleased/`. Highlights:
   Export unreleased changes or a specific release to STDOUT. Use `--release
   <version>` to select a release and `--format markdown|json` (default
   `markdown`) to choose the output format.
+  - Tip: Re-run the exporter to refresh an existing release README. For example,
+    `uv run tenzir-changelog --root changelog export --release v0.2.0 > changelog/releases/v0.2.0/notes.md`
+    rewrites the notes in the standard layout, while adding `--compact` switches
+    to the terse summary.
 
 - **`tenzir-changelog validate`**
   Run structural checks across entry files, release manifests, and exported

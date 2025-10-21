@@ -119,15 +119,14 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     )
     assert release_result.exit_code == 0, release_result.output
     release_dir = workspace_root / "releases" / "v1.0.0"
-    release_path = release_dir / "README.md"
+    release_path = release_dir / "notes.md"
     manifest_path = release_dir / "manifest.yaml"
     assert release_path.exists()
     assert manifest_path.exists()
 
     release_text = release_path.read_text(encoding="utf-8")
-    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    expected_heading = f"# {config_data['name']} v1.0.0"
-    assert release_text.lstrip().startswith(expected_heading), release_text
+    first_line = release_text.lstrip().splitlines()[0]
+    assert first_line == "First stable release.", release_text
     assert "First stable release." in release_text
     assert "### Exciting Feature" in release_text
     assert "### Fix ingest crash" in release_text
@@ -135,7 +134,11 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
 
     manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest_data["version"] == "v1.0.0"
+    assert isinstance(manifest_data["created"], date)
     assert "entries" in manifest_data
+    assert "project" not in manifest_data
+    assert "description" not in manifest_data
+    assert "title" not in manifest_data
     assert "exciting-feature" in manifest_data["entries"]
     assert "fix-ingest-crash" in manifest_data["entries"]
 
@@ -153,6 +156,8 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     plain_show = click.utils.strip_ansi(show_result.output)
     assert "Name:" not in plain_show
     assert "Types:" not in plain_show
+    assert "exciting-feature" in plain_show
+    assert "v1.0.0" in plain_show
 
     show_banner = runner.invoke(
         cli,
@@ -162,6 +167,16 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     banner_output = click.utils.strip_ansi(show_banner.output)
     assert "Name: " in banner_output
     assert "Types: " in banner_output
+
+    release_show = runner.invoke(
+        cli,
+        ["--root", str(workspace_root), "show", "--release", "v1.0.0"],
+    )
+    assert release_show.exit_code == 0, release_show.output
+    release_plain = click.utils.strip_ansi(release_show.output)
+    assert "Included Entries" in release_plain
+    assert "exciting-feature" in release_plain
+    assert "fix-ingest-crash" in release_plain
 
     export_md = runner.invoke(
         cli,
