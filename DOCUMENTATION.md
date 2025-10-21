@@ -35,7 +35,7 @@ pipelines all share the same workflow.
    uvx tenzir-changelog add
    ```
    The assistant collects metadata (type, GitHub PR information, authors,
-   components) and writes a ready-to-commit Markdown file under `entries/`.
+   components) and writes a ready-to-commit Markdown file under `unreleased/`.
    Defaults such as the configured project come from `config.yaml`, so you just
    press enter through most prompts.
 
@@ -48,7 +48,7 @@ to `config.yaml`) and `--root` to operate on another repository.
 - **`tenzir-changelog bootstrap`**  
   Initialize or update the changelog project in the current repository. The
   bootstrapper:
-  - Creates the `entries/` and `releases/` directories
+  - Creates the `unreleased/` and `releases/` directories
   - Writes a starter `config.yaml` with detected repository details, the project
     name, and GitHub settings
   - Updates the config so future commands can reuse the defaults
@@ -60,7 +60,7 @@ to `config.yaml`) and `--root` to operate on another repository.
   - `--since <version>` to collate entries newer than the provided version tag
 
 - **`tenzir-changelog add`**
-  Create a new change entry in `entries/`. Highlights:
+Create a new change entry in `unreleased/`. Highlights:
   - Prompts for change type (`feature`, `bugfix`, `change`) with one-key shortcuts
     (`1`, `2`, `3`), the project, summary, and detailed notes
   - Auto-detects authors, PR number, title, and body via `gh` or the GitHub API
@@ -72,13 +72,13 @@ to `config.yaml`) and `--root` to operate on another repository.
 
 - **`tenzir-changelog release create`**
   Assemble a release manifest under `releases/` that lists all unused entry IDs
-  for the configured project in `config.yaml`. The manifest is a Markdown file
-  with YAML frontmatter so downstream tooling can parse metadata while keeping
-  a rich introduction. Accepts options for release title, version, description,
-  and release date. The command also prompts for an introductory Markdown block
-  (or accepts a `--intro-file`) so you can include narrative release notes,
-  links, or embedded assets (e.g., images stored alongside the changelog). The
-  command outputs the manifest path and a summary of included entries.
+  for the configured project in `config.yaml`. Release metadata lands in
+  `releases/<version>/manifest.yaml`, Markdown notes render in `README.md`, and
+  the command moves every file from `unreleased/` into
+  `releases/<version>/entries/` so the release assets travel together. Accepts
+  options for release title, version, description, and release date. You can
+  supply additional narrative via `--intro-file`, and the CLI prints the
+  manifest path plus a summary of included entries.
 
 - **`tenzir-changelog export`**
   Export unreleased changes or a specific release to STDOUT. Use `--release
@@ -176,7 +176,7 @@ project root.
      --author carol \
      --pr 103
    ```
-   Each invocation writes a Markdown file inside `entries/`. For example,
+  Each invocation writes a Markdown file inside `unreleased/`. For example,
    `add-pipeline-builder.md` looks like:
   ```markdown
   ---

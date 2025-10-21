@@ -68,9 +68,44 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
     if not directory.exists():
         return
 
-    paths = sorted(list(directory.glob("*.md")))
+    manifest_paths = sorted(directory.glob("*/manifest.yaml"))
+    processed_dirs = {path.parent for path in manifest_paths}
+
+    for path in manifest_paths:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+        raw_description = str(data.get("description", "") or "").strip()
+        raw_intro = str(data.get("intro", "") or "").strip()
+        project_value = data.get("project") or data.get("product", "")
+
+        created_value = _parse_created_date(data.get("created"))
+        entries_value = _normalize_entries_field(data.get("entries"))
+
+        version_value = data.get("version") or path.parent.name
+
+        manifest = ReleaseManifest(
+            version=str(version_value),
+            title=str(data.get("title", "")),
+            description=raw_description,
+            project=str(project_value or ""),
+            created=created_value,
+            entries=entries_value,
+            intro=raw_intro or None,
+            path=path,
+        )
+        yield manifest
+
+    markdown_paths = [
+        path
+        for path in sorted(directory.glob("*/README.md"))
+        if path.parent not in processed_dirs
+    ]
+    legacy_paths = sorted(directory.glob("*.md"))
+    yaml_paths = sorted(directory.glob("*.yaml"))
+
+    paths = markdown_paths + [path for path in legacy_paths if path.parent not in processed_dirs]
     if not paths:
-        paths = sorted(directory.glob("*.yaml"))
+        paths = yaml_paths
 
     for path in paths:
         data, body_text = _parse_frontmatter(path)
@@ -103,8 +138,15 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         created_value = _parse_created_date(data.get("created"))
         entries_value = _normalize_entries_field(data.get("entries"))
 
+        version_value = data.get("version")
+        if not version_value:
+            if path.name.lower() == "readme.md":
+                version_value = path.parent.name
+            else:
+                version_value = path.stem
+
         manifest = ReleaseManifest(
-            version=str(data.get("version") or path.stem),
+            version=str(version_value),
             title=str(data.get("title", "")),
             description=description,
             project=str(project_value or ""),
@@ -129,18 +171,22 @@ def unused_entries(entries: Iterable[Entry], used_ids: set[str]) -> list[Entry]:
     return [entry for entry in entries if entry.entry_id not in used_ids]
 
 
-def _format_frontmatter(data: dict[str, object]) -> str:
-    yaml_block = yaml.safe_dump(data, sort_keys=False).strip()
-    return f"---\n{yaml_block}\n---\n"
-
-
-def write_release_manifest(project_root: Path, manifest: ReleaseManifest) -> Path:
-    """Serialize and store a release manifest as Markdown with frontmatter."""
+def write_release_manifest(
+    project_root: Path,
+    manifest: ReleaseManifest,
+    readme_content: str,
+) -> Path:
+    """Serialize and store a release manifest alongside release notes."""
     directory = release_directory(project_root)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{manifest.version}.md"
-    if path.exists():
-        raise FileExistsError(f"Release manifest {path} already exists")
+    release_dir = directory / manifest.version
+    if release_dir.exists():
+        raise FileExistsError(f"Release directory {release_dir} already exists")
+    release_dir.mkdir(parents=True, exist_ok=False)
+
+    manifest_path = release_dir / "manifest.yaml"
+    if manifest_path.exists():
+        raise FileExistsError(f"Release manifest {manifest_path} already exists")
     payload: dict[str, object] = {
         "version": manifest.version,
         "title": manifest.title,
@@ -148,18 +194,22 @@ def write_release_manifest(project_root: Path, manifest: ReleaseManifest) -> Pat
         "created": manifest.created.isoformat(),
         "entries": list(manifest.entries),
     }
-    frontmatter = _format_frontmatter(payload)
-    body_parts = []
     if manifest.description:
-        body_parts.append(manifest.description.strip())
+        payload["description"] = manifest.description
     if manifest.intro:
-        body_parts.append(manifest.intro.strip())
-    body = "\n\n".join(part for part in body_parts if part)
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write(frontmatter)
-        if body:
-            handle.write("\n" + body + "\n")
-    return path
+        payload["intro"] = manifest.intro
+    manifest_payload = yaml.safe_dump(payload, sort_keys=False)
+    manifest_path.write_text(manifest_payload, encoding="utf-8")
+
+    readme_path = release_dir / "README.md"
+    normalized_readme = readme_content.strip()
+    if normalized_readme:
+        readme_path.write_text(normalized_readme + "\n", encoding="utf-8")
+    else:
+        readme_path.write_text("", encoding="utf-8")
+
+    manifest.path = manifest_path
+    return manifest_path
 
 
 def build_entry_release_index(

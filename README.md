@@ -37,7 +37,7 @@ caches the result for snappy subsequent invocations.
 ## 🧪 Dogfooded Project
 
 The repository ships with `changelog/`, the real changelog project maintained
-by the Tenzir team. Explore it to see how `config.yaml`, `entries/`, and
+by the Tenzir team. Explore it to see how `config.yaml`, `unreleased/`, and
 Markdown release manifests fit together end-to-end.
 
 ## 📄 License

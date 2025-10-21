@@ -59,14 +59,16 @@ environment:
 uv run tenzir-changelog --root changelog --help
 ```
 
-Add an entry for every notable change:
+Add an entry for every notable change (files land in `changelog/unreleased/`):
 
 ```sh
 uv run tenzir-changelog --root changelog add --title "Describe the change"
 ```
 
-Use `release create` when drafting release manifests and `validate` to check the
-project before submitting a pull request:
+Use `release create` when drafting release manifests. The command writes the
+release notes to `releases/<version>/README.md`, moves all unreleased entries
+into that directory, and leaves `unreleased/` ready for the next cycle. Run
+`validate` to check the project before submitting a pull request:
 
 ```sh
 uv run tenzir-changelog --root changelog validate
@@ -99,20 +101,29 @@ Releases use trusted publishing from GitHub Actions. When ready:
    ```sh
    uv run check-release
    ```
-2. Bump the version:
+2. Draft the release manifest and move unreleased entries:
+   ```sh
+   uv run tenzir-changelog --root changelog release create vX.Y.Z --description "Summary" --yes
+   uv run tenzir-changelog --root changelog validate
+   ```
+   You can provide additional context via `--intro-file` instead of editing files
+   manually. The command relocates the contents of `changelog/unreleased/` into
+   `changelog/releases/vX.Y.Z/entries/`, records release metadata in
+   `manifest.yaml`, and renders human-friendly notes in `README.md`.
+3. Bump the version:
    ```sh
    uv version --bump <part>
    ```
-3. Commit changes:
+4. Commit changes:
    ```sh
    git commit -am "Bump version to vX.Y.Z"
    ```
-4. Tag and push:
+5. Tag and push:
    ```sh
    git tag -a vX.Y.Z -m "Release vX.Y.Z"
    git push && git push --tags
    ```
-5. Draft and publish a GitHub release describing highlights.
+6. Draft and publish a GitHub release describing highlights.
 
 Publishing the release triggers the automated workflow that builds, validates,
 and uploads artifacts to PyPI before smoke-testing the package.

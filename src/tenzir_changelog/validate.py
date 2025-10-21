@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .config import Config
-from .entries import ENTRY_TYPES, Entry, iter_entries
+from .entries import ENTRY_TYPES, Entry, iter_entries, read_entry
 from .releases import ReleaseManifest, iter_release_manifests
 
 
@@ -48,8 +48,19 @@ def validate_release_ids(
     """Ensure release manifests reference existing entry IDs."""
     entry_ids = {entry.entry_id for entry in entries}
     for manifest in releases:
+        release_dir = manifest.path.parent if manifest.path else None
         for entry_id in manifest.entries:
-            if entry_id not in entry_ids:
+            if entry_id in entry_ids:
+                continue
+            file_exists = False
+            if release_dir is not None:
+                entries_dir = release_dir / "entries"
+                archive_paths = [
+                    entries_dir / f"{entry_id}.md",
+                    release_dir / f"{entry_id}.md",
+                ]
+                file_exists = any(path.exists() for path in archive_paths)
+            if not file_exists:
                 issues.append(
                     ValidationIssue(
                         manifest.path or Path(""),
@@ -61,10 +72,28 @@ def validate_release_ids(
 def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
     """Validate entries and releases, returning a list of issues."""
     issues: list[ValidationIssue] = []
-    entries = list(iter_entries(project_root))
-    for entry in entries:
-        issues.extend(validate_entry(entry, config))
     releases = list(iter_release_manifests(project_root))
+    entries = list(iter_entries(project_root))
+    release_entries: list[Entry] = []
+    for manifest in releases:
+        release_dir = manifest.path.parent if manifest.path else None
+        if release_dir is None:
+            continue
+        for entry_id in manifest.entries:
+            entry_path = release_dir / "entries" / f"{entry_id}.md"
+            if not entry_path.exists():
+                entry_path = release_dir / f"{entry_id}.md"
+            if not entry_path.exists():
+                continue
+            try:
+                release_entries.append(read_entry(entry_path))
+            except ValueError as exc:
+                issues.append(ValidationIssue(entry_path, str(exc)))
+
+    all_entries = entries + release_entries
+    for entry in all_entries:
+        issues.extend(validate_entry(entry, config))
+
     for manifest in releases:
         if manifest.project and manifest.project != config.id:
             issues.append(
@@ -73,5 +102,5 @@ def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
                     f"Release project '{manifest.project}' does not match configured project '{config.id}'.",
                 )
             )
-    validate_release_ids(entries, releases, issues)
+    validate_release_ids(all_entries, releases, issues)
     return issues

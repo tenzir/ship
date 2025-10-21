@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 from click.testing import CliRunner
+import yaml
 
 from tenzir_changelog.cli import INFO_PREFIX, cli
 from tenzir_changelog.entries import read_entry
@@ -77,7 +78,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     )
     assert add_bugfix.exit_code == 0, add_bugfix.output
 
-    entries_dir = workspace_root / "entries"
+    entries_dir = workspace_root / "unreleased"
     entry_files = sorted(entries_dir.glob("*.md"))
     assert len(entry_files) == 2
 
@@ -113,17 +114,36 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
             "First stable release.",
             "--intro-file",
             str(intro_file),
+            "--yes",
         ],
-        input="\n",  # Accept confirmation prompt.
     )
     assert release_result.exit_code == 0, release_result.output
-    release_path = workspace_root / "releases" / "v1.0.0.md"
+    release_dir = workspace_root / "releases" / "v1.0.0"
+    release_path = release_dir / "README.md"
+    manifest_path = release_dir / "manifest.yaml"
     assert release_path.exists()
+    assert manifest_path.exists()
+
     release_text = release_path.read_text(encoding="utf-8")
-    assert release_text.startswith("---"), release_text
-    assert "- exciting-feature" in release_text
-    assert "- fix-ingest-crash" in release_text
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    expected_heading = f"# {config_data['name']} v1.0.0"
+    assert release_text.lstrip().startswith(expected_heading), release_text
+    assert "First stable release." in release_text
+    assert "### Exciting Feature" in release_text
+    assert "### Fix ingest crash" in release_text
     assert "![Image](assets/hero.png)" in release_text
+
+    manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert manifest_data["version"] == "v1.0.0"
+    assert "entries" in manifest_data
+    assert "exciting-feature" in manifest_data["entries"]
+    assert "fix-ingest-crash" in manifest_data["entries"]
+
+    release_entries_dir = release_dir / "entries"
+    assert release_entries_dir.is_dir()
+    assert (release_entries_dir / "exciting-feature.md").exists()
+    assert (release_entries_dir / "fix-ingest-crash.md").exists()
+    assert not any(entries_dir.iterdir())
 
     show_result = runner.invoke(
         cli,

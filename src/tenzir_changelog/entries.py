@@ -11,7 +11,7 @@ import yaml
 
 from .utils import coerce_date, slugify
 
-ENTRY_DIR = Path("entries")
+UNRELEASED_DIR = Path("unreleased")
 ENTRY_TYPES = ("feature", "bugfix", "change")
 
 
@@ -57,8 +57,8 @@ class Entry:
 
 
 def entry_directory(project_root: Path) -> Path:
-    """Return the entries directory inside the project."""
-    return project_root / ENTRY_DIR
+    """Return the directory containing unreleased changelog entries."""
+    return project_root / UNRELEASED_DIR
 
 
 def read_entry(path: Path) -> Entry:

@@ -21,6 +21,7 @@ from .entries import (
     Entry,
     entry_directory,
     iter_entries,
+    read_entry,
     sort_entries_desc,
     write_entry,
 )
@@ -675,6 +676,41 @@ def _collect_unused_entries_for_release(project_root: Path, config: Config) -> l
     return filtered
 
 
+def _render_release_notes(entries: list[Entry], config: Config) -> str:
+    """Render Markdown sections for the provided entries."""
+
+    if not entries:
+        return ""
+
+    entries_by_type: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        entries_by_type.setdefault(entry_type, []).append(entry)
+
+    lines: list[str] = []
+    for type_key in ENTRY_EXPORT_ORDER:
+        type_entries = entries_by_type.get(type_key) or []
+        if not type_entries:
+            continue
+        section_title = TYPE_SECTION_TITLES.get(type_key, type_key.title())
+        lines.append(f"## {section_title}")
+        lines.append("")
+        for entry in type_entries:
+            title = entry.metadata.get("title", "Untitled")
+            lines.append(f"### {title}")
+            lines.append("")
+            body = entry.body.strip()
+            if body:
+                lines.append(body)
+                lines.append("")
+            author_line = _format_author_line(entry, config)
+            if author_line:
+                lines.append(author_line)
+                lines.append("")
+
+    return "\n".join(lines).strip()
+
+
 @cli.group("release")
 def release() -> None:
     """Release management commands."""
@@ -695,6 +731,12 @@ def release() -> None:
     type=click.Path(path_type=Path, dir_okay=False),
     help="Markdown file containing introductory notes for the release.",
 )
+@click.option(
+    "--yes",
+    "assume_yes",
+    is_flag=True,
+    help="Skip confirmation prompts and run non-interactively.",
+)
 @click.pass_obj
 def release_create(
     ctx: CLIContext,
@@ -703,6 +745,7 @@ def release_create(
     description: str,
     release_date: Optional[datetime],
     intro_file: Optional[Path],
+    assume_yes: bool,
 ) -> None:
     """Create a release manifest from unused entries."""
     config = ctx.ensure_config()
@@ -716,19 +759,9 @@ def release_create(
     title = title or f"{config.name} {version}"
     release_dt = release_date.date() if release_date else date.today()
 
+    custom_intro = ""
     if intro_file:
-        intro = intro_file.read_text(encoding="utf-8").strip()
-    else:
-        edited = click.edit(
-            textwrap.dedent(
-                """\
-                # Provide introductory release notes here.
-                # Include Markdown links, images, or callouts as needed.
-                # Lines starting with '#' will be removed.
-                """
-            )
-        )
-        intro = _mask_comment_block(edited) if edited else ""
+        custom_intro = intro_file.read_text(encoding="utf-8").strip()
 
     entries_sorted = sorted(unused, key=lambda entry: entry.metadata.get("title", ""))
     table = Table(title="Entries to Include")
@@ -743,9 +776,25 @@ def release_create(
         )
     console.print(table)
 
-    if not click.confirm("Create release manifest with these entries?", default=True):
+    if not assume_yes and not click.confirm(
+        "Create release manifest with these entries?", default=True
+    ):
         console.print("[yellow]Aborted release creation.[/yellow]")
         return
+
+    release_notes = _render_release_notes(entries_sorted, config)
+    manifest_intro = custom_intro.strip() if custom_intro else ""
+    readme_parts: list[str] = []
+    heading = title or version
+    if heading:
+        readme_parts.append(f"# {heading}")
+    if description:
+        readme_parts.append(description.strip())
+    if manifest_intro:
+        readme_parts.append(manifest_intro)
+    if release_notes:
+        readme_parts.append(release_notes)
+    readme_content = "\n\n".join(part.strip() for part in readme_parts if part and part.strip())
 
     manifest = ReleaseManifest(
         version=version,
@@ -754,11 +803,29 @@ def release_create(
         project=config.id,
         created=release_dt,
         entries=[entry.entry_id for entry in entries_sorted],
-        intro=intro or None,
+        intro=manifest_intro or None,
     )
 
-    path = write_release_manifest(project_root, manifest)
+    path = write_release_manifest(project_root, manifest, readme_content)
+
+    release_dir = path.parent
+    release_entries_dir = release_dir / "entries"
+    release_entries_dir.mkdir(parents=True, exist_ok=True)
+    for entry in entries_sorted:
+        source_path = entry.path
+        destination_path = release_entries_dir / source_path.name
+        if destination_path.exists():
+            raise click.ClickException(
+                "Cannot move entry "
+                f"'{entry.entry_id}' because {destination_path} already exists."
+            )
+        source_path.rename(destination_path)
+
     console.print(f"[green]Release manifest written:[/green] {path.relative_to(project_root)}")
+    relative_release_dir = release_entries_dir.relative_to(project_root)
+    console.print(
+        f"[green]Moved {len(entries_sorted)} entries to:[/green] {relative_release_dir}"
+    )
 
 
 @cli.command("validate")
@@ -958,9 +1025,31 @@ def export_cmd(
         if not manifests:
             raise click.ClickException(f"Release '{release_version}' not found.")
         manifest = manifests[0]
-        export_entries = [
-            entry_map[entry_id] for entry_id in manifest.entries if entry_id in entry_map
-        ]
+        release_dir = (
+            manifest.path.parent
+            if manifest.path
+            else release_directory(project_root) / manifest.version
+        )
+        release_entries_dir = release_dir / "entries"
+        missing_entries: list[str] = []
+        export_entries = []
+        for entry_id in manifest.entries:
+            entry = entry_map.get(entry_id)
+            if entry is None:
+                entry_path = release_entries_dir / f"{entry_id}.md"
+                if not entry_path.exists():
+                    entry_path = release_dir / f"{entry_id}.md"
+                if entry_path.exists():
+                    entry = read_entry(entry_path)
+                else:
+                    missing_entries.append(entry_id)
+                    continue
+            export_entries.append(entry)
+        if missing_entries:
+            missing_list = ", ".join(sorted(missing_entries))
+            raise click.ClickException(
+                f"Release '{manifest.version}' is missing entry files for: {missing_list}"
+            )
     else:
         export_entries = _collect_unused_entries_for_release(project_root, config)
 
