@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, MutableMapping
 
 import yaml
 
@@ -17,20 +17,13 @@ def default_config_path(project_root: Path) -> Path:
 
 
 @dataclass
-class WorkspaceSettings:
-    """High-level project metadata."""
-
-    name: str
-    description: str = ""
-    repository: str | None = None
-
-
-@dataclass
 class Config:
     """Structured representation of the changelog config."""
 
-    workspace: WorkspaceSettings
-    project: str
+    id: str
+    name: str
+    description: str = ""
+    repository: str | None = None
     intro_template: str | None = None
     assets_dir: str | None = None
 
@@ -39,31 +32,30 @@ def load_config(path: Path) -> Config:
     """Load the configuration from disk."""
     with path.open("r", encoding="utf-8") as handle:
         raw = yaml.safe_load(handle) or {}
+    if not isinstance(raw, MutableMapping):
+        raise ValueError("Config root must be a mapping")
 
-    workspace_raw = raw.get("workspace")
-    if workspace_raw is None or not isinstance(workspace_raw, Mapping):
-        maybe_project_obj = raw.get("project")
-        if isinstance(maybe_project_obj, Mapping):
-            workspace_raw = maybe_project_obj
-        else:
-            workspace_raw = {}
-    workspace = WorkspaceSettings(
-        name=str(workspace_raw.get("name", "Unnamed Project")),
-        description=str(workspace_raw.get("description", "")),
-        repository=(str(workspace_raw["repository"]) if "repository" in workspace_raw else None),
-    )
-
-    project_value_raw = raw.get("project")
+    project_value_raw = raw.get("id", raw.get("project"))
     if isinstance(project_value_raw, str):
         project_value = project_value_raw.strip()
     else:
         project_value = str(raw.get("project_name", raw.get("product", "")) or "").strip()
     if not project_value:
-        raise ValueError("Config missing 'project'")
+        raise ValueError("Config missing 'id'")
+
+    workspace_raw = raw.get("workspace")
+    fallback_mapping: Mapping[str, Any] = (
+        workspace_raw if isinstance(workspace_raw, Mapping) else {}
+    )
+    name_raw = raw.get("name", fallback_mapping.get("name", project_value))
+    description_raw = raw.get("description", fallback_mapping.get("description", ""))
+    repository_raw = raw.get("repository", fallback_mapping.get("repository"))
 
     return Config(
-        workspace=workspace,
-        project=project_value,
+        id=project_value,
+        name=str(name_raw or "Unnamed Project"),
+        description=str(description_raw or ""),
+        repository=(str(repository_raw) if repository_raw else None),
         intro_template=(str(raw["intro_template"]) if raw.get("intro_template") else None),
         assets_dir=str(raw["assets_dir"]) if raw.get("assets_dir") else None,
     )
@@ -71,18 +63,14 @@ def load_config(path: Path) -> Config:
 
 def dump_config(config: Config) -> dict[str, Any]:
     """Convert a Config into a plain dictionary suitable for YAML output."""
-    project_payload: dict[str, Any] = {
-        "name": config.workspace.name,
-    }
-    if config.workspace.description:
-        project_payload["description"] = config.workspace.description
-    if config.workspace.repository:
-        project_payload["repository"] = config.workspace.repository
-
     data: dict[str, Any] = {
-        "workspace": project_payload,
-        "project": config.project,
+        "id": config.id,
+        "name": config.name,
     }
+    if config.description:
+        data["description"] = config.description
+    if config.repository:
+        data["repository"] = config.repository
     if config.intro_template:
         data["intro_template"] = config.intro_template
     if config.assets_dir:

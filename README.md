@@ -6,7 +6,7 @@ change logs across public and private repositories.
 
 ## ✨ Highlights
 
-- 🚀 Bootstrap a changelog workspace with sensible defaults and YAML
+- 🚀 Bootstrap a changelog project with sensible defaults and YAML
   configuration in seconds.
 - 🧾 Capture changelog entries via an interactive assistant that pulls metadata
   from Git and GitHub.
@@ -36,7 +36,7 @@ caches the result for snappy subsequent invocations.
 
 ## 🧪 Example
 
-The repository ships with `example-changelog/`, a fully bootstrapped workspace
+The repository ships with `example-changelog/`, a fully bootstrapped project
 that mirrors the tutorial in `DOCUMENTATION.md`. Explore it to see how
 `config.yaml`, `entries/`, and Markdown release manifests fit together
 end-to-end.

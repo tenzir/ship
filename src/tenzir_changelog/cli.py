@@ -15,13 +15,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from .config import (
-    Config,
-    WorkspaceSettings,
-    default_config_path,
-    load_config,
-    save_config,
-)
+from .config import Config, default_config_path, load_config, save_config
 from .entries import ENTRY_TYPES, Entry, entry_directory, iter_entries, write_entry
 from .releases import (
     ReleaseManifest,
@@ -158,12 +152,12 @@ def cli(ctx: click.Context, root: Path, config: Optional[Path]) -> None:
 @click.option("--update", is_flag=True, help="Update an existing configuration.")
 @click.pass_obj
 def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
-    """Create or update the changelog workspace."""
+    """Create or update the changelog project."""
     repo_root = ctx.project_root
     config_path = ctx.config_path
     default_repo_config = default_config_path(repo_root)
 
-    # When operating from a repository root, place the workspace under ./changelog/.
+    # When operating from a repository root, place the project under ./changelog/.
     if not config_path.exists() and config_path == default_repo_config:
         workspace_root = repo_root / "changelog"
         config_path = default_config_path(workspace_root)
@@ -181,9 +175,9 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
             )
         existing_config = load_config(config_path)
 
-    project_name_default = existing_config.workspace.name if existing_config else repo_root.name
-    project_description_default = existing_config.workspace.description if existing_config else ""
-    repo_default = existing_config.workspace.repository if existing_config else None
+    project_name_default = existing_config.name if existing_config else repo_root.name
+    project_description_default = existing_config.description if existing_config else ""
+    repo_default = existing_config.repository if existing_config else None
     repo_guess = guess_git_remote(repo_root)
     if repo_default is None and repo_guess:
         repo_default = repo_guess
@@ -202,13 +196,13 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
     )
 
     slug_base = repo_root if repo_root != workspace_root else workspace_root
-    project = _prompt_project(existing_config.project if existing_config else None, slug_base)
+    project = _prompt_project(existing_config.id if existing_config else None, slug_base)
 
     config = Config(
-        workspace=WorkspaceSettings(
-            name=project_name, description=project_description, repository=repository
-        ),
-        project=project,
+        id=project,
+        name=project_name,
+        description=project_description,
+        repository=repository,
         intro_template=existing_config.intro_template if existing_config else None,
         assets_dir=existing_config.assets_dir if existing_config else None,
     )
@@ -222,7 +216,7 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
 
     console.print(
         Panel.fit(
-            f"[bold green]Changelog workspace ready[/bold green]\nConfig: {config_path}",
+            f"[bold green]Changelog project ready[/bold green]\nConfig: {config_path}",
             title="Bootstrap",
         )
     )
@@ -385,12 +379,12 @@ def show(
         return
 
     entries = list(iter_entries(project_root))
-    release_index = build_entry_release_index(project_root, project=config.project)
+    release_index = build_entry_release_index(project_root, project=config.id)
     if since_version:
         excluded = _entries_before_or_equal_version(project_root, since_version)
         entries = [entry for entry in entries if entry.entry_id not in excluded]
 
-    entries = _filter_entries_by_project(entries, projects, config.project)
+    entries = _filter_entries_by_project(entries, projects, config.id)
     _render_entries(entries, release_index)
 
 
@@ -479,7 +473,7 @@ def _entry_to_dict(
         "title": metadata.get("title", "Untitled"),
         "type": metadata.get("type", "change"),
         "created": entry.created_at.isoformat() if entry.created_at else None,
-        "projects": entry.projects or [config.project],
+        "projects": entry.projects or [config.id],
         "pr": prs_list[0] if prs_list else None,
         "prs": prs_list,
         "authors": metadata.get("authors") or [],
@@ -525,7 +519,7 @@ def _format_author_line(entry: Entry, config: Config) -> str:
             except (TypeError, ValueError):
                 pass
 
-    repo = config.workspace.repository
+    repo = config.repository
     pr_links: list[str] = []
     for pr in prs:
         label = f"#{pr}"
@@ -600,11 +594,11 @@ def add(
     if projects:
         project_list = [item.strip() for item in projects if item.strip()]
     else:
-        project_list = [config.project]
+        project_list = [config.id]
 
     for project in project_list:
-        if project != config.project:
-            raise click.ClickException(f"Unknown project '{project}'. Expected '{config.project}'.")
+        if project != config.id:
+            raise click.ClickException(f"Unknown project '{project}'. Expected '{config.id}'.")
 
     if authors:
         authors_list = [author.strip() for author in authors if author.strip()]
@@ -640,7 +634,7 @@ def add(
         else:
             metadata["prs"] = pr_numbers
 
-    path = write_entry(project_root, metadata, body, default_project=config.project)
+    path = write_entry(project_root, metadata, body, default_project=config.id)
     console.print(f"[green]Entry created:[/green] {path.relative_to(project_root)}")
 
 
@@ -648,7 +642,7 @@ def _collect_unused_entries_for_release(project_root: Path, config: Config) -> l
     all_entries = list(iter_entries(project_root))
     used = used_entry_ids(project_root)
     unused = unused_entries(all_entries, used)
-    filtered = [entry for entry in unused if not entry.projects or config.project in entry.projects]
+    filtered = [entry for entry in unused if not entry.projects or config.id in entry.projects]
     return filtered
 
 
@@ -690,7 +684,7 @@ def release_create(
         raise click.ClickException("No unused entries available for release creation.")
 
     version = version.strip()
-    title = title or f"{config.workspace.name} {version}"
+    title = title or f"{config.name} {version}"
     release_dt = release_date.date() if release_date else date.today()
 
     if intro_file:
@@ -728,7 +722,7 @@ def release_create(
         version=version,
         title=title,
         description=description,
-        project=config.project,
+        project=config.id,
         created=release_dt,
         entries=[entry.entry_id for entry in entries_sorted],
         intro=intro or None,
@@ -827,7 +821,7 @@ def _export_json_payload(
                 "version": None,
                 "title": None,
                 "description": None,
-                "project": config.project,
+                "project": config.id,
                 "created": date.today().isoformat(),
             }
         )
@@ -866,7 +860,7 @@ def export_cmd(
 
     entries = list(iter_entries(project_root))
     entry_map = {entry.entry_id: entry for entry in entries}
-    release_index = build_entry_release_index(project_root, project=config.project)
+    release_index = build_entry_release_index(project_root, project=config.id)
 
     manifest: Optional[ReleaseManifest] = None
     export_entries: list[Entry]

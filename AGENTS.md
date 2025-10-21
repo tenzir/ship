@@ -6,7 +6,7 @@
   companion modules (`config.py`, `entries.py`, `releases.py`, `validate.py`,
   `utils.py`) cover config, entries, releases, validation, and shared helpers.
   Keep changes typed and centralize helpers in `utils.py`.
-- `changelog/` stores this repository's changelog workspace; run CLI commands
+- `changelog/` stores this repository's changelog project; run CLI commands
   with `--root changelog` so they operate on the dogfooded data.
 - `tests/` stores pytest suites that exercise flows with `CliRunner`; mirror
   module names (e.g., `test_cli.py`) and keep fixtures close to usage.
@@ -41,7 +41,7 @@
 - Maintain ≥80% coverage (enforced by coverage config). Run `uv run pytest
   --cov=src/tenzir_changelog --cov-report=term-missing` before review.
 - Move shared fixtures to `tests/conftest.py` when needed and favour `tmp_path`
-  for workspace tests.
+  for project tests.
 
 ## Commit & Pull Request Guidelines
 

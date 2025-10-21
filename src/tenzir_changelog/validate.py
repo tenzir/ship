@@ -32,12 +32,12 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
             entry.path,
             f"Unknown type '{entry_type}'. Allowed types: {', '.join(ENTRY_TYPES)}",
         )
-    projects = entry.projects or [config.project]
+    projects = entry.projects or [config.id]
     for project in projects:
-        if project != config.project:
+        if project != config.id:
             yield ValidationIssue(
                 entry.path,
-                f"Unknown project '{project}'. Expected '{config.project}'.",
+                f"Unknown project '{project}'. Expected '{config.id}'.",
             )
 
 
@@ -67,11 +67,11 @@ def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
         issues.extend(validate_entry(entry, config))
     releases = list(iter_release_manifests(project_root))
     for manifest in releases:
-        if manifest.project and manifest.project != config.project:
+        if manifest.project and manifest.project != config.id:
             issues.append(
                 ValidationIssue(
                     manifest.path or Path(""),
-                    f"Release project '{manifest.project}' does not match configured project '{config.project}'.",
+                    f"Release project '{manifest.project}' does not match configured project '{config.id}'.",
                 )
             )
     validate_release_ids(entries, releases, issues)

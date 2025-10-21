@@ -1,5 +1,4 @@
-workspace:
-  name: changelog
-  description: The Tenzir Changelog Management Utility
-  repository: tenzir/changelog
-project: changelog
+id: changelog
+name: changelog
+description: The Tenzir Changelog Management Utility
+repository: tenzir/changelog

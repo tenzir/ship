@@ -17,7 +17,7 @@ pipelines all share the same workflow.
 
 ## Quick Start
 
-1. Bootstrap the changelog workspace inside your repository:
+1. Bootstrap the changelog project inside your repository:
    ```sh
    uvx tenzir-changelog bootstrap
    ```
@@ -46,7 +46,7 @@ pipelines all share the same workflow.
 to `config.yaml`) and `--root` to operate on another repository.
 
 - **`tenzir-changelog bootstrap`**  
-  Initialize or update the changelog workspace in the current repository. The
+  Initialize or update the changelog project in the current repository. The
   bootstrapper:
   - Creates the `entries/` and `releases/` directories
   - Writes a starter `config.yaml` with detected repository details, the project
@@ -100,7 +100,11 @@ to `config.yaml`) and `--root` to operate on another repository.
   captures repository metadata, the single project name, GitHub repository
   slugs, and any other instance-specific options (such as preferred intro
   templates or asset directories) so commands like `add` and `release create`
-  can infer context without repeated flags.
+  can infer context without repeated flags. All options sit at the top level
+  (`id`, `name`, `description`, `repository`, `intro_template`,
+  `assets_dir`), making the configuration easy to read and diff. The `id`
+  serves as the canonical slug written into entry metadata, while `name`
+  provides the human-friendly label surfaced in release titles and CLI output.
 - **Repositories:** A project may pull changelog entries from other repositories
   (e.g., satellites or private modules). Configuration entries include the
   repository slug, Git remote URL, and branch-to-track for releases.
@@ -108,7 +112,7 @@ to `config.yaml`) and `--root` to operate on another repository.
 ## Example Workflows
 
 - **First-time setup:**  
-  Run `uvx tenzir-changelog bootstrap` in each repository to provision the
+Run `uvx tenzir-changelog bootstrap` in each repository to provision the
   changelog directory layout and project. Repeat with `--update` whenever
   requirements evolve.
 
@@ -121,7 +125,7 @@ to `config.yaml`) and `--root` to operate on another repository.
   Maintainers execute `uvx tenzir-changelog release create v5.4.0`, supply the
   introductory notes (or reference a Markdown file with richer content and
   imagery), and review the generated manifest before handing it off to docs.
-  The command pulls the project name from `config.yaml`, so no extra switches
+  The command pulls the project display name from `config.yaml`, so no extra switches
   are required.
 
 ## Tutorial
@@ -138,13 +142,12 @@ project root.
    uvx tenzir-changelog bootstrap
    ```
    Accept the defaults for project name. When asked for a
-   project, enter `node` as the name. After the command completes, inspect
+   project, enter `node` as the identifier. After the command completes, inspect
    `config.yaml`:
    ```yaml
-   workspace:
-     name: example-changelog
-     repository: tenzir/changelog
-   project: node
+   id: node
+   name: example-changelog
+   repository: tenzir/changelog
    ```
 
 2. **Capture entries:**  
@@ -241,7 +244,7 @@ under a `prs:` key instead of `pr:` when editing YAML manually.
    We cover highlights, upgrades, and fixes below.
    ```
 
-6. **Validate the workspace:**  
+6. **Validate the project:**  
    ```sh
    uvx tenzir-changelog validate
    ```

@@ -3,7 +3,7 @@ title: Improve CLI help
 type: change
 created: '2025-10-15'
 projects:
-- node
+- example
 authors:
 - carol
 pr: '103'
