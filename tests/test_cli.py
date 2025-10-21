@@ -114,6 +114,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
             "First stable release.",
             "--intro-file",
             str(intro_file),
+            "--compact",
             "--yes",
         ],
     )
@@ -128,8 +129,10 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     first_line = release_text.lstrip().splitlines()[0]
     assert first_line == "First stable release.", release_text
     assert "First stable release." in release_text
-    assert "### Exciting Feature" in release_text
-    assert "### Fix ingest crash" in release_text
+    assert "- **Exciting Feature**: Adds an exciting capability." in release_text
+    assert (
+        "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire." in release_text
+    )
     assert "![Image](assets/hero.png)" in release_text
 
     manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))

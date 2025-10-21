@@ -76,8 +76,9 @@ Create a new change entry in `unreleased/`. Highlights:
   `releases/<version>/manifest.yaml`, Markdown notes render in `notes.md`, and
   the command moves every file from `unreleased/` into
   `releases/<version>/entries/` so the release assets travel together. Accepts
-  options for release title, version, description, and release date. You can
-  supply additional narrative via `--intro-file`, and the CLI prints the
+  options for release title, version, description, release date, and the
+  `--compact` flag to emit bullet-point notes. You can supply additional
+  narrative via `--intro-file`, and the CLI prints the
   manifest path plus a summary of included entries.
 
 - **`tenzir-changelog export`**

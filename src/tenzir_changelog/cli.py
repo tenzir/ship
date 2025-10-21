@@ -726,6 +726,37 @@ def _render_release_notes(entries: list[Entry], config: Config) -> str:
     return "\n".join(lines).strip()
 
 
+def _render_release_notes_compact(entries: list[Entry], config: Config) -> str:
+    """Render compact Markdown bullet list for the provided entries."""
+
+    if not entries:
+        return ""
+
+    entries_by_type: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        entries_by_type.setdefault(entry_type, []).append(entry)
+
+    lines: list[str] = []
+    for type_key in ENTRY_EXPORT_ORDER:
+        type_entries = entries_by_type.get(type_key) or []
+        if not type_entries:
+            continue
+        section_title = TYPE_SECTION_TITLES.get(type_key, type_key.title())
+        lines.append(f"## {section_title}")
+        lines.append("")
+        for entry in type_entries:
+            title = entry.metadata.get("title", "Untitled")
+            excerpt = extract_excerpt(entry.body)
+            bullet = f"- **{title}**"
+            if excerpt:
+                bullet = f"{bullet}: {excerpt}"
+            lines.append(bullet)
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
 @cli.group("release")
 def release() -> None:
     """Release management commands."""
@@ -747,6 +778,12 @@ def release() -> None:
     help="Markdown file containing introductory notes for the release.",
 )
 @click.option(
+    "--compact/--no-compact",
+    default=False,
+    show_default=True,
+    help="Render release notes in the compact format.",
+)
+@click.option(
     "--yes",
     "assume_yes",
     is_flag=True,
@@ -760,6 +797,7 @@ def release_create(
     description: str,
     release_date: Optional[datetime],
     intro_file: Optional[Path],
+    compact: bool,
     assume_yes: bool,
 ) -> None:
     """Create a release manifest from unused entries."""
@@ -797,8 +835,12 @@ def release_create(
         console.print("[yellow]Aborted release creation.[/yellow]")
         return
 
-    release_notes = _render_release_notes(entries_sorted, config)
     manifest_intro = custom_intro.strip() if custom_intro else ""
+    release_notes = (
+        _render_release_notes_compact(entries_sorted, config)
+        if compact
+        else _render_release_notes(entries_sorted, config)
+    )
     readme_parts: list[str] = []
     if description:
         readme_parts.append(description.strip())
@@ -827,16 +869,13 @@ def release_create(
         destination_path = release_entries_dir / source_path.name
         if destination_path.exists():
             raise click.ClickException(
-                "Cannot move entry "
-                f"'{entry.entry_id}' because {destination_path} already exists."
+                f"Cannot move entry '{entry.entry_id}' because {destination_path} already exists."
             )
         source_path.rename(destination_path)
 
     console.print(f"[green]Release manifest written:[/green] {path.relative_to(project_root)}")
     relative_release_dir = release_entries_dir.relative_to(project_root)
-    console.print(
-        f"[green]Moved {len(entries_sorted)} entries to:[/green] {relative_release_dir}"
-    )
+    console.print(f"[green]Moved {len(entries_sorted)} entries to:[/green] {relative_release_dir}")
 
 
 @cli.command("validate")
@@ -1054,13 +1093,9 @@ def export_cmd(
     export_format = export_format.lower()
     if export_format == "markdown":
         if compact:
-            content = _export_markdown_compact(
-                manifest, export_entries, config, release_index
-            )
+            content = _export_markdown_compact(manifest, export_entries, config, release_index)
         else:
-            content = _export_markdown_release(
-                manifest, export_entries, config, release_index
-            )
+            content = _export_markdown_release(manifest, export_entries, config, release_index)
         click.echo(content, nl=False)
     else:
         payload = _export_json_payload(

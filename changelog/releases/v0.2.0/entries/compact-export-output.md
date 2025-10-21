@@ -3,6 +3,7 @@ title: Compact export output
 type: feature
 authors:
 - mavam
+- codex
 created: 2025-10-21
 ---
 

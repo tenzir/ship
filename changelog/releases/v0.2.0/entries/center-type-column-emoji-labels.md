@@ -2,6 +2,7 @@
 title: Center type column emoji labels
 type: change
 authors:
+- mavam
 - codex
 created: 2025-10-21
 ---

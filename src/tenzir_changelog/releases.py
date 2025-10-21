@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 import yaml
+from yaml.nodes import Node
+
+from .entries import Entry, read_entry
 
 
-def _represent_date(dumper: yaml.SafeDumper, data: date):
+def _represent_date(dumper: yaml.SafeDumper, data: date) -> Node:
     return dumper.represent_scalar("tag:yaml.org,2002:timestamp", data.isoformat())
 
 
@@ -39,8 +42,6 @@ def _extract_release_summary(notes_path: Path) -> str:
         collecting = True
     return " ".join(summary_lines).strip()
 
-
-from .entries import Entry, read_entry
 
 RELEASE_DIR = Path("releases")
 
@@ -124,7 +125,9 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
             path=path,
         )
         if not manifest.description:
-            summary = _extract_release_summary(_manifest_root(project_root, manifest) / NOTES_FILENAME)
+            summary = _extract_release_summary(
+                _manifest_root(project_root, manifest) / NOTES_FILENAME
+            )
             if summary:
                 manifest.description = summary
         yield manifest
@@ -185,7 +188,9 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
             path=path,
         )
         if not manifest.description:
-            summary = _extract_release_summary(_manifest_root(project_root, manifest) / NOTES_FILENAME)
+            summary = _extract_release_summary(
+                _manifest_root(project_root, manifest) / NOTES_FILENAME
+            )
             if summary:
                 manifest.description = summary
         yield manifest

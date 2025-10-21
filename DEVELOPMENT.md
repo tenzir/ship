@@ -103,7 +103,7 @@ Releases use trusted publishing from GitHub Actions. When ready:
    ```
 2. Draft the release manifest and move unreleased entries:
    ```sh
-   uv run tenzir-changelog --root changelog release create vX.Y.Z --description "Summary" --yes
+   uv run tenzir-changelog --root changelog release create vX.Y.Z --description "Summary" --compact --yes
    uv run tenzir-changelog --root changelog validate
    ```
    You can provide additional context via `--intro-file` instead of editing files

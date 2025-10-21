@@ -3,6 +3,7 @@ title: Order same-day entries by modification time
 type: change
 authors:
 - mavam
+- codex
 created: 2025-10-21
 ---
 
