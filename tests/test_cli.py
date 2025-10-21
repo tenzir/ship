@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import click
 from click.testing import CliRunner
 
-from tenzir_changelog.cli import cli
+from tenzir_changelog.cli import INFO_PREFIX, cli
 
 
 def test_bootstrap_add_and_release(tmp_path: Path) -> None:
@@ -174,3 +175,17 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         ["--root", str(workspace_root), "validate"],
     )
     assert validate_result.exit_code == 0, validate_result.output
+
+
+def test_missing_project_reports_info_message(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(tmp_path), "show"])
+    assert result.exit_code == 1
+    expected_root = tmp_path.resolve()
+    plain_prefix = click.utils.strip_ansi(INFO_PREFIX)
+    expected_plain_output = (
+        f"{plain_prefix}no tenzir-changelog project detected at {expected_root}.\n"
+        f"{plain_prefix}run from your project root or provide --root.\n"
+    )
+    assert click.utils.strip_ansi(result.output) == expected_plain_output
+    assert "Error:" not in result.output

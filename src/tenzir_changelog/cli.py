@@ -84,7 +84,8 @@ class CLIContext:
                         f"{INFO_PREFIX}run from your project root or provide --root.",
                     ]
                 )
-                raise click.ClickException(message)
+                click.echo(message, err=True)
+                raise click.exceptions.Exit(1)
             self._config = load_config(self.config_path)
         return self._config
 
@@ -163,10 +164,7 @@ def bootstrap_cmd(ctx: CLIContext, update: bool) -> None:
     default_repo_config = default_config_path(repo_root)
 
     # When operating from a repository root, place the workspace under ./changelog/.
-    if (
-        not config_path.exists()
-        and config_path == default_repo_config
-    ):
+    if not config_path.exists() and config_path == default_repo_config:
         workspace_root = repo_root / "changelog"
         config_path = default_config_path(workspace_root)
         ctx.config_path = config_path
