@@ -10,8 +10,6 @@
   with `--root changelog` so they operate on the dogfooded data and refresh
   those files alongside root docs (`README.md`, `DOCUMENTATION.md`,
   `DEVELOPMENT.md`) when behavior changes.
-- Create new entries with `uv run tenzir-changelog --root changelog add ...`; do
-  not hand-write changelog entry files.
 - `tests/` stores pytest suites that exercise flows with `CliRunner`; mirror
   module names (e.g., `test_cli.py`) and keep fixtures close to usage.
 
@@ -47,9 +45,12 @@
 
 ## Commit & Pull Request Guidelines
 
+- When you implement new changes, features, or fix bugs, create a new changelog
+  entry with `uv run tenzir-changelog --root changelog add ...`; do not
+  hand-write changelog entry files.
 - Write commits in the imperative with a single focus, e.g., `Support manifest
   previews`; explain motivation in the body if needed.
-- Every PR should link issues, refresh generated assets (`changelog/`, docs),
-  and include screenshots or terminal snippets for UX changes.
-- Keep CI green by running `uv run check-release` locally and note the
-  validation performed plus follow-ups in the PR description.
+- Before committing anything, always run `uv run check-release`. Fix any
+  failures before issuing the actual commit.
+- Every PR should mention the changes from a user perspective. Copy the
+  user-facing changes from the changelog entry.
