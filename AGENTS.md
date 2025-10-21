@@ -43,11 +43,20 @@
 - Move shared fixtures to `tests/conftest.py` when needed and favour `tmp_path`
   for project tests.
 
-## Commit & Pull Request Guidelines
+## Writing Changelog Entries
 
 - When you implement new changes, features, or fix bugs, create a new changelog
   entry with `uv run tenzir-changelog --root changelog add ...`; do not
   hand-write changelog entry files.
+- Focus on the user-facing impact of your changes. Do not mention internal
+  implementation details.
+- Always begin with one sentence or paragraph that concisely describes the
+  change.
+- If helpful, add examples of how to use a the new feature or how to fix the
+  bug.
+
+## Commit & Pull Request Guidelines
+
 - Write commits in the imperative with a single focus, e.g., `Support manifest
   previews`; explain motivation in the body if needed.
 - Before committing anything, always run `uv run check-release`. Fix any
