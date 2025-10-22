@@ -151,32 +151,32 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert (release_entries_dir / "fix-ingest-crash.md").exists()
     assert not any(entries_dir.iterdir())
 
-    show_result = runner.invoke(
+    list_result = runner.invoke(
         cli,
-        ["--root", str(workspace_root), "show"],
+        ["--root", str(workspace_root), "list"],
     )
-    assert show_result.exit_code == 0, show_result.output
-    plain_show = click.utils.strip_ansi(show_result.output)
-    assert "Name:" not in plain_show
-    assert "Types:" not in plain_show
-    assert "exciting-feature" in plain_show or "Exciting Feature" in plain_show
-    assert "v1.0.0" in plain_show
+    assert list_result.exit_code == 0, list_result.output
+    plain_list = click.utils.strip_ansi(list_result.output)
+    assert "Name:" not in plain_list
+    assert "Types:" not in plain_list
+    assert "exciting-feature" in plain_list or "Exciting Feature" in plain_list
+    assert "v1.0.0" in plain_list
 
-    show_banner = runner.invoke(
+    list_banner = runner.invoke(
         cli,
-        ["--root", str(workspace_root), "show", "--banner"],
+        ["--root", str(workspace_root), "list", "--banner"],
     )
-    assert show_banner.exit_code == 0, show_banner.output
-    banner_output = click.utils.strip_ansi(show_banner.output)
+    assert list_banner.exit_code == 0, list_banner.output
+    banner_output = click.utils.strip_ansi(list_banner.output)
     assert "Name: " in banner_output
     assert "Types: " in banner_output
 
-    release_show = runner.invoke(
+    release_list = runner.invoke(
         cli,
-        ["--root", str(workspace_root), "show", "--release", "v1.0.0"],
+        ["--root", str(workspace_root), "list", "--release", "v1.0.0"],
     )
-    assert release_show.exit_code == 0, release_show.output
-    release_plain = click.utils.strip_ansi(release_show.output)
+    assert release_list.exit_code == 0, release_list.output
+    release_plain = click.utils.strip_ansi(release_list.output)
     assert "Included Entries" in release_plain
     assert "exciting-feature" in release_plain
     assert "fix-ingest-crash" in release_plain
@@ -256,7 +256,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
 
 def test_missing_project_reports_info_message(tmp_path: Path) -> None:
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(tmp_path), "show"])
+    result = runner.invoke(cli, ["--root", str(tmp_path), "list"])
     assert result.exit_code == 1
     expected_root = tmp_path.resolve()
     plain_prefix = click.utils.strip_ansi(INFO_PREFIX)

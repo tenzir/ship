@@ -101,63 +101,69 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
 
     width = max(console_width, 60)
     if width < 70:
-        columns = ["date", "title", "type"]
+        columns = ["num", "date", "title", "type"]
         specs: dict[str, ColumnSpec] = {
-            "title": {"min_width": 24, "max_width": 36, "overflow": "ellipsis", "no_wrap": True},
+            "num": {"max_width": 3, "no_wrap": True},
+            "title": {"min_width": 20, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 78:
-        columns = ["date", "version", "title", "type"]
+        columns = ["num", "date", "version", "title", "type"]
         specs = {
+            "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 8, "no_wrap": True},
-            "title": {"min_width": 22, "max_width": 34, "overflow": "ellipsis", "no_wrap": True},
+            "title": {"min_width": 18, "max_width": 30, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 88:
-        columns = ["date", "version", "title", "type", "pr"]
+        columns = ["num", "date", "version", "title", "type", "pr"]
         specs = {
+            "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
-            "title": {"min_width": 22, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
+            "title": {"min_width": 18, "max_width": 28, "overflow": "ellipsis", "no_wrap": True},
             "pr": {"max_width": 6, "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 110:
-        columns = ["date", "version", "title", "type", "pr", "authors"]
+        columns = ["num", "date", "version", "title", "type", "pr", "authors"]
         specs = {
+            "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
-            "title": {"min_width": 22, "max_width": 30, "overflow": "ellipsis", "no_wrap": True},
+            "title": {"min_width": 18, "max_width": 26, "overflow": "ellipsis", "no_wrap": True},
             "pr": {"max_width": 6, "no_wrap": True},
             "authors": {
-                "min_width": 12,
-                "max_width": 16,
+                "min_width": 10,
+                "max_width": 14,
                 "overflow": "ellipsis",
                 "no_wrap": True,
             },
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 140:
-        columns = ["date", "version", "title", "type", "pr", "authors", "id"]
+        columns = ["num", "date", "version", "title", "type", "pr", "authors", "id"]
         specs = {
+            "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 10, "no_wrap": True},
-            "title": {"min_width": 22, "max_width": 36, "overflow": "ellipsis", "no_wrap": True},
+            "title": {"min_width": 18, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
             "pr": {"max_width": 6, "no_wrap": True},
             "authors": {
-                "min_width": 12,
-                "max_width": 18,
+                "min_width": 10,
+                "max_width": 16,
                 "overflow": "ellipsis",
                 "no_wrap": True,
             },
-            "id": {"min_width": 20, "max_width": 26, "overflow": "ellipsis", "no_wrap": True},
+            "id": {"min_width": 16, "max_width": 22, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     else:
-        columns = ["date", "version", "title", "type", "pr", "authors", "id"]
+        columns = ["num", "date", "version", "title", "type", "pr", "authors", "id"]
         specs = {
+            "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 12, "no_wrap": True},
-            "title": {"min_width": 24, "max_width": 44, "overflow": "fold"},
+            "title": {"min_width": 20, "max_width": 40, "overflow": "fold"},
             "pr": {"max_width": 8, "no_wrap": True},
-            "authors": {"min_width": 16, "max_width": 24, "overflow": "fold"},
-            "id": {"min_width": 20, "max_width": 32, "overflow": "fold"},
+            "authors": {"min_width": 14, "max_width": 20, "overflow": "fold"},
+            "id": {"min_width": 18, "max_width": 28, "overflow": "fold"},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     return columns, specs
@@ -436,6 +442,16 @@ def _render_entries(
     visible_columns, column_specs = _entries_table_layout(console.size.width)
     table_width = max(console.size.width, 40)
     table = Table(show_lines=False, expand=False, width=table_width, pad_edge=False)
+    if "num" in visible_columns:
+        _add_table_column(
+            table,
+            "#",
+            "num",
+            column_specs,
+            style="dim",
+            overflow_default="fold",
+            no_wrap_default=True,
+        )
     if "date" in visible_columns:
         _add_table_column(
             table,
@@ -509,7 +525,7 @@ def _render_entries(
     has_rows = False
     sorted_entries = sort_entries_desc(list(entries))
 
-    for entry in sorted_entries:
+    for row_num, entry in enumerate(sorted_entries, start=1):
         metadata = entry.metadata
         created_display = entry.created_at.isoformat() if entry.created_at else "—"
         type_value = metadata.get("type", "change")
@@ -518,6 +534,8 @@ def _render_entries(
         type_emoji = ENTRY_TYPE_EMOJIS.get(type_value, "•")
         type_display = Text(type_emoji, style=ENTRY_TYPE_STYLES.get(type_value, ""))
         row: list[RenderableType] = []
+        if "num" in visible_columns:
+            row.append(str(row_num))
         if "date" in visible_columns:
             row.append(created_display)
         if "version" in visible_columns:
@@ -596,47 +614,6 @@ def _render_release(
         else:
             table.add_row(str(index), entry_id, "[red]Missing entry[/red]", "—")
     console.print(table)
-
-
-def _find_entry_by_id(project_root: Path, search_id: str) -> tuple[Entry, list[str]]:
-    """Find an entry by ID with partial matching and return release versions."""
-    # Collect all entries (unreleased and released)
-    entries = list(iter_entries(project_root))
-    entry_map = {entry.entry_id: entry for entry in entries}
-    released_entries = collect_release_entries(project_root)
-    for eid, entry in released_entries.items():
-        if eid not in entry_map:
-            entry_map[eid] = entry
-
-    # Build release index to know which releases contain this entry
-    release_index = build_entry_release_index(project_root, project=None)
-
-    # Try exact match first
-    if search_id in entry_map:
-        entry = entry_map[search_id]
-        versions = release_index.get(entry.entry_id, [])
-        return entry, versions
-
-    # Try partial match
-    matches = [(eid, entry) for eid, entry in entry_map.items() if search_id in eid]
-
-    if not matches:
-        raise click.ClickException(
-            f"No entry found matching '{search_id}'. "
-            "Use 'tenzir-changelog show' to list all entries."
-        )
-
-    if len(matches) > 1:
-        match_ids = [eid for eid, _ in matches]
-        raise click.ClickException(
-            f"Multiple entries match '{search_id}':\n  "
-            + "\n  ".join(match_ids)
-            + "\n\nPlease be more specific."
-        )
-
-    entry_id, entry = matches[0]
-    versions = release_index.get(entry_id, [])
-    return entry, versions
 
 
 def _render_single_entry(entry: Entry, release_versions: list[str]) -> None:
@@ -762,6 +739,100 @@ def list_entries(
 
     entries = _filter_entries_by_project(entries, projects, config.id)
     _render_entries(entries, release_index, config, show_banner=banner)
+
+
+@cli.command("show")
+@click.argument("identifiers", nargs=-1, required=True)
+@click.pass_obj
+def show(ctx: CLIContext, identifiers: tuple[str, ...]) -> None:
+    """Show detailed view of changelog entries.
+
+    IDENTIFIERS can be:
+    - Row numbers from 'list' command (e.g., 1, 2, 3)
+    - Entry IDs, partial or full (e.g., configure, configure-export-style-defaults)
+    - Version numbers (e.g., v0.2.0) to show all entries in that release
+
+    Examples:
+      tenzir-changelog show 1           # Show entry #1
+      tenzir-changelog show 1 2 3       # Show entries #1, #2, and #3
+      tenzir-changelog show configure   # Show entry matching 'configure'
+      tenzir-changelog show v0.2.0      # Show all entries in v0.2.0
+    """
+    project_root = ctx.project_root
+
+    # Collect all entries (unreleased and released)
+    entries = list(iter_entries(project_root))
+    entry_map = {entry.entry_id: entry for entry in entries}
+    released_entries = collect_release_entries(project_root)
+    for eid, entry in released_entries.items():
+        if eid not in entry_map:
+            entry_map[eid] = entry
+
+    # Sort entries to match list order
+    sorted_entries = sort_entries_desc(list(entry_map.values()))
+
+    # Build release index
+    release_index = build_entry_release_index(project_root, project=None)
+
+    # Process each identifier
+    for identifier in identifiers:
+        # Try parsing as row number
+        try:
+            row_num = int(identifier)
+            if 1 <= row_num <= len(sorted_entries):
+                entry = sorted_entries[row_num - 1]
+                versions = release_index.get(entry.entry_id, [])
+                _render_single_entry(entry, versions)
+                continue
+            else:
+                raise click.ClickException(
+                    f"Row number {row_num} is out of range. Valid range: 1-{len(sorted_entries)}"
+                )
+        except ValueError:
+            pass  # Not an integer, continue to other matchers
+
+        # Try matching as version
+        if identifier.startswith("v") or identifier.startswith("V"):
+            manifests = [m for m in iter_release_manifests(project_root) if m.version == identifier]
+            if manifests:
+                # Show all entries from this release
+                manifest = manifests[0]
+                for entry_id in manifest.entries:
+                    found_entry = entry_map.get(entry_id)
+                    if found_entry:
+                        versions = release_index.get(entry_id, [])
+                        _render_single_entry(found_entry, versions)
+                continue
+            else:
+                raise click.ClickException(f"Release '{identifier}' not found.")
+
+        # Try matching as entry ID (exact or partial)
+        exact_match = entry_map.get(identifier)
+        if exact_match:
+            versions = release_index.get(identifier, [])
+            _render_single_entry(exact_match, versions)
+            continue
+
+        # Partial match
+        matches = [(eid, entry) for eid, entry in entry_map.items() if identifier in eid]
+
+        if not matches:
+            raise click.ClickException(
+                f"No entry found matching '{identifier}'. "
+                "Use 'tenzir-changelog list' to see all entries."
+            )
+
+        if len(matches) > 1:
+            match_ids = [eid for eid, _ in matches]
+            raise click.ClickException(
+                f"Multiple entries match '{identifier}':\n  "
+                + "\n  ".join(match_ids)
+                + "\n\nPlease be more specific or use a row number."
+            )
+
+        entry_id, entry = matches[0]
+        versions = release_index.get(entry_id, [])
+        _render_single_entry(entry, versions)
 
 
 def _prompt_entry_body(initial: str = "") -> str:

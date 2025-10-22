@@ -7,22 +7,35 @@ authors:
 created: 2025-10-22
 ---
 
-Display detailed information for a single changelog entry using the new `--entry` flag.
+Simplify viewing changelog entries with row numbers and a redesigned command structure.
 
-The `show` command now accepts an `--entry` option that displays a specific changelog entry with:
-- Metadata (entry ID, type, creation date, authors, PRs)
-- Release status (unreleased or which versions it appears in)
-- Formatted markdown body with syntax highlighting
-
-The flag supports partial matching, so you can use shortened entry IDs:
+The `show` command has been renamed to `list` for listing entries in table format,
+and a new `show` command displays detailed entry views. The `list` command now includes
+row numbers in a `#` column, making it easy to reference specific entries:
 
 ```sh
-# Full entry ID
-tenzir-changelog show --entry configure-export-style-defaults
+# List all entries with row numbers
+$ tenzir-changelog list
+┏━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ # ┃ Date       ┃ Version ┃ Title           ┃ Type ┃
+┡━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ 1 │ 2025-10-22 │ —       │ Configure exp…  │  🌟  │
+│ 2 │ 2025-10-22 │ —       │ Show individ…   │  🌟  │
+│ 3 │ 2025-10-21 │ v0.2.0  │ Streamline r…   │  🔧  │
+└───┴────────────┴─────────┴─────────────────┴──────┘
 
-# Partial match (matches unique substring)
-tenzir-changelog show --entry configure
+# Show entry by row number (simplest)
+$ tenzir-changelog show 2
+
+# Show multiple entries
+$ tenzir-changelog show 1 2 5
+
+# Show by entry ID (partial or full)
+$ tenzir-changelog show configure
+
+# Show all entries from a release
+$ tenzir-changelog show v0.2.0
 ```
 
-This makes it easy to review individual entries before releasing or to reference
-specific changes.
+The detailed view displays metadata, release status, and formatted markdown body
+with syntax highlighting in a unified panel layout.
