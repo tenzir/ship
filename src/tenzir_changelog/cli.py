@@ -449,6 +449,7 @@ def _render_entries(
             "num",
             column_specs,
             style="dim",
+            justify="right",
             overflow_default="fold",
             no_wrap_default=True,
         )
