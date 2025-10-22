@@ -58,6 +58,43 @@ ENTRY_TYPE_EMOJIS = {
     "bugfix": "🐞",
     "change": "🔧",
 }
+
+
+def _command_help_text(
+    summary: str,
+    command_name: str,
+    verb: str,
+    row_hint: str,
+    version_hint: str,
+    indent: str = "    ",
+) -> str:
+    """Build consistent help text for commands that accept identifiers."""
+    verb_title = verb.capitalize()
+    body = textwrap.dedent(
+        f"""\
+        IDENTIFIERS can be:
+
+        \b
+        - {row_hint}
+        - Entry IDs, partial or full (e.g., configure,
+          configure-export-style-defaults)
+        - Version numbers (e.g., v0.2.0) {version_hint}
+
+        Examples:
+
+        \b
+          tenzir-changelog {command_name} 1           # {verb_title} entry #1
+          tenzir-changelog {command_name} 1 2 3       # {verb_title} entries #1, #2, and #3
+          tenzir-changelog {command_name} configure   # {verb_title} entry matching 'configure'
+          tenzir-changelog {command_name} v0.2.0      # {verb_title} all entries in v0.2.0
+        """
+    ).strip()
+    lines = [summary, ""]
+    for segment in body.splitlines():
+        lines.append(f"{indent}{segment}" if segment else "")
+    return "\n".join(lines)
+
+
 ENTRY_TYPE_CHOICES = (
     ("feature", "1"),
     ("bugfix", "2"),
@@ -708,19 +745,7 @@ def list_entries(
     since_version: Optional[str],
     banner: bool,
 ) -> None:
-    """List changelog entries in a table.
-
-    IDENTIFIERS can be:
-    - Row numbers (e.g., 1, 2, 3) to list specific entries
-    - Entry IDs, partial or full (e.g., configure) to filter by ID
-    - Version numbers (e.g., v0.2.0) to list entries in that release
-
-    Examples:
-      tenzir-changelog list             # List all entries
-      tenzir-changelog list 1 2 3       # List entries #1, #2, and #3
-      tenzir-changelog list configure   # List entries matching 'configure'
-      tenzir-changelog list v0.2.0      # List all entries in v0.2.0
-    """
+    """List changelog entries in a table."""
     config = ctx.ensure_config()
     project_root = ctx.project_root
     projects = set(project_filter)
@@ -830,24 +855,7 @@ def list_entries(
 @click.argument("identifiers", nargs=-1, required=True)
 @click.pass_obj
 def show(ctx: CLIContext, identifiers: tuple[str, ...]) -> None:
-    """Show detailed view of changelog entries.
-
-    IDENTIFIERS can be:
-
-    \b
-    - Row numbers from 'list' command (e.g., 1, 2, 3)
-    - Entry IDs, partial or full (e.g., configure,
-      configure-export-style-defaults)
-    - Version numbers (e.g., v0.2.0) to show all entries in that release
-
-    Examples:
-
-    \b
-      tenzir-changelog show 1           # Show entry #1
-      tenzir-changelog show 1 2 3       # Show entries #1, #2, and #3
-      tenzir-changelog show configure   # Show entry matching 'configure'
-      tenzir-changelog show v0.2.0      # Show all entries in v0.2.0
-    """
+    """Show detailed view of changelog entries."""
     project_root = ctx.project_root
 
     # Collect all entries (unreleased and released)
@@ -923,6 +931,31 @@ def show(ctx: CLIContext, identifiers: tuple[str, ...]) -> None:
         entry_id, entry = matches[0]
         versions = release_index.get(entry_id, [])
         _render_single_entry(entry, versions)
+
+
+LIST_COMMAND_SUMMARY = "List changelog entries in a table."
+list_entries_help = _command_help_text(
+    summary=LIST_COMMAND_SUMMARY,
+    command_name="list",
+    verb="list",
+    row_hint="Row numbers (e.g., 1, 2, 3) to list specific entries",
+    version_hint="to list entries in that release",
+)
+list_entries.__doc__ = list_entries_help
+list_entries.help = list_entries_help
+list_entries.short_help = LIST_COMMAND_SUMMARY
+
+SHOW_COMMAND_SUMMARY = "Show detailed view of changelog entries."
+show_help = _command_help_text(
+    summary=SHOW_COMMAND_SUMMARY,
+    command_name="show",
+    verb="show",
+    row_hint="Row numbers from the 'list' command (e.g., 1, 2, 3)",
+    version_hint="to show all entries in that release",
+)
+show.__doc__ = show_help
+show.help = show_help
+show.short_help = SHOW_COMMAND_SUMMARY
 
 
 def _prompt_entry_body(initial: str = "") -> str:
