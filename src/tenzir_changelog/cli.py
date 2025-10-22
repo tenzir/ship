@@ -661,7 +661,7 @@ def _render_single_entry(entry: Entry, release_versions: list[str]) -> None:
     # Build the markdown body
     body_content: RenderableType
     if entry.body.strip():
-        body_content = Markdown(entry.body.strip())
+        body_content = Markdown(entry.body.strip(), code_theme="ansi_light")
     else:
         body_content = Text("No description provided.", style="dim")
 

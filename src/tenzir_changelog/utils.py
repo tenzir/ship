@@ -9,8 +9,17 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
+from rich.style import Style
+from rich.theme import Theme
 
-console = Console()
+console = Console(
+    theme=Theme(
+        {
+            "markdown.code": Style(bold=True, color="cyan"),
+            "markdown.code_block": Style(color="cyan"),
+        }
+    )
+)
 
 
 def coerce_date(value: object) -> Optional[date]:
