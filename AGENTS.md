@@ -53,7 +53,8 @@
 - Always begin with one sentence or paragraph that concisely describes the
   change.
 - If helpful, add examples of how to use a the new feature or how to fix the
-  bug.
+  bug. A changelog entry can have multiple paragraphs and should read like a
+  concise micro-blog post that spotlights the change.
 
 ## Commit & Pull Request Guidelines
 
