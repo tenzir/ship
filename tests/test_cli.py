@@ -56,6 +56,24 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     )
     assert add_result.exit_code == 0, add_result.output
 
+    add_breaking = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(workspace_root),
+            "add",
+            "--title",
+            "Remove legacy API",
+            "--type",
+            "breaking",
+            "--description",
+            "Removes the deprecated ingest API to prepare for v1.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_breaking.exit_code == 0, add_breaking.output
+
     add_bugfix = runner.invoke(
         cli,
         [
@@ -80,7 +98,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
 
     entries_dir = workspace_root / "unreleased"
     entry_files = sorted(entries_dir.glob("*.md"))
-    assert len(entry_files) == 2
+    assert len(entry_files) == 3
 
     feature_entry = entries_dir / "exciting-feature.md"
     assert feature_entry.exists()
@@ -91,6 +109,12 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     parsed_entry = read_entry(feature_entry)
     assert isinstance(parsed_entry.metadata["created"], date)
     assert parsed_entry.created_at == parsed_entry.metadata["created"]
+
+    breaking_entry = entries_dir / "remove-legacy-api.md"
+    assert breaking_entry.exists()
+    breaking_text = breaking_entry.read_text(encoding="utf-8")
+    assert "type: breaking" in breaking_text
+    assert "Removes the deprecated ingest API to prepare for v1." in breaking_text
 
     bugfix_entry = entries_dir / "fix-ingest-crash.md"
     assert bugfix_entry.exists()
@@ -128,9 +152,21 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     first_line = release_text.lstrip().splitlines()[0]
     assert first_line == "First stable release.", release_text
     assert "First stable release." in release_text
+    assert "## 💥 Breaking changes" in release_text
+    assert (
+        "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1."
+        in release_text
+    )
     assert "- **Exciting Feature**: Adds an exciting capability." in release_text
     assert (
         "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire." in release_text
+    )
+    assert "## 🌟 Features" in release_text
+    assert "## 🐞 Bug fixes" in release_text
+    assert (
+        release_text.index("## 💥 Breaking changes")
+        < release_text.index("## 🌟 Features")
+        < release_text.index("## 🐞 Bug fixes")
     )
     assert "![Image](assets/hero.png)" in release_text
 
@@ -142,11 +178,13 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert "description" not in manifest_data
     assert "title" not in manifest_data
     assert "exciting-feature" in manifest_data["entries"]
+    assert "remove-legacy-api" in manifest_data["entries"]
     assert "fix-ingest-crash" in manifest_data["entries"]
 
     release_entries_dir = release_dir / "entries"
     assert release_entries_dir.is_dir()
     assert (release_entries_dir / "exciting-feature.md").exists()
+    assert (release_entries_dir / "remove-legacy-api.md").exists()
     assert (release_entries_dir / "fix-ingest-crash.md").exists()
     assert not any(entries_dir.iterdir())
 
@@ -178,6 +216,7 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     release_plain = click.utils.strip_ansi(release_list.output)
     assert "Included Entries" in release_plain
     assert "exciting-feature" in release_plain
+    assert "remove-legacy-api" in release_plain
     assert "fix-ingest-crash" in release_plain
 
     show_md = runner.invoke(
@@ -192,12 +231,17 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         ],
     )
     assert show_md.exit_code == 0, show_md.output
+    assert "## 💥 Breaking changes" in show_md.output
     assert "## 🌟 Features" in show_md.output
+    assert "### Remove legacy API" in show_md.output
+    assert "By [codex](https://github.com/codex)" in show_md.output
     assert "### Exciting Feature" in show_md.output
     assert "By [octocat](https://github.com/octocat)" in show_md.output
     assert "in #42" in show_md.output
     assert "### Fix ingest crash" in show_md.output
     assert "#102" in show_md.output and "#115" in show_md.output
+    assert show_md.output.index("## 💥 Breaking changes") < show_md.output.index("## 🌟 Features")
+    assert show_md.output.index("## 🌟 Features") < show_md.output.index("## 🐞 Bug fixes")
 
     show_md_plain = runner.invoke(
         cli,
@@ -212,9 +256,17 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         ],
     )
     assert show_md_plain.exit_code == 0, show_md_plain.output
+    assert "## Breaking changes" in show_md_plain.output
     assert "## Features" in show_md_plain.output
+    assert "### Remove legacy API" in show_md_plain.output
     assert "### Exciting Feature" in show_md_plain.output
     assert "### Fix ingest crash" in show_md_plain.output
+    assert "## Bug fixes" in show_md_plain.output
+    assert show_md_plain.output.index("## Breaking changes") < show_md_plain.output.index(
+        "## Features"
+    )
+    assert show_md_plain.output.index("## Features") < show_md_plain.output.index("## Bug fixes")
+    assert "💥" not in show_md_plain.output
     assert "🌟" not in show_md_plain.output
     assert "🐞" not in show_md_plain.output
 
@@ -231,12 +283,22 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         ],
     )
     assert show_compact.exit_code == 0, show_compact.output
+    assert "## 💥 Breaking changes" in show_compact.output
     assert "## 🌟 Features" in show_compact.output
+    assert "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1." in (
+        show_compact.output
+    )
     assert "- **Exciting Feature**: Adds an exciting capability." in show_compact.output
     assert "## 🐞 Bug fixes" in show_compact.output
     assert (
         "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire."
         in show_compact.output
+    )
+    assert show_compact.output.index("## 💥 Breaking changes") < show_compact.output.index(
+        "## 🌟 Features"
+    )
+    assert show_compact.output.index("## 🌟 Features") < show_compact.output.index(
+        "## 🐞 Bug fixes"
     )
 
     show_compact_plain = runner.invoke(
@@ -253,11 +315,23 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
         ],
     )
     assert show_compact_plain.exit_code == 0, show_compact_plain.output
+    assert "## Breaking changes" in show_compact_plain.output
     assert "## Features" in show_compact_plain.output
+    assert "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1." in (
+        show_compact_plain.output
+    )
     assert "- **Exciting Feature**: Adds an exciting capability." in show_compact_plain.output
     assert "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire." in (
         show_compact_plain.output
     )
+    assert "## Bug fixes" in show_compact_plain.output
+    assert show_compact_plain.output.index("## Breaking changes") < show_compact_plain.output.index(
+        "## Features"
+    )
+    assert show_compact_plain.output.index("## Features") < show_compact_plain.output.index(
+        "## Bug fixes"
+    )
+    assert "💥" not in show_compact_plain.output
     assert "🌟" not in show_compact_plain.output
     assert "🐞" not in show_compact_plain.output
 
@@ -277,6 +351,13 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     payload = json.loads(show_json.output)
     assert payload["version"] == "v1.0.0"
     assert payload["project"] == "node"
+    assert len(payload["entries"]) == 3
+    breaking_entry = payload["entries"][0]
+    assert breaking_entry["title"] == "Remove legacy API"
+    assert breaking_entry["type"] == "breaking"
+    assert "v1.0.0" in breaking_entry["versions"]
+    assert breaking_entry["authors"] == ["codex"]
+    assert breaking_entry.get("excerpt") == "Removes the deprecated ingest API to prepare for v1."
     feature_entry = next(
         entry for entry in payload["entries"] if entry["title"] == "Exciting Feature"
     )
@@ -309,11 +390,14 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     )
     assert show_json_plain.exit_code == 0, show_json_plain.output
     payload_plain = json.loads(show_json_plain.output)
+    assert payload_plain["entries"][0]["title"] == "Remove legacy API"
+    assert payload_plain["entries"][0]["type"] == "breaking"
     plain_feature = next(
         entry for entry in payload_plain["entries"] if entry["title"] == "Exciting Feature"
     )
     assert plain_feature["prs"] == [42]
     assert all("🌟" not in entry["title"] for entry in payload_plain["entries"])
+    assert all("💥" not in entry["title"] for entry in payload_plain["entries"])
 
     validate_result = runner.invoke(
         cli,

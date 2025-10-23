@@ -1,6 +1,6 @@
 ---
 title: Show individual changelog entries
-type: feature
+type: breaking
 authors:
 - mavam
 - claude

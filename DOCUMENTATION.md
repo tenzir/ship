@@ -83,8 +83,8 @@ to `config.yaml`) and `--root` to operate on another repository.
 
 - **`tenzir-changelog add`**
 Create a new change entry in `unreleased/`. Highlights:
-  - Prompts for change type (`feature`, `bugfix`, `change`) with one-key shortcuts
-    (`1`, `2`, `3`), the project, summary, and detailed notes
+  - Prompts for change type (`breaking`, `feature`, `bugfix`, `change`) with one-key shortcuts
+    (`0`, `1`, `2`, `3`), the project, summary, and detailed notes
   - Auto-detects authors, PR number, title, and body via `gh` or the GitHub API
     (requires `GITHUB_TOKEN` when the repository is private)
   - Supports `--web` mode to open a prefilled GitHub file creation URL for
@@ -113,7 +113,7 @@ Create a new change entry in `unreleased/`. Highlights:
 - **Project:** Identifies which documentation stream the changelog belongs to.
   Every entry and release references the same project string.
 - **Entry:** A changelog consists of a set of entries. Each entry uses one of
-  three hard-coded types—`feature`, `bugfix`, or `change`.
+  four hard-coded types—`breaking`, `feature`, `bugfix`, or `change`.
 - **Configuration File:** Settings live in `config.yaml` by default. The file
   captures repository metadata, the single project name, GitHub repository
   slugs, and any other instance-specific options (such as preferred intro
@@ -235,7 +235,7 @@ stores a `prs:` list in the generated frontmatter automatically.
 
    ![Release Overview](images/release-overview.png)
 
-   We cover highlights, upgrades, and fixes below.
+     We cover breaking changes, highlights, upgrades, and fixes below.
    ```
 
 5. **Cut the release:**  
@@ -259,7 +259,7 @@ stores a `prs:` list in the generated frontmatter automatically.
 
        ![Release Overview](images/release-overview.png)
 
-       We cover highlights, upgrades, and fixes below.
+       We cover breaking changes, highlights, upgrades, and fixes below.
      ```
    - `notes.md` stitches together the description, intro, and generated sections:
      ```markdown
@@ -269,7 +269,11 @@ stores a `prs:` list in the generated frontmatter automatically.
 
      ![Release Overview](images/release-overview.png)
 
-     We cover highlights, upgrades, and fixes below.
+     We cover breaking changes, highlights, upgrades, and fixes below.
+
+     ## Breaking changes
+
+     - **Remove legacy ingest API**: Drops the deprecated endpoints in favor of the stable flow.
 
      ## Features
 

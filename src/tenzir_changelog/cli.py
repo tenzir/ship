@@ -49,11 +49,13 @@ from .utils import console, extract_excerpt, guess_git_remote, slugify
 
 INFO_PREFIX = "\033[94;1mi\033[0m "
 ENTRY_TYPE_STYLES = {
+    "breaking": "bold red",
     "feature": "green",
     "bugfix": "red",
     "change": "blue",
 }
 ENTRY_TYPE_EMOJIS = {
+    "breaking": "💥",
     "feature": "🌟",
     "bugfix": "🐞",
     "change": "🔧",
@@ -107,11 +109,18 @@ def _command_help_text(
 
 
 ENTRY_TYPE_CHOICES = (
+    ("breaking", "0"),
     ("feature", "1"),
     ("bugfix", "2"),
     ("change", "3"),
 )
 ENTRY_TYPE_SHORTCUTS = {
+    "breaking changes": "breaking",
+    "breaking": "breaking",
+    "break": "breaking",
+    "bc": "breaking",
+    "br": "breaking",
+    "0": "breaking",
     "feature": "feature",
     "f": "feature",
     "1": "feature",
@@ -122,13 +131,14 @@ ENTRY_TYPE_SHORTCUTS = {
     "c": "change",
     "3": "change",
 }
-DEFAULT_ENTRY_TYPE = ENTRY_TYPES[0]
+DEFAULT_ENTRY_TYPE = "feature"
 TYPE_SECTION_TITLES = {
+    "breaking": "Breaking changes",
     "feature": "Features",
     "change": "Changes",
     "bugfix": "Bug fixes",
 }
-ENTRY_EXPORT_ORDER = ("feature", "change", "bugfix")
+ENTRY_EXPORT_ORDER = ("breaking", "feature", "change", "bugfix")
 UNRELEASED_IDENTIFIER = "unreleased"
 DASH_IDENTIFIER = "-"
 
@@ -1666,6 +1676,16 @@ def _export_json_payload(
     *,
     compact: bool = False,
 ) -> dict[str, object]:
+    entries_by_type: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        entries_by_type.setdefault(entry_type, []).append(entry)
+    ordered_entries: list[Entry] = []
+    for type_key in ENTRY_EXPORT_ORDER:
+        ordered_entries.extend(entries_by_type.pop(type_key, []))
+    for remaining in entries_by_type.values():
+        ordered_entries.extend(remaining)
+
     data: dict[str, object] = {}
     if manifest:
         data.update(
@@ -1688,7 +1708,7 @@ def _export_json_payload(
             }
         )
     payload_entries = []
-    for entry in entries:
+    for entry in ordered_entries:
         versions = list(release_index.get(entry.entry_id, []))
         if manifest and manifest.version and manifest.version not in versions:
             versions.append(manifest.version)

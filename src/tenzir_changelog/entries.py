@@ -12,7 +12,7 @@ import yaml
 from .utils import coerce_date, slugify
 
 UNRELEASED_DIR = Path("unreleased")
-ENTRY_TYPES = ("feature", "bugfix", "change")
+ENTRY_TYPES = ("breaking", "feature", "bugfix", "change")
 
 
 @dataclass

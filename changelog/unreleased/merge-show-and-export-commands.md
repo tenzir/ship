@@ -1,6 +1,6 @@
 ---
 title: Merge show and export commands
-type: change
+type: breaking
 authors:
 - codex
 created: 2025-10-22
