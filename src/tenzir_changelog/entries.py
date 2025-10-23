@@ -13,6 +13,8 @@ from .utils import coerce_date, slugify
 
 UNRELEASED_DIR = Path("unreleased")
 ENTRY_TYPES = ("breaking", "feature", "bugfix", "change")
+ENTRY_PREFIX_WIDTH = 4
+ENTRY_FILENAME_SEPARATOR = "-"
 
 
 @dataclass
@@ -23,6 +25,7 @@ class Entry:
     metadata: dict[str, Any]
     body: str
     path: Path
+    sequence: int
 
     @property
     def title(self) -> str:
@@ -72,7 +75,36 @@ def read_entry(path: Path) -> Entry:
     metadata = yaml.safe_load(frontmatter) or {}
     _normalize_created_metadata(metadata)
     entry_id = path.stem
-    return Entry(entry_id=entry_id, metadata=metadata, body=body.strip(), path=path)
+    sequence = _parse_entry_sequence(entry_id)
+    return Entry(
+        entry_id=entry_id,
+        metadata=metadata,
+        body=body.strip(),
+        path=path,
+        sequence=sequence,
+    )
+
+
+def _parse_entry_sequence(entry_id: str) -> int:
+    """Extract the numeric prefix from an entry identifier."""
+    if ENTRY_FILENAME_SEPARATOR in entry_id:
+        prefix, _ = entry_id.split(ENTRY_FILENAME_SEPARATOR, 1)
+    else:
+        prefix = entry_id
+    if not prefix.isdigit():
+        raise ValueError(f"Entry id '{entry_id}' must start with a numeric prefix.")
+    if len(prefix) < ENTRY_PREFIX_WIDTH:
+        raise ValueError(f"Entry id '{entry_id}' must use at least {ENTRY_PREFIX_WIDTH} digits.")
+    return int(prefix)
+
+
+def _next_entry_sequence(directory: Path) -> int:
+    """Return the next sequence number for the given entry directory."""
+    max_sequence = 0
+    for path in directory.glob("*.md"):
+        existing_sequence = _parse_entry_sequence(path.stem)
+        max_sequence = max(max_sequence, existing_sequence)
+    return max_sequence + 1 if max_sequence else 1
 
 
 def iter_entries(project_root: Path) -> Iterable[Entry]:
@@ -84,30 +116,27 @@ def iter_entries(project_root: Path) -> Iterable[Entry]:
         yield read_entry(path)
 
 
-def _entry_sort_key(entry: Entry) -> tuple[date, float, str]:
+def _entry_sort_key(entry: Entry) -> tuple[int, str]:
     """Return a tuple for deterministic entry ordering."""
-    created = entry.created_at or date.min
-    try:
-        modified = entry.path.stat().st_mtime
-    except OSError:
-        modified = float("-inf")
-    return created, modified, entry.entry_id
+    return entry.sequence, entry.entry_id
 
 
 def sort_entries_desc(entries: Iterable[Entry]) -> list[Entry]:
-    """Return entries sorted reverse chronologically with same-day ordering."""
+    """Return entries sorted from highest to lowest numeric prefix."""
     return sorted(entries, key=_entry_sort_key, reverse=True)
 
 
-def generate_entry_id(seed: Optional[str] = None) -> str:
-    """Generate a deterministic-ish entry id based on optional seed."""
+def generate_entry_id(sequence: int, seed: Optional[str] = None) -> str:
+    """Generate a numeric-prefixed entry id based on optional seed."""
+    if sequence < 10**ENTRY_PREFIX_WIDTH:
+        prefix = f"{sequence:0{ENTRY_PREFIX_WIDTH}d}"
+    else:
+        prefix = str(sequence)
     if seed:
         slug = slugify(seed)
         if slug:
-            return slug[:80]
-    import secrets
-
-    return secrets.token_hex(6)
+            return f"{prefix}{ENTRY_FILENAME_SEPARATOR}{slug[:80]}"
+    return prefix
 
 
 def _coerce_project(value: Any, *, source: str) -> Optional[str]:
@@ -212,20 +241,28 @@ def write_entry(
     project_value = normalize_project(metadata, default=default_project)
     if default_project is not None and project_value == default_project:
         metadata.pop("project", None)
-    entry_id = entry_id or generate_entry_id(metadata.get("title"))
-    path = directory / f"{entry_id}.md"
-
-    if path.exists():
-        base = entry_id
-        counter = 1
-        while True:
-            candidate = f"{base}-{counter}"
-            candidate_path = directory / f"{candidate}.md"
-            if not candidate_path.exists():
-                entry_id = candidate
-                path = candidate_path
-                break
-            counter += 1
+    if entry_id is None:
+        sequence = _next_entry_sequence(directory)
+        entry_id = generate_entry_id(sequence, metadata.get("title"))
+        path = directory / f"{entry_id}.md"
+        while path.exists():
+            sequence += 1
+            entry_id = generate_entry_id(sequence, metadata.get("title"))
+            path = directory / f"{entry_id}.md"
+    else:
+        _parse_entry_sequence(entry_id)
+        path = directory / f"{entry_id}.md"
+        if path.exists():
+            base = entry_id
+            counter = 1
+            while True:
+                candidate = f"{base}-{counter}"
+                candidate_path = directory / f"{candidate}.md"
+                if not candidate_path.exists():
+                    entry_id = candidate
+                    path = candidate_path
+                    break
+                counter += 1
 
     _normalize_created_metadata(metadata, default_today=True)
     frontmatter = format_frontmatter(metadata)

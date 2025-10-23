@@ -100,8 +100,11 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     entry_files = sorted(entries_dir.glob("*.md"))
     assert len(entry_files) == 3
 
-    feature_entry = entries_dir / "exciting-feature.md"
-    assert feature_entry.exists()
+    feature_entry_matches = list(entries_dir.glob("*-exciting-feature.md"))
+    assert feature_entry_matches
+    feature_entry = feature_entry_matches[0]
+    assert feature_entry.stem.split("-", 1)[0].isdigit()
+    assert len(feature_entry.stem.split("-", 1)[0]) >= 4
     entry_text = feature_entry.read_text(encoding="utf-8")
     assert "created:" in entry_text
     assert "pr: 42" in entry_text
@@ -110,14 +113,16 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert isinstance(parsed_entry.metadata["created"], date)
     assert parsed_entry.created_at == parsed_entry.metadata["created"]
 
-    breaking_entry = entries_dir / "remove-legacy-api.md"
-    assert breaking_entry.exists()
+    breaking_entry_matches = list(entries_dir.glob("*-remove-legacy-api.md"))
+    assert breaking_entry_matches
+    breaking_entry = breaking_entry_matches[0]
     breaking_text = breaking_entry.read_text(encoding="utf-8")
     assert "type: breaking" in breaking_text
     assert "Removes the deprecated ingest API to prepare for v1." in breaking_text
 
-    bugfix_entry = entries_dir / "fix-ingest-crash.md"
-    assert bugfix_entry.exists()
+    bugfix_entry_matches = list(entries_dir.glob("*-fix-ingest-crash.md"))
+    assert bugfix_entry_matches
+    bugfix_entry = bugfix_entry_matches[0]
     bugfix_text = bugfix_entry.read_text(encoding="utf-8")
     assert "prs:" in bugfix_text
     assert "- 102" in bugfix_text and "- 115" in bugfix_text
@@ -174,21 +179,22 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert "![Image](assets/hero.png)" in release_text
 
     manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    assert manifest_data["version"] == "v1.0.0"
+    assert "version" not in manifest_data
     assert isinstance(manifest_data["created"], date)
-    assert "entries" in manifest_data
+    assert "entries" not in manifest_data
     assert "project" not in manifest_data
     assert "description" not in manifest_data
     assert "title" not in manifest_data
-    assert "exciting-feature" in manifest_data["entries"]
-    assert "remove-legacy-api" in manifest_data["entries"]
-    assert "fix-ingest-crash" in manifest_data["entries"]
 
     release_entries_dir = release_dir / "entries"
     assert release_entries_dir.is_dir()
-    assert (release_entries_dir / "exciting-feature.md").exists()
-    assert (release_entries_dir / "remove-legacy-api.md").exists()
-    assert (release_entries_dir / "fix-ingest-crash.md").exists()
+    assert list(release_entries_dir.glob("*-exciting-feature.md"))
+    assert list(release_entries_dir.glob("*-remove-legacy-api.md"))
+    assert list(release_entries_dir.glob("*-fix-ingest-crash.md"))
+    release_entry_stems = {path.stem for path in release_entries_dir.glob("*.md")}
+    assert any(stem.endswith("exciting-feature") for stem in release_entry_stems)
+    assert any(stem.endswith("remove-legacy-api") for stem in release_entry_stems)
+    assert any(stem.endswith("fix-ingest-crash") for stem in release_entry_stems)
     assert not any(entries_dir.iterdir())
 
     list_result = runner.invoke(

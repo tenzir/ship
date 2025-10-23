@@ -65,6 +65,9 @@ Add an entry for every notable change (files land in `changelog/unreleased/`):
 uv run tenzir-changelog --root changelog add --title "Describe the change"
 ```
 
+The CLI issues sequential filenames like `0001-describe-the-change.md`, so
+entries always sort chronologically by their numeric prefix.
+
 Use `release create` when drafting release manifests. The command writes the
 release notes to `releases/<version>/README.md`, moves all unreleased entries
 into that directory, and leaves `unreleased/` ready for the next cycle. Run

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable as IterableCollection
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -70,16 +69,6 @@ def _parse_created_date(raw_value: object | None) -> date:
     return date.fromisoformat(str(raw_value))
 
 
-def _normalize_entries_field(raw_value: object | None) -> list[str]:
-    if raw_value is None:
-        return []
-    if isinstance(raw_value, str):
-        return [raw_value]
-    if isinstance(raw_value, IterableCollection):
-        return [str(item) for item in raw_value]
-    return [str(raw_value)]
-
-
 def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
     """Yield release manifests from disk."""
     directory = release_directory(project_root)
@@ -94,7 +83,6 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         raw_description = str(data.get("description", "") or "").strip()
         raw_intro = str(data.get("intro", "") or "").strip()
         created_value = _parse_created_date(data.get("created"))
-        entries_value = _normalize_entries_field(data.get("entries"))
 
         version_value = data.get("version") or path.parent.name
 
@@ -105,12 +93,14 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         manifest = ReleaseManifest(
             version=str(version_value),
             created=created_value,
-            entries=entries_value,
             title=title_value,
             description=raw_description,
             intro=raw_intro or None,
             path=path,
         )
+        entries_dir = path.parent / "entries"
+        entry_files = sorted(entries_dir.glob("*.md"))
+        manifest.entries = [entry_file.stem for entry_file in entry_files]
         if not manifest.description:
             summary = _extract_release_summary(
                 _manifest_root(project_root, manifest) / NOTES_FILENAME
@@ -150,9 +140,7 @@ def write_release_manifest(
     if manifest_path.exists():
         raise FileExistsError(f"Release manifest {manifest_path} already exists")
     payload: dict[str, object] = {
-        "version": manifest.version,
         "created": manifest.created,
-        "entries": list(manifest.entries),
     }
     if manifest.intro:
         payload["intro"] = manifest.intro

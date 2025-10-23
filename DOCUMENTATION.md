@@ -91,17 +91,20 @@ Create a new change entry in `unreleased/`. Highlights:
     contributors without local write access
   - Enforces naming conventions, validates required frontmatter, and can append
     changelog fragments to an existing draft entry
+  - Assigns globally sequential filenames with four-digit numeric prefixes,
+    e.g., `0012-improve-help-formatting.md`, so lexicographic order matches the
+    changelog chronology even after edits
 
 - **`tenzir-changelog release <version>`**
-  Assemble a release manifest under `releases/` that lists all unused entry IDs
-  for the configured project in `config.yaml`. Release metadata lands in
-  `releases/<version>/manifest.yaml`, Markdown notes render in `notes.md`, and
-  the command moves every file from `unreleased/` into
-  `releases/<version>/entries/` so the release assets travel together. Accepts
-  options for release title, version, description, release date, and the
-  `--compact` flag to emit bullet-point notes. You can supply additional
-  narrative via `--intro-file`, and the CLI prints the
-  manifest path plus a summary of included entries.
+  Assemble a release under `releases/` by moving every unused entry file into
+  `releases/<version>/entries/` and writing release metadata to
+  `manifest.yaml` (containing the release date and optional intro). Markdown
+  notes render in `notes.md`, while the entry directory is now the single
+  source of truth for which fragments shipped in the release. Accepts options
+  for release title, version, description, release date, and the `--compact`
+  flag to emit bullet-point notes. You can supply additional narrative via
+  `--intro-file`, and the CLI prints the manifest path plus a summary of
+  included entries.
 
 - **`tenzir-changelog validate`**
   Run structural checks across entry files, release manifests, and exported
@@ -246,14 +249,10 @@ stores a `prs:` list in the generated frontmatter automatically.
    ```
    Confirm the prompt to include all pending entries. The tool writes the release
    artifacts under `releases/v0.1.0/`:
-   - `manifest.yaml` captures metadata and references the intro snippet:
+   - `manifest.yaml` records the release date (and optional intro), while the
+     `entries/` subdirectory serves as the authoritative list of shipped files:
      ```yaml
-     version: v0.1.0
      created: 2025-10-18
-     entries:
-     - add-pipeline-builder
-     - fix-ingest-crash
-     - improve-cli-help
      intro: |-
        Welcome to the first release of the Tenzir changelog!
 

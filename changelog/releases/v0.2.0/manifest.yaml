@@ -1,12 +1,1 @@
-version: v0.2.0
 created: 2025-10-21
-entries:
-- center-type-column-emoji-labels
-- compact-export-output
-- drop-implicit-project-metadata
-- fix-logging-when-outside-project-root
-- improve-entry-table-layout
-- order-same-day-entries-by-modification-time
-- simplify-changelog-configuration
-- store-entry-creation-dates-as-date-objects
-- streamline-release-archive-layout
