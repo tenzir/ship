@@ -72,7 +72,7 @@
 
 - Write commits in the imperative with a single focus, e.g., `Support manifest
   previews`; explain motivation in the body if needed.
-- Before committing anything, always run `uv run check-release`. Fix any
-  failures before issuing the actual commit.
+- Before committing anything, even when only asked to commit, always run `uv run
+  check-release`. Fix any failures before issuing the actual commit.
 - Every PR should mention the changes from a user perspective. Copy the
   user-facing changes from the changelog entry.
