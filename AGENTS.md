@@ -56,6 +56,7 @@
 - When you implement new changes, features, or fix bugs, create a new changelog
   entry with `uv run tenzir-changelog --root changelog add ...`; do not
   hand-write changelog entry files.
+- If you are a coding agent, use your own name as author, e.g., claude or codex.
 - Focus on the user-facing impact of your changes. Do not mention internal
   implementation details.
 - Always begin with one sentence or paragraph that concisely describes the
