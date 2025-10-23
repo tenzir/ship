@@ -64,6 +64,9 @@
 - If helpful, add examples of how to use a the new feature or how to fix the
   bug. A changelog entry can have multiple paragraphs and should read like a
   concise micro-blog post that spotlights the change.
+- Make deliberate use of Markdown syntax, e.g., frame technical pieces of the
+  code base in backticks, e.g., `--option 42` or `cmd`. Use emphasis and bold
+  where it feels appropriate and improves clarity.
 
 ## Commit & Pull Request Guidelines
 
