@@ -155,11 +155,14 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert "## 💥 Breaking changes" in release_text
     assert (
         "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1."
-        in release_text
+        " (By @codex)" in release_text
     )
-    assert "- **Exciting Feature**: Adds an exciting capability." in release_text
     assert (
-        "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire." in release_text
+        "- **Exciting Feature**: Adds an exciting capability. (By @octocat in #42)" in release_text
+    )
+    assert (
+        "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire."
+        " (By @bob in #102 and #115)" in release_text
     )
     assert "## 🌟 Features" in release_text
     assert "## 🐞 Bug fixes" in release_text
@@ -234,9 +237,9 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert "## 💥 Breaking changes" in show_md.output
     assert "## 🌟 Features" in show_md.output
     assert "### Remove legacy API" in show_md.output
-    assert "By [codex](https://github.com/codex)" in show_md.output
+    assert "By @codex" in show_md.output
     assert "### Exciting Feature" in show_md.output
-    assert "By [octocat](https://github.com/octocat)" in show_md.output
+    assert "By @octocat" in show_md.output
     assert "in #42" in show_md.output
     assert "### Fix ingest crash" in show_md.output
     assert "#102" in show_md.output and "#115" in show_md.output
@@ -285,14 +288,18 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert show_compact.exit_code == 0, show_compact.output
     assert "## 💥 Breaking changes" in show_compact.output
     assert "## 🌟 Features" in show_compact.output
-    assert "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1." in (
-        show_compact.output
+    assert (
+        "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1."
+        " (By @codex)" in show_compact.output
     )
-    assert "- **Exciting Feature**: Adds an exciting capability." in show_compact.output
+    assert (
+        "- **Exciting Feature**: Adds an exciting capability."
+        " (By @octocat in #42)" in show_compact.output
+    )
     assert "## 🐞 Bug fixes" in show_compact.output
     assert (
         "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire."
-        in show_compact.output
+        " (By @bob in #102 and #115)" in show_compact.output
     )
     assert show_compact.output.index("## 💥 Breaking changes") < show_compact.output.index(
         "## 🌟 Features"
@@ -317,12 +324,17 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert show_compact_plain.exit_code == 0, show_compact_plain.output
     assert "## Breaking changes" in show_compact_plain.output
     assert "## Features" in show_compact_plain.output
-    assert "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1." in (
-        show_compact_plain.output
+    assert (
+        "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1."
+        " (By @codex)" in show_compact_plain.output
     )
-    assert "- **Exciting Feature**: Adds an exciting capability." in show_compact_plain.output
-    assert "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire." in (
-        show_compact_plain.output
+    assert (
+        "- **Exciting Feature**: Adds an exciting capability."
+        " (By @octocat in #42)" in show_compact_plain.output
+    )
+    assert (
+        "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire."
+        " (By @bob in #102 and #115)" in show_compact_plain.output
     )
     assert "## Bug fixes" in show_compact_plain.output
     assert show_compact_plain.output.index("## Breaking changes") < show_compact_plain.output.index(

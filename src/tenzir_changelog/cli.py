@@ -1222,15 +1222,15 @@ def _join_with_conjunction(items: list[str]) -> str:
     return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
-def _format_author_line(entry: Entry, config: Config) -> str:
+def _collect_author_pr_text(entry: Entry, config: Config) -> tuple[str, str]:
     metadata = entry.metadata
     authors = metadata.get("authors") or []
     if isinstance(authors, str):
         authors = [authors]
     authors = [author.strip() for author in authors if author and author.strip()]
 
-    author_links = [f"[{author}](https://github.com/{author})" for author in authors]
-    author_text = _join_with_conjunction(author_links)
+    author_handles = [f"@{author}" for author in authors]
+    author_text = _join_with_conjunction(author_handles)
 
     prs_value = metadata.get("prs")
     prs: list[int] = []
@@ -1258,6 +1258,11 @@ def _format_author_line(entry: Entry, config: Config) -> str:
             pr_links.append(label)
 
     pr_text = _join_with_conjunction(pr_links)
+    return author_text, pr_text
+
+
+def _format_author_line(entry: Entry, config: Config) -> str:
+    author_text, pr_text = _collect_author_pr_text(entry, config)
 
     if not author_text and not pr_text:
         return ""
@@ -1431,6 +1436,14 @@ def _render_release_notes_compact(
             bullet = f"- **{title}**"
             if excerpt:
                 bullet = f"{bullet}: {excerpt}"
+            author_text, pr_text = _collect_author_pr_text(entry, config)
+            suffix_parts: list[str] = []
+            if author_text:
+                suffix_parts.append(f"By {author_text}")
+            if pr_text:
+                suffix_parts.append(f"in {pr_text}")
+            if suffix_parts:
+                bullet = f"{bullet} ({' '.join(suffix_parts)})"
             lines.append(bullet)
         lines.append("")
 
@@ -1662,6 +1675,14 @@ def _export_markdown_compact(
             bullet = f"- **{title}**"
             if excerpt:
                 bullet = f"{bullet}: {excerpt}"
+            author_text, pr_text = _collect_author_pr_text(entry, config)
+            suffix_parts: list[str] = []
+            if author_text:
+                suffix_parts.append(f"By {author_text}")
+            if pr_text:
+                suffix_parts.append(f"in {pr_text}")
+            if suffix_parts:
+                bullet = f"{bullet} ({' '.join(suffix_parts)})"
             lines.append(bullet)
         lines.append("")
 
