@@ -1,6 +1,6 @@
 ---
 title: Add breaking changes entry type
-type: breaking
+type: feature
 authors:
 - codex
 created: 2025-10-23
