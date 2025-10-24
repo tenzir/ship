@@ -1,5 +1,5 @@
 ---
-title: Show individual changelog entries
+title: Get individual changelog entries
 type: breaking
 authors:
 - mavam
@@ -10,9 +10,8 @@ pr: 1
 
 Simplify viewing changelog entries with row numbers and a redesigned command structure.
 
-The `show` command has been renamed to `list` for listing entries in table format,
-and a new `show` command displays detailed entry views. The `list` command now includes
-row numbers in a `#` column, making it easy to reference specific entries:
+The `list` command renders tabular views with a `#` column so you can reference specific entries,
+and the new `get` command displays detailed entry views. Together they streamline browsing changes:
 
 ```sh
 # List all entries with row numbers
@@ -25,17 +24,17 @@ row numbers in a `#` column, making it easy to reference specific entries:
 │ 3 │ 2025-10-21 │ v0.2.0  │ Streamline r…   │  🔧  │
 └───┴────────────┴─────────┴─────────────────┴──────┘
 
-# Show entry by row number (simplest)
-❯ tenzir-changelog show 2
+# Get entry by row number (simplest)
+❯ tenzir-changelog get 2
 
-# Show multiple entries
-❯ tenzir-changelog show 1 2 5
+# Get multiple entries
+❯ tenzir-changelog get 1 2 5
 
-# Show by entry ID (partial or full)
-❯ tenzir-changelog show configure
+# Get by entry ID (partial or full)
+❯ tenzir-changelog get configure
 
-# Show all entries from a release
-❯ tenzir-changelog show v0.2.0
+# Get all entries from a release
+❯ tenzir-changelog get v0.2.0
 ```
 
 The detailed view displays metadata, release status, and formatted markdown body

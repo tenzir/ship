@@ -27,5 +27,5 @@ The compact notes render automatically without passing the `--compact` flag. The
 same default applies when exporting release notes:
 
 ```sh
-tenzir-changelog --root changelog show --format markdown --release vX.Y.Z
+tenzir-changelog --root changelog get --format markdown --release vX.Y.Z
 ```

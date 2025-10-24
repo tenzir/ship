@@ -1,5 +1,5 @@
 ---
-title: Show compact markdown bylines
+title: Get compact markdown bylines
 type: change
 authors:
 - codex
