@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import pytest
 from datetime import date
 from pathlib import Path
@@ -184,10 +185,10 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert first_line == "First stable release.", release_text
     assert "First stable release." in release_text
     assert "## 💥 Breaking changes" in release_text
-    assert "- Removes the deprecated ingest API to prepare for v1. (By @codex)" in release_text
-    assert "- Adds an exciting capability. (By @octocat in #42)" in release_text
+    assert "- Removes the deprecated ingest API to prepare for v1. (by @codex)" in release_text
+    assert "- Adds an exciting capability. (by @octocat in #42)" in release_text
     assert (
-        "- Resolves ingest worker crash when tokens expire. (By @bob in #102 and #115)"
+        "- Resolves ingest worker crash when tokens expire. (by @bob in #102 and #115)"
         in release_text
     )
     assert "## 🚀 Features" in release_text
@@ -329,12 +330,12 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "## 💥 Breaking changes" in get_compact.output
     assert "## 🚀 Features" in get_compact.output
     assert (
-        "- Removes the deprecated ingest API to prepare for v1. (By @codex)" in get_compact.output
+        "- Removes the deprecated ingest API to prepare for v1. (by @codex)" in get_compact.output
     )
-    assert "- Adds an exciting capability. (By @octocat in #42)" in get_compact.output
+    assert "- Adds an exciting capability. (by @octocat in #42)" in get_compact.output
     assert "## 🐞 Bug fixes" in get_compact.output
     assert (
-        "- Resolves ingest worker crash when tokens expire. (By @bob in #102 and #115)"
+        "- Resolves ingest worker crash when tokens expire. (by @bob in #102 and #115)"
         in get_compact.output
     )
     assert get_compact.output.index("## 💥 Breaking changes") < get_compact.output.index(
@@ -358,12 +359,12 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "## Breaking changes" in get_compact_plain.output
     assert "## Features" in get_compact_plain.output
     assert (
-        "- Removes the deprecated ingest API to prepare for v1. (By @codex)"
+        "- Removes the deprecated ingest API to prepare for v1. (by @codex)"
         in get_compact_plain.output
     )
-    assert "- Adds an exciting capability. (By @octocat in #42)" in get_compact_plain.output
+    assert "- Adds an exciting capability. (by @octocat in #42)" in get_compact_plain.output
     assert (
-        "- Resolves ingest worker crash when tokens expire. (By @bob in #102 and #115)"
+        "- Resolves ingest worker crash when tokens expire. (by @bob in #102 and #115)"
         in get_compact_plain.output
     )
     assert "## Bug fixes" in get_compact_plain.output
@@ -1170,12 +1171,16 @@ def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
 
     recorded_command: dict[str, list[str] | bool] = {}
+    commands: list[list[str]] = []
 
     def fake_which(command: str) -> str:
         assert command == "gh"
         return "/usr/bin/gh"
 
-    def fake_run(args: list[str], *, check: bool) -> None:
+    def fake_run(args: list[str], *, check: bool, stdout=None, stderr=None) -> None:
+        commands.append(args)
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
         recorded_command["args"] = args
         recorded_command["check"] = check
 
@@ -1200,3 +1205,79 @@ def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert "v3.0.0" in args
     assert "--repo" in args and "tenzir/example" in args
     assert "--notes-file" in args
+    # Ensure existence check ran first.
+    assert commands[0][:3] == ["/usr/bin/gh", "release", "view"]
+
+
+def test_release_publish_updates_existing_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Eta Update",
+            "--type",
+            "feature",
+            "--description",
+            "Ships eta.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_entry.exit_code == 0, add_entry.output
+
+    create_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v4.0.0",
+            "--yes",
+        ],
+    )
+    assert create_release.exit_code == 0, create_release.output
+
+    config_path = project_dir / "config.yaml"
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_data["repository"] = "tenzir/example"
+    config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def fake_which(command: str) -> str:
+        assert command == "gh"
+        return "/usr/bin/gh"
+
+    def fake_run(args: list[str], *, check: bool, stdout=None, stderr=None) -> None:
+        calls.append(args)
+        if len(args) >= 3 and args[1:3] == ["release", "edit"]:
+            return
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            return  # release exists
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr("tenzir_changelog.cli.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_changelog.cli.subprocess.run", fake_run)
+
+    publish_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v4.0.0",
+            "--yes",
+        ],
+    )
+    assert publish_result.exit_code == 0, publish_result.output
+    assert calls[0][:3] == ["/usr/bin/gh", "release", "view"]
+    assert calls[1][:3] == ["/usr/bin/gh", "release", "edit"]

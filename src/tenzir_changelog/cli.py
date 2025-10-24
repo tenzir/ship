@@ -1632,6 +1632,22 @@ def _find_release_manifest(project_root: Path, version: str) -> Optional[Release
     return None
 
 
+def _github_release_exists(repository: str, version: str, gh_path: str) -> bool:
+    command = [gh_path, "release", "view", version, "--repo", repository]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except FileNotFoundError as exc:  # pragma: no cover - handled earlier
+        raise click.ClickException("The 'gh' CLI is required but was not found in PATH.") from exc
+    except subprocess.CalledProcessError:
+        return False
+
+
 def _latest_semver(project_root: Path) -> tuple[Version, str] | None:
     versions: list[tuple[Version, str]] = []
     for manifest in iter_release_manifests(project_root):
@@ -2147,28 +2163,44 @@ def release_publish_cmd(
     if not notes_content:
         raise click.ClickException("Release notes are empty; aborting publish.")
 
-    command = [
-        gh_path,
-        "release",
-        "create",
-        manifest.version,
-        "--repo",
-        config.repository,
-        "--notes-file",
-        str(notes_path),
-    ]
-    if manifest.title:
-        command.extend(["--title", manifest.title])
-    if draft:
-        command.append("--draft")
-    if prerelease:
-        command.append("--prerelease")
+    release_exists = _github_release_exists(config.repository, manifest.version, gh_path)
+    if release_exists:
+        command = [
+            gh_path,
+            "release",
+            "edit",
+            manifest.version,
+            "--repo",
+            config.repository,
+            "--notes-file",
+            str(notes_path),
+        ]
+        if manifest.title:
+            command.extend(["--title", manifest.title])
+        confirmation_action = "gh release edit"
+    else:
+        command = [
+            gh_path,
+            "release",
+            "create",
+            manifest.version,
+            "--repo",
+            config.repository,
+            "--notes-file",
+            str(notes_path),
+        ]
+        if manifest.title:
+            command.extend(["--title", manifest.title])
+        if draft:
+            command.append("--draft")
+        if prerelease:
+            command.append("--prerelease")
+        confirmation_action = "gh release create"
 
     if not assume_yes:
         prompt = (
             f"Publish {manifest.version} to GitHub repository {config.repository}? "
-            "This will run 'gh release create'. If the release already exists on GitHub, rerun manually with "
-            "'gh release edit --notes-file'."
+            f"This will run '{confirmation_action}'."
         )
         if not click.confirm(prompt, default=True):
             console.print("[yellow]Aborted release publish.[/yellow]")
