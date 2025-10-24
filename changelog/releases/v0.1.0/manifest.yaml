@@ -1,0 +1,5 @@
+created: 2025-10-21
+description: >
+  This initial version introduces the inaugural `tenzir-changelog` CLI, covering
+  project bootstrapping, entry capture, rich browsing, release assembly,
+  documentation, and validation tooling.
