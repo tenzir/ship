@@ -5,7 +5,8 @@ authors:
 - mavam
 - claude
 created: 2025-10-22
-pr: 1
+prs:
+- 1
 ---
 
 Simplify viewing changelog entries with row numbers and a redesigned command structure.

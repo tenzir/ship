@@ -94,7 +94,8 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert len(feature_entry.stem.split("-", 1)[0]) >= ENTRY_PREFIX_WIDTH
     entry_text = feature_entry.read_text(encoding="utf-8")
     assert "created:" in entry_text
-    assert "pr: 42" in entry_text
+    assert "prs:" in entry_text
+    assert "- 42" in entry_text
     assert "project:" not in entry_text
     parsed_entry = read_entry(feature_entry)
     assert isinstance(parsed_entry.metadata["created"], date)
@@ -116,6 +117,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "project:" not in bugfix_text
 
     feature_entry_id = feature_entry.stem
+    bugfix_entry_id = bugfix_entry.stem
 
     get_feature = runner.invoke(
         cli,
@@ -223,7 +225,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
 
     release_list = runner.invoke(
         cli,
-        ["--root", str(project_dir), "show", "--release", "v1.0.0"],
+        ["--root", str(project_dir), "show", "v1.0.0"],
     )
     assert release_list.exit_code == 0, release_list.output
     release_plain = click.utils.strip_ansi(release_list.output)
@@ -373,15 +375,15 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     breaking_entry = payload["entries"][0]
     assert breaking_entry["title"] == "Remove legacy API"
     assert breaking_entry["type"] == "breaking"
-    assert "v1.0.0" in breaking_entry["versions"]
+    assert breaking_entry["version"] == "v1.0.0"
     assert breaking_entry["authors"] == ["codex"]
     assert breaking_entry.get("excerpt") == "Removes the deprecated ingest API to prepare for v1."
     feature_entry = next(
         entry for entry in payload["entries"] if entry["title"] == "Exciting Feature"
     )
-    assert "v1.0.0" in feature_entry["versions"]
-    assert feature_entry["pr"] == 42
+    assert feature_entry["version"] == "v1.0.0"
     assert feature_entry["prs"] == [42]
+    assert "pr" not in feature_entry
     assert feature_entry["project"] == "project"
     assert feature_entry.get("excerpt") == "Adds an exciting capability."
 
@@ -392,6 +394,58 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert bugfix_entry["project"] == "project"
     assert bugfix_entry.get("excerpt") == "Resolves ingest worker crash when tokens expire."
     assert payload.get("compact") is True
+
+    single_entry_json = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-j",
+            feature_entry_id,
+        ],
+    )
+    assert single_entry_json.exit_code == 0, single_entry_json.output
+    single_payload = json.loads(single_entry_json.output)
+    assert single_payload["title"] == f"Entry {feature_entry_id}"
+    assert single_payload["project"] == "project"
+    assert single_payload["entries"][0]["id"] == feature_entry_id
+    assert single_payload["entries"][0]["prs"] == [42]
+    assert single_payload["entries"][0]["title"] == "Exciting Feature"
+    assert single_payload["created"] == parsed_entry.created_at.isoformat()
+
+    multi_entry_json = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-j",
+            feature_entry_id,
+            bugfix_entry_id,
+        ],
+    )
+    assert multi_entry_json.exit_code == 0, multi_entry_json.output
+    multi_payload = json.loads(multi_entry_json.output)
+    assert multi_payload["title"] == "Selected Entries"
+    exported_titles = {entry["title"] for entry in multi_payload["entries"]}
+    assert exported_titles == {"Exciting Feature", "Fix ingest crash"}
+
+    multi_entry_markdown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-m",
+            feature_entry_id,
+            bugfix_entry_id,
+        ],
+    )
+    assert multi_entry_markdown.exit_code == 0, multi_entry_markdown.output
+    assert "# Selected Entries" in multi_entry_markdown.output
+    assert "### Exciting Feature" in multi_entry_markdown.output
+    assert "### Fix ingest crash" in multi_entry_markdown.output
 
     get_json_plain = runner.invoke(
         cli,

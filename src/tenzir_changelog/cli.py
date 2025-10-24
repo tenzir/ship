@@ -8,7 +8,7 @@ import textwrap
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterable, Optional, TypedDict, Literal, cast
+from typing import Any, Iterable, Mapping, Optional, TypedDict, Literal, cast
 
 import click
 from click.core import ParameterSource
@@ -170,6 +170,30 @@ class ColumnSpec(TypedDict, total=False):
     min_width: int
 
 
+def _parse_pr_numbers(metadata: Mapping[str, Any]) -> list[int]:
+    """Normalize PR metadata into a list of integers."""
+
+    value = metadata.get("prs")
+    if value is None:
+        return []
+
+    if isinstance(value, (str, int)):
+        candidates = [value]
+    else:
+        try:
+            candidates = list(value)
+        except TypeError:
+            candidates = [value]
+
+    pr_numbers: list[int] = []
+    for candidate in candidates:
+        try:
+            pr_numbers.append(int(str(candidate).strip()))
+        except (TypeError, ValueError):
+            continue
+    return pr_numbers
+
+
 def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, ColumnSpec]]:
     """Return the visible columns and their specs for the current terminal width."""
 
@@ -190,21 +214,21 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 88:
-        columns = ["num", "date", "version", "title", "type", "pr"]
+        columns = ["num", "date", "version", "title", "type", "prs"]
         specs = {
             "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 28, "overflow": "ellipsis", "no_wrap": True},
-            "pr": {"max_width": 6, "no_wrap": True},
+            "prs": {"max_width": 12, "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 110:
-        columns = ["num", "date", "version", "title", "type", "pr", "authors"]
+        columns = ["num", "date", "version", "title", "type", "prs", "authors"]
         specs = {
             "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 26, "overflow": "ellipsis", "no_wrap": True},
-            "pr": {"max_width": 6, "no_wrap": True},
+            "prs": {"max_width": 12, "no_wrap": True},
             "authors": {
                 "min_width": 10,
                 "max_width": 14,
@@ -214,12 +238,12 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     elif width < 140:
-        columns = ["num", "date", "version", "title", "type", "pr", "authors", "id"]
+        columns = ["num", "date", "version", "title", "type", "prs", "authors", "id"]
         specs = {
             "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 10, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
-            "pr": {"max_width": 6, "no_wrap": True},
+            "prs": {"max_width": 12, "no_wrap": True},
             "authors": {
                 "min_width": 10,
                 "max_width": 16,
@@ -230,12 +254,12 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
     else:
-        columns = ["num", "date", "version", "title", "type", "pr", "authors", "id"]
+        columns = ["num", "date", "version", "title", "type", "prs", "authors", "id"]
         specs = {
             "num": {"max_width": 3, "no_wrap": True},
             "version": {"max_width": 12, "no_wrap": True},
             "title": {"min_width": 20, "max_width": 40, "overflow": "fold"},
-            "pr": {"max_width": 8, "no_wrap": True},
+            "prs": {"max_width": 14, "no_wrap": True},
             "authors": {"min_width": 14, "max_width": 20, "overflow": "fold"},
             "id": {"min_width": 18, "max_width": 28, "overflow": "fold"},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
@@ -489,17 +513,6 @@ def _collect_unused_entries_for_release(project_root: Path, config: Config) -> l
     return filtered
 
 
-def _entries_before_or_equal_version(project_root: Path, version: str) -> set[str]:
-    releases = list(iter_release_manifests(project_root))
-    releases.sort(key=lambda manifest: (manifest.created, manifest.version))
-    seen: set[str] = set()
-    for manifest in releases:
-        seen.update(manifest.entries)
-        if manifest.version == version:
-            return seen
-    raise click.ClickException(f"Unknown release version '{version}'")
-
-
 def _render_project_header(config: Config) -> None:
     legend = "  ".join(
         f"{ENTRY_TYPE_EMOJIS.get(entry_type, '•')} {entry_type}"
@@ -585,11 +598,11 @@ def _render_entries(
             overflow_default="ellipsis",
             no_wrap_default=True,
         )
-    if "pr" in visible_columns:
+    if "prs" in visible_columns:
         _add_table_column(
             table,
-            "PR",
-            "pr",
+            "PRs",
+            "prs",
             column_specs,
             style="yellow",
             overflow_default="fold",
@@ -647,8 +660,10 @@ def _render_entries(
             row.append(_ellipsis_cell(metadata.get("title", "Untitled"), "title", column_specs))
         if "type" in visible_columns:
             row.append(type_display)
-        if "pr" in visible_columns:
-            row.append(str(metadata.get("pr") or "—"))
+        if "prs" in visible_columns:
+            pr_numbers = _parse_pr_numbers(metadata)
+            pr_display = ", ".join(f"#{pr}" for pr in pr_numbers) if pr_numbers else "—"
+            row.append(_ellipsis_cell(pr_display, "prs", column_specs))
         if "authors" in visible_columns:
             row.append(
                 _ellipsis_cell(
@@ -755,12 +770,8 @@ def _render_single_entry(
         authors_str = ", ".join(f"@{a}" for a in authors)
         metadata_parts.append(f"Authors:   {authors_str}")
 
-    # Handle both 'pr' (single) and 'prs' (multiple)
-    pr_numbers = []
-    if "pr" in entry.metadata and entry.metadata["pr"]:
-        pr_numbers.append(entry.metadata["pr"])
-    if "prs" in entry.metadata and entry.metadata["prs"]:
-        pr_numbers.extend(entry.metadata["prs"])
+    # Include pull-request references when available.
+    pr_numbers = _parse_pr_numbers(entry.metadata)
     if pr_numbers:
         prs_str = ", ".join(f"#{pr}" for pr in pr_numbers)
         metadata_parts.append(f"PRs:       {prs_str}")
@@ -803,8 +814,6 @@ def _show_entries_table(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
     project_filter: tuple[str, ...],
-    release_version: Optional[str],
-    since_version: Optional[str],
     banner: bool,
     *,
     include_emoji: bool,
@@ -812,20 +821,6 @@ def _show_entries_table(
     config = ctx.ensure_config()
     project_root = ctx.project_root
     projects = set(project_filter)
-
-    release_version = _normalize_optional(release_version)
-    since_version = _normalize_optional(since_version)
-
-    # If --release is specified, display the release manifest
-    if release_version:
-        manifests = [
-            m for m in iter_release_manifests(project_root) if m.version == release_version
-        ]
-        if not manifests:
-            raise click.ClickException(f"Release '{release_version}' not found.")
-        manifest = manifests[0]
-        _render_release(manifest, project_root, project_id=config.id)
-        return
 
     # Collect all entries (unreleased and released)
     entries = list(iter_entries(project_root))
@@ -844,24 +839,25 @@ def _show_entries_table(
 
     # Filter by identifiers if provided
     if identifiers:
+        resolutions = _resolve_identifiers_sequence(
+            identifiers,
+            project_root=project_root,
+            config=config,
+            sorted_entries=sorted_entries,
+            entry_map=entry_map,
+        )
+        if len(resolutions) == 1 and resolutions[0].kind == "release":
+            manifest = resolutions[0].manifest
+            if manifest is None:
+                raise click.ClickException(f"Release '{resolutions[0].identifier}' not found.")
+            _render_release(manifest, project_root, project_id=config.id)
+            return
         filtered_entries: list[Entry] = []
-        for identifier in identifiers:
-            resolution = _resolve_identifier(
-                identifier,
-                project_root=project_root,
-                config=config,
-                sorted_entries=sorted_entries,
-                entry_map=entry_map,
-            )
+        for resolution in resolutions:
             filtered_entries.extend(resolution.entries)
         entries = filtered_entries
     else:
         entries = sorted_entries
-
-    # Apply additional filters
-    if since_version:
-        excluded = _entries_before_or_equal_version(project_root, since_version)
-        entries = [entry for entry in entries if entry.entry_id not in excluded]
 
     entries = _filter_entries_by_project(entries, projects, config.id)
     render_release_order = release_order if not identifiers else None
@@ -994,6 +990,30 @@ def _resolve_identifier(
     return IdentifierResolution(kind="entry", entries=[entry], identifier=entry_id)
 
 
+def _resolve_identifiers_sequence(
+    identifiers: Iterable[str],
+    *,
+    project_root: Path,
+    config: Config,
+    sorted_entries: list[Entry],
+    entry_map: dict[str, Entry],
+    allowed_kinds: Optional[Iterable[IdentifierKind]] = None,
+) -> list[IdentifierResolution]:
+    """Resolve a list of identifiers into their matching entries."""
+
+    return [
+        _resolve_identifier(
+            identifier,
+            project_root=project_root,
+            config=config,
+            sorted_entries=sorted_entries,
+            entry_map=entry_map,
+            allowed_kinds=allowed_kinds,
+        )
+        for identifier in identifiers
+    ]
+
+
 ShowView = Literal["table", "card", "markdown", "json"]
 
 
@@ -1025,16 +1045,13 @@ def _show_entries_card(
     config = ctx.ensure_config()
     project_root = ctx.project_root
     entry_map, release_index_all, _, sorted_entries = _gather_entry_context(project_root)
-    resolutions = [
-        _resolve_identifier(
-            identifier,
-            project_root=project_root,
-            config=config,
-            sorted_entries=sorted_entries,
-            entry_map=entry_map,
-        )
-        for identifier in identifiers
-    ]
+    resolutions = _resolve_identifiers_sequence(
+        identifiers,
+        project_root=project_root,
+        config=config,
+        sorted_entries=sorted_entries,
+        entry_map=entry_map,
+    )
 
     release_index = release_index_all
     for resolution in resolutions:
@@ -1058,36 +1075,59 @@ def _show_entries_export(
     compact: Optional[bool],
     include_emoji: bool,
 ) -> None:
-    if len(identifiers) != 1:
-        raise click.ClickException(
-            "Markdown and JSON output accept a single identifier. Use a release version, 'unreleased', or '-'."
-        )
+    if not identifiers:
+        raise click.ClickException("Provide at least one identifier for markdown or json output.")
 
     config = ctx.ensure_config()
     project_root = ctx.project_root
     entry_map, _, _, sorted_entries = _gather_entry_context(project_root)
-    resolution = _resolve_identifier(
-        identifiers[0],
+    resolutions = _resolve_identifiers_sequence(
+        identifiers,
         project_root=project_root,
         config=config,
         sorted_entries=sorted_entries,
         entry_map=entry_map,
     )
 
-    if resolution.kind not in {"release", "unreleased"}:
-        raise click.ClickException(
-            "Markdown and JSON output require a release version or the 'unreleased' token."
-        )
-
     compact_flag = config.export_style == EXPORT_STYLE_COMPACT if compact is None else compact
     release_index_export = build_entry_release_index(project_root, project=config.id)
-    manifest = resolution.manifest if resolution.kind == "release" else None
-    manifest_for_export: ReleaseManifest | None
-    if manifest is not None and manifest.description:
-        manifest_for_export = replace(manifest, description="")
+    manifest_for_export: ReleaseManifest | None = None
+
+    if len(resolutions) == 1 and resolutions[0].kind == "release":
+        manifest = resolutions[0].manifest
+        if manifest is not None and manifest.description:
+            manifest_for_export = replace(manifest, description="")
+        else:
+            manifest_for_export = manifest
+
+    ordered_entries: dict[str, Entry] = {}
+    for resolution in resolutions:
+        for entry in resolution.entries:
+            if entry.entry_id not in ordered_entries:
+                ordered_entries[entry.entry_id] = entry
+    export_entries = sort_entries_desc(list(ordered_entries.values()))
+    if not export_entries:
+        raise click.ClickException("No entries matched the provided identifier for export.")
+
+    if len(resolutions) == 1 and resolutions[0].kind == "unreleased":
+        fallback_heading = "Unreleased Changes"
+        fallback_created = None
+    elif manifest_for_export is not None:
+        fallback_heading = (
+            resolutions[0].manifest.title
+            if resolutions[0].manifest and resolutions[0].manifest.title
+            else resolutions[0].identifier
+        )
+        fallback_created = None
     else:
-        manifest_for_export = manifest
-    export_entries = sort_entries_desc(list(resolution.entries))
+        if len(resolutions) == 1 and resolutions[0].kind in {"entry", "row"}:
+            entry = export_entries[0]
+            fallback_heading = f"Entry {entry.entry_id}"
+            fallback_created = entry.created_at
+        else:
+            fallback_heading = "Selected Entries"
+            dates = [entry.created_at for entry in export_entries if entry.created_at]
+            fallback_created = min(dates) if dates else None
 
     if view == "markdown":
         if compact_flag:
@@ -1097,6 +1137,7 @@ def _show_entries_export(
                 config,
                 release_index_export,
                 include_emoji=include_emoji,
+                fallback_heading=fallback_heading,
             )
         else:
             content = _export_markdown_release(
@@ -1105,6 +1146,7 @@ def _show_entries_export(
                 config,
                 release_index_export,
                 include_emoji=include_emoji,
+                fallback_heading=fallback_heading,
             )
         click.echo(content, nl=False)
     else:
@@ -1114,6 +1156,8 @@ def _show_entries_export(
             config,
             release_index_export,
             compact=compact_flag,
+            fallback_heading=fallback_heading,
+            fallback_created=fallback_created,
         )
         click.echo(json.dumps(payload, indent=2))
 
@@ -1153,17 +1197,6 @@ def _show_entries_export(
     multiple=True,
 )
 @click.option("--project", "project_filter", multiple=True, help="Filter by project key.")
-@click.option(
-    "--release",
-    "release_version",
-    default=None,
-    help="Show a specific release.",
-)
-@click.option(
-    "--since",
-    "since_version",
-    help="Only include entries newer than the specified release version.",
-)
 @click.option("--banner", is_flag=True, help="Display a project banner above entries.")
 @click.option(
     "--compact",
@@ -1189,8 +1222,6 @@ def show_entries(
     identifiers: tuple[str, ...],
     view_flags: tuple[str, ...],
     project_filter: tuple[str, ...],
-    release_version: Optional[str],
-    since_version: Optional[str],
     banner: bool,
     compact: Optional[bool],
     no_emoji: bool,
@@ -1208,23 +1239,17 @@ def show_entries(
             raise click.ClickException(
                 "--compact/--no-compact only apply to markdown and json views."
             )
-        release_version = _normalize_optional(release_version)
-        since_version = _normalize_optional(since_version)
         _show_entries_table(
             ctx,
             identifiers,
             project_filter,
-            release_version,
-            since_version,
             banner,
             include_emoji=include_emoji,
         )
         return
 
-    if project_filter or release_version or since_version or banner:
-        raise click.ClickException(
-            "--project/--release/--since/--banner are only available in table view."
-        )
+    if project_filter or banner:
+        raise click.ClickException("--project/--banner are only available in table view.")
 
     if view == "card":
         if compact is not None:
@@ -1324,26 +1349,12 @@ def _prompt_entry_type(default: str = DEFAULT_ENTRY_TYPE) -> str:
 def _entry_to_dict(
     entry: Entry,
     config: Config,
-    versions: list[str] | None = None,
+    version: str | None = None,
     *,
     compact: bool = False,
 ) -> dict[str, object]:
     metadata = entry.metadata
-    prs_value = metadata.get("prs")
-    prs_list: list[int] = []
-    if isinstance(prs_value, list):
-        for pr in prs_value:
-            try:
-                prs_list.append(int(str(pr).strip()))
-            except (TypeError, ValueError):
-                continue
-    else:
-        pr_single = metadata.get("pr")
-        if pr_single is not None:
-            try:
-                prs_list.append(int(str(pr_single).strip()))
-            except (TypeError, ValueError):
-                pass
+    prs_list = _parse_pr_numbers(metadata)
     entry_type = metadata.get("type", DEFAULT_ENTRY_TYPE)
     title = metadata.get("title", "Untitled")
     data = {
@@ -1352,10 +1363,9 @@ def _entry_to_dict(
         "type": entry_type,
         "created": entry.created_at.isoformat() if entry.created_at else None,
         "project": entry.project or config.id,
-        "pr": prs_list[0] if prs_list else None,
         "prs": prs_list,
         "authors": metadata.get("authors") or [],
-        "versions": versions or [],
+        "version": version,
         "body": entry.body,
     }
     if compact:
@@ -1384,21 +1394,7 @@ def _collect_author_pr_text(entry: Entry, config: Config) -> tuple[str, str]:
     author_handles = [f"@{author}" for author in authors]
     author_text = _join_with_conjunction(author_handles)
 
-    prs_value = metadata.get("prs")
-    prs: list[int] = []
-    if isinstance(prs_value, list):
-        for pr in prs_value:
-            try:
-                prs.append(int(str(pr).strip()))
-            except (TypeError, ValueError):
-                continue
-    else:
-        pr_single = metadata.get("pr")
-        if pr_single is not None:
-            try:
-                prs.append(int(str(pr_single).strip()))
-            except (TypeError, ValueError):
-                pass
+    prs = _parse_pr_numbers(metadata)
 
     repo = config.repository
     pr_links: list[str] = []
@@ -1509,10 +1505,7 @@ def add(
         "authors": authors_list or None,
     }
     if pr_numbers:
-        if len(pr_numbers) == 1:
-            metadata["pr"] = pr_numbers[0]
-        else:
-            metadata["prs"] = pr_numbers
+        metadata["prs"] = pr_numbers
 
     path = write_entry(project_root, metadata, body, default_project=config.id)
     console.print(f"[green]Entry created:[/green] {path.relative_to(project_root)}")
@@ -1744,6 +1737,7 @@ def _export_markdown_release(
     release_index: dict[str, list[str]],
     *,
     include_emoji: bool = True,
+    fallback_heading: str = "Unreleased Changes",
 ) -> str:
     lines: list[str] = []
     if manifest:
@@ -1751,7 +1745,8 @@ def _export_markdown_release(
             lines.append(manifest.description.strip())
             lines.append("")
     else:
-        lines.append("# Unreleased Changes")
+        heading = fallback_heading or "Unreleased Changes"
+        lines.append(f"# {heading}")
         lines.append("")
 
     if not entries:
@@ -1794,6 +1789,7 @@ def _export_markdown_compact(
     release_index: dict[str, list[str]],
     *,
     include_emoji: bool = True,
+    fallback_heading: str = "Unreleased Changes",
 ) -> str:
     lines: list[str] = []
     if manifest:
@@ -1801,7 +1797,8 @@ def _export_markdown_compact(
             lines.append(manifest.description.strip())
             lines.append("")
     else:
-        lines.append("# Unreleased Changes")
+        heading = fallback_heading or "Unreleased Changes"
+        lines.append(f"# {heading}")
         lines.append("")
 
     if not entries:
@@ -1848,6 +1845,8 @@ def _export_json_payload(
     release_index: dict[str, list[str]],
     *,
     compact: bool = False,
+    fallback_heading: str = "Unreleased Changes",
+    fallback_created: date | None = None,
 ) -> dict[str, object]:
     entries_by_type: dict[str, list[Entry]] = {}
     for entry in entries:
@@ -1871,21 +1870,25 @@ def _export_json_payload(
             }
         )
     else:
+        created_value = fallback_created or date.today()
         data.update(
             {
                 "version": None,
-                "title": None,
+                "title": fallback_heading if fallback_heading else None,
                 "description": None,
                 "project": config.id,
-                "created": date.today().isoformat(),
+                "created": created_value.isoformat(),
             }
         )
     payload_entries = []
     for entry in ordered_entries:
-        versions = list(release_index.get(entry.entry_id, []))
-        if manifest and manifest.version and manifest.version not in versions:
-            versions.append(manifest.version)
-        payload_entries.append(_entry_to_dict(entry, config, versions, compact=compact))
+        version_candidates = release_index.get(entry.entry_id, []) or []
+        version_value: str | None
+        if manifest and manifest.version:
+            version_value = manifest.version
+        else:
+            version_value = next(iter(version_candidates), None)
+        payload_entries.append(_entry_to_dict(entry, config, version_value, compact=compact))
     data["entries"] = payload_entries
     if compact:
         data["compact"] = True

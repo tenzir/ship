@@ -49,15 +49,17 @@ to `config.yaml`) and `--root` to operate on another repository.
   Display changelog entries in multiple views. With no flags it renders a rich
   table of entries, accepting row numbers, entry IDs (full or partial), release
   versions, and the tokens `unreleased` or `-` to target pending entries.
-  - Table view (default) mirrors the old `list` command. Pass `--project`,
-    `--release`, `--since`, or `--banner` to filter or augment the table output.
+  - Table view (default) mirrors the old `list` command. Pass `--project`
+    or `--banner` to filter or augment the table output.
+    Supply a release version (e.g., `v1.0.0`) as an identifier to focus on a specific manifest.
   - `-c/--card` shows detailed cards for each matching entry; at least one
     identifier is required.
-  - `-m/--markdown` exports a release or the unreleased bucket as Markdown.
-  - `-j/--json` exports a release or the unreleased bucket as JSON.
+  - `-m/--markdown` exports a release, the unreleased bucket, or specific entries as Markdown.
+  - `-j/--json` exports a release, the unreleased bucket, or specific entries as JSON.
   - `--compact`/`--no-compact` toggles the compact export layout for Markdown
     and JSON, defaulting to the project's `export_style`.
   - `--no-emoji` removes type emoji from the output (where supported).
+  - Supply multiple identifiers to target a mix of rows, entry IDs, releases, or `unreleased`—the CLI deduplicates them before formatting.
 
 - **`tenzir-changelog add`**
 Create a new change entry in `unreleased/`. Highlights:
@@ -183,14 +185,16 @@ project root.
    authors:
    - alice
    created: 2025-10-16
-   pr: 101
+   prs:
+   - 101
    ---
 
    Introduces the new pipeline builder UI.
    ```
 
 If an entry spans multiple pull requests, repeat `--pr` during `add`. The CLI
-stores a `prs:` list in the generated frontmatter automatically.
+stores a `prs:` list in the generated frontmatter automatically, even when
+there is only one related pull request.
 
 3. **Preview the changelog:**
    ```sh
