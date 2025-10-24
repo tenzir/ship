@@ -600,6 +600,7 @@ def _render_entries(
             "version",
             column_specs,
             style="cyan",
+            justify="center",
             overflow_default="fold",
             no_wrap_default=True,
         )
