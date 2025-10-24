@@ -57,17 +57,17 @@ to `config.yaml`) and `--root` to operate on another repository.
 - **`tenzir-changelog [list]`**
   List changelog entries in a table with row numbers. The default command when
   no command is specified. Accepts positional arguments to filter entries:
-  - Row numbers (e.g., `list 1 3 5`) to show specific entries
+  - Row numbers (e.g., `list 1 3 5`) to list specific entries
   - Entry IDs (e.g., `list configure`) to filter by ID
-  - Version numbers (e.g., `list v0.2.0`) to show entries in a release
+  - Version numbers (e.g., `list v0.2.0`) to list entries in a release
 
   Additional filters include:
   - `--project <name>` to scope to a single project
   - `--release <id>` to display a specific release manifest
   - `--since <version>` to collate entries newer than the provided version tag
-  - `--banner` to show project information header
+  - `--banner` to display project information header
 
-- **`tenzir-changelog show <identifiers>`**
+- **`tenzir-changelog get <identifiers>`**
   Inspect changelog entries in the terminal or export them as Markdown or JSON.
   Accepts row numbers, entry IDs (full or partial), release versions, and the
   tokens `unreleased` or `-` to target pending entries.
@@ -77,7 +77,7 @@ to `config.yaml`) and `--root` to operate on another repository.
     Markdown/JSON output, defaulting to the project's `export_style`.
 
   When emitting Markdown or JSON, pass either a release version or the
-  `unreleased` token. Example: `uv run tenzir-changelog --root changelog show --format markdown v0.2.0 > changelog/releases/v0.2.0/notes.md`
+  `unreleased` token. Example: `uv run tenzir-changelog --root changelog get --format markdown v0.2.0 > changelog/releases/v0.2.0/notes.md`
   rewrites release notes in the standard layout; adding `-c` switches to the
   compact summary.
 
@@ -128,7 +128,7 @@ Create a new change entry in `unreleased/`. Highlights:
   serves as the canonical slug written into entry metadata, while `name`
   provides the human-friendly label surfaced in release titles and CLI output.
   Set `export_style` to `compact` to prefer the bullet-list layout for release
-  notes and `tenzir-changelog show --format markdown` without passing `-c`
+  notes and `tenzir-changelog get --format markdown` without passing `-c`
   each time.
 - **Repositories:** A project may pull changelog entries from other repositories
   (e.g., satellites or private modules). Configuration entries include the
@@ -227,7 +227,7 @@ stores a `prs:` list in the generated frontmatter automatically.
    project, pull-request numbers, and authors for unreleased entries. You can
    view details of any entry using its row number:
    ```sh
-   uvx tenzir-changelog show 1
+   uvx tenzir-changelog get 1
    ```
 
 4. **Prepare release notes:**  
@@ -301,7 +301,7 @@ stores a `prs:` list in the generated frontmatter automatically.
 
 7. **Export the release:**  
    ```sh
-   uvx tenzir-changelog show --format markdown v0.1.0
+   uvx tenzir-changelog get --format markdown v0.1.0
    ```
    The command prints a Markdown summary grouped by entry type to STDOUT. Use
    `--format json` for machine-readable output or add `-c` for the compact

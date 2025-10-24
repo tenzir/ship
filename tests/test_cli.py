@@ -228,98 +228,95 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert "remove-legacy-api" in release_plain
     assert "fix-ingest-crash" in release_plain
 
-    show_md = runner.invoke(
+    get_md = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "v1.0.0",
         ],
     )
-    assert show_md.exit_code == 0, show_md.output
-    assert "## 💥 Breaking changes" in show_md.output
-    assert "## 🚀 Features" in show_md.output
-    assert "### Remove legacy API" in show_md.output
-    assert "By @codex" in show_md.output
-    assert "### Exciting Feature" in show_md.output
-    assert "By @octocat" in show_md.output
-    assert "in #42" in show_md.output
-    assert "### Fix ingest crash" in show_md.output
-    assert "#102" in show_md.output and "#115" in show_md.output
-    assert show_md.output.index("## 💥 Breaking changes") < show_md.output.index("## 🚀 Features")
-    assert show_md.output.index("## 🚀 Features") < show_md.output.index("## 🐞 Bug fixes")
+    assert get_md.exit_code == 0, get_md.output
+    assert "## 💥 Breaking changes" in get_md.output
+    assert "## 🚀 Features" in get_md.output
+    assert "### Remove legacy API" in get_md.output
+    assert "By @codex" in get_md.output
+    assert "### Exciting Feature" in get_md.output
+    assert "By @octocat" in get_md.output
+    assert "in #42" in get_md.output
+    assert "### Fix ingest crash" in get_md.output
+    assert "#102" in get_md.output and "#115" in get_md.output
+    assert get_md.output.index("## 💥 Breaking changes") < get_md.output.index("## 🚀 Features")
+    assert get_md.output.index("## 🚀 Features") < get_md.output.index("## 🐞 Bug fixes")
 
-    show_md_plain = runner.invoke(
+    get_md_plain = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "--no-emoji",
             "v1.0.0",
         ],
     )
-    assert show_md_plain.exit_code == 0, show_md_plain.output
-    assert "## Breaking changes" in show_md_plain.output
-    assert "## Features" in show_md_plain.output
-    assert "### Remove legacy API" in show_md_plain.output
-    assert "### Exciting Feature" in show_md_plain.output
-    assert "### Fix ingest crash" in show_md_plain.output
-    assert "## Bug fixes" in show_md_plain.output
-    assert show_md_plain.output.index("## Breaking changes") < show_md_plain.output.index(
+    assert get_md_plain.exit_code == 0, get_md_plain.output
+    assert "## Breaking changes" in get_md_plain.output
+    assert "## Features" in get_md_plain.output
+    assert "### Remove legacy API" in get_md_plain.output
+    assert "### Exciting Feature" in get_md_plain.output
+    assert "### Fix ingest crash" in get_md_plain.output
+    assert "## Bug fixes" in get_md_plain.output
+    assert get_md_plain.output.index("## Breaking changes") < get_md_plain.output.index(
         "## Features"
     )
-    assert show_md_plain.output.index("## Features") < show_md_plain.output.index("## Bug fixes")
-    assert "💥" not in show_md_plain.output
-    assert "🚀" not in show_md_plain.output
-    assert "🐞" not in show_md_plain.output
+    assert get_md_plain.output.index("## Features") < get_md_plain.output.index("## Bug fixes")
+    assert "💥" not in get_md_plain.output
+    assert "🚀" not in get_md_plain.output
+    assert "🐞" not in get_md_plain.output
 
-    show_compact = runner.invoke(
+    get_compact = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "-c",
             "v1.0.0",
         ],
     )
-    assert show_compact.exit_code == 0, show_compact.output
-    assert "## 💥 Breaking changes" in show_compact.output
-    assert "## 🚀 Features" in show_compact.output
+    assert get_compact.exit_code == 0, get_compact.output
+    assert "## 💥 Breaking changes" in get_compact.output
+    assert "## 🚀 Features" in get_compact.output
     assert (
         "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1."
-        " (By @codex)" in show_compact.output
+        " (By @codex)" in get_compact.output
     )
     assert (
         "- **Exciting Feature**: Adds an exciting capability."
-        " (By @octocat in #42)" in show_compact.output
+        " (By @octocat in #42)" in get_compact.output
     )
-    assert "## 🐞 Bug fixes" in show_compact.output
+    assert "## 🐞 Bug fixes" in get_compact.output
     assert (
         "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire."
-        " (By @bob in #102 and #115)" in show_compact.output
+        " (By @bob in #102 and #115)" in get_compact.output
     )
-    assert show_compact.output.index("## 💥 Breaking changes") < show_compact.output.index(
+    assert get_compact.output.index("## 💥 Breaking changes") < get_compact.output.index(
         "## 🚀 Features"
     )
-    assert show_compact.output.index("## 🚀 Features") < show_compact.output.index(
-        "## 🐞 Bug fixes"
-    )
-
-    show_compact_plain = runner.invoke(
+    assert get_compact.output.index("## 🚀 Features") < get_compact.output.index("## 🐞 Bug fixes")
+    get_compact_plain = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "--no-emoji",
@@ -327,46 +324,46 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
             "v1.0.0",
         ],
     )
-    assert show_compact_plain.exit_code == 0, show_compact_plain.output
-    assert "## Breaking changes" in show_compact_plain.output
-    assert "## Features" in show_compact_plain.output
+    assert get_compact_plain.exit_code == 0, get_compact_plain.output
+    assert "## Breaking changes" in get_compact_plain.output
+    assert "## Features" in get_compact_plain.output
     assert (
         "- **Remove legacy API**: Removes the deprecated ingest API to prepare for v1."
-        " (By @codex)" in show_compact_plain.output
+        " (By @codex)" in get_compact_plain.output
     )
     assert (
         "- **Exciting Feature**: Adds an exciting capability."
-        " (By @octocat in #42)" in show_compact_plain.output
+        " (By @octocat in #42)" in get_compact_plain.output
     )
     assert (
         "- **Fix ingest crash**: Resolves ingest worker crash when tokens expire."
-        " (By @bob in #102 and #115)" in show_compact_plain.output
+        " (By @bob in #102 and #115)" in get_compact_plain.output
     )
-    assert "## Bug fixes" in show_compact_plain.output
-    assert show_compact_plain.output.index("## Breaking changes") < show_compact_plain.output.index(
+    assert "## Bug fixes" in get_compact_plain.output
+    assert get_compact_plain.output.index("## Breaking changes") < get_compact_plain.output.index(
         "## Features"
     )
-    assert show_compact_plain.output.index("## Features") < show_compact_plain.output.index(
+    assert get_compact_plain.output.index("## Features") < get_compact_plain.output.index(
         "## Bug fixes"
     )
-    assert "💥" not in show_compact_plain.output
-    assert "🚀" not in show_compact_plain.output
-    assert "🐞" not in show_compact_plain.output
+    assert "💥" not in get_compact_plain.output
+    assert "🚀" not in get_compact_plain.output
+    assert "🐞" not in get_compact_plain.output
 
-    show_json = runner.invoke(
+    get_json = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "json",
             "-c",
             "v1.0.0",
         ],
     )
-    assert show_json.exit_code == 0, show_json.output
-    payload = json.loads(show_json.output)
+    assert get_json.exit_code == 0, get_json.output
+    payload = json.loads(get_json.output)
     assert payload["version"] == "v1.0.0"
     assert payload["project"] == "node"
     assert len(payload["entries"]) == 3
@@ -393,12 +390,12 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
     assert bugfix_entry.get("excerpt") == "Resolves ingest worker crash when tokens expire."
     assert payload.get("compact") is True
 
-    show_json_plain = runner.invoke(
+    get_json_plain = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "json",
             "--no-emoji",
@@ -406,8 +403,8 @@ def test_bootstrap_add_and_release(tmp_path: Path) -> None:
             "v1.0.0",
         ],
     )
-    assert show_json_plain.exit_code == 0, show_json_plain.output
-    payload_plain = json.loads(show_json_plain.output)
+    assert get_json_plain.exit_code == 0, get_json_plain.output
+    payload_plain = json.loads(get_json_plain.output)
     assert payload_plain["entries"][0]["title"] == "Remove legacy API"
     assert payload_plain["entries"][0]["type"] == "breaking"
     plain_feature = next(
@@ -491,22 +488,22 @@ def test_compact_export_style_from_config(tmp_path: Path) -> None:
     assert "- **Compact Feature**: Adds compact defaults." in release_notes
     assert "### Compact Feature" not in release_notes
 
-    show_result = runner.invoke(
+    get_result = runner.invoke(
         cli,
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "v0.1.0",
         ],
     )
-    assert show_result.exit_code == 0, show_result.output
-    assert "- **Compact Feature**: Adds compact defaults." in show_result.output
+    assert get_result.exit_code == 0, get_result.output
+    assert "- **Compact Feature**: Adds compact defaults." in get_result.output
 
 
-def test_show_unreleased_token(tmp_path: Path) -> None:
+def test_get_unreleased_token(tmp_path: Path) -> None:
     runner = CliRunner()
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -531,25 +528,19 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
             "--type",
             "feature",
             "--description",
-            "Show unreleased entries via token.",
+            "Get unreleased entries via token.",
             "--author",
             "",
         ],
     )
     assert add_result.exit_code == 0, add_result.output
 
-    terminal_result = runner.invoke(
-        cli,
-        ["--root", str(workspace_root), "show", "unreleased"],
-    )
+    terminal_result = runner.invoke(cli, ["--root", str(workspace_root), "get", "unreleased"])
     assert terminal_result.exit_code == 0, terminal_result.output
     plain_output = click.utils.strip_ansi(terminal_result.output)
     assert "Pending Feature" in plain_output
 
-    dash_terminal = runner.invoke(
-        cli,
-        ["--root", str(workspace_root), "show", "--", "-"],
-    )
+    dash_terminal = runner.invoke(cli, ["--root", str(workspace_root), "get", "--", "-"])
     assert dash_terminal.exit_code == 0, dash_terminal.output
     dash_output = click.utils.strip_ansi(dash_terminal.output)
     assert "Pending Feature" in dash_output
@@ -559,7 +550,7 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "unreleased",
@@ -574,7 +565,7 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "--no-emoji",
@@ -590,7 +581,7 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "markdown",
             "--",
@@ -605,7 +596,7 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "json",
             "unreleased",
@@ -624,7 +615,7 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "json",
             "--no-emoji",
@@ -640,7 +631,7 @@ def test_show_unreleased_token(tmp_path: Path) -> None:
         [
             "--root",
             str(workspace_root),
-            "show",
+            "get",
             "--format",
             "json",
             "--",

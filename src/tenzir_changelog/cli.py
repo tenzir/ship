@@ -384,7 +384,7 @@ def cli(ctx: click.Context, root: Path, config: Optional[Path]) -> None:
     ctx.obj = CLIContext(project_root=root, config_path=config_path)
 
     if ctx.invoked_subcommand is None:
-        ctx.invoke(show)
+        ctx.invoke(get)
 
 
 @cli.command("bootstrap")
@@ -847,9 +847,9 @@ def _render_single_entry(
 @click.option(
     "--since",
     "since_version",
-    help="Only show entries newer than the specified release version.",
+    help="Only include entries newer than the specified release version.",
 )
-@click.option("--banner", is_flag=True, help="Show a project banner above entries.")
+@click.option("--banner", is_flag=True, help="Display a project banner above entries.")
 @click.pass_obj
 def list_entries(
     ctx: CLIContext,
@@ -867,7 +867,7 @@ def list_entries(
     release_version = _normalize_optional(release_version)
     since_version = _normalize_optional(since_version)
 
-    # If --release is specified, show the release manifest
+    # If --release is specified, display the release manifest
     if release_version:
         manifests = [
             m for m in iter_release_manifests(project_root) if m.version == release_version
@@ -1019,7 +1019,7 @@ def _resolve_identifier(
     return IdentifierResolution(kind="entry", entries=[entry], identifier=entry_id)
 
 
-@cli.command("show")
+@cli.command("get")
 @click.argument("identifiers", nargs=-1)
 @click.option(
     "--format",
@@ -1049,14 +1049,14 @@ def _resolve_identifier(
     help="Disable type emoji in entry headings.",
 )
 @click.pass_obj
-def show(
+def get(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
     output_format: str,
     compact: Optional[bool],
     no_emoji: bool,
 ) -> None:
-    """Show changelog entries in the terminal or export them as Markdown/JSON."""
+    """Get changelog entries in the terminal or export them as Markdown/JSON."""
     project_root = ctx.project_root
     output_format = output_format.lower()
 
@@ -1165,17 +1165,17 @@ list_entries.__doc__ = list_entries_help
 list_entries.help = list_entries_help
 list_entries.short_help = LIST_COMMAND_SUMMARY
 
-SHOW_COMMAND_SUMMARY = "Show or export changelog entries."
-show_help = _command_help_text(
-    summary=SHOW_COMMAND_SUMMARY,
-    command_name="show",
-    verb="show",
+GET_COMMAND_SUMMARY = "Get or export changelog entries."
+get_help = _command_help_text(
+    summary=GET_COMMAND_SUMMARY,
+    command_name="get",
+    verb="get",
     row_hint="Row numbers (e.g., 1, 2, 3), 'unreleased', or '-'",
-    version_hint="to show or export all entries in that release",
+    version_hint="to get or export all entries in that release",
 )
-show.__doc__ = show_help
-show.help = show_help
-show.short_help = SHOW_COMMAND_SUMMARY
+get.__doc__ = get_help
+get.help = get_help
+get.short_help = GET_COMMAND_SUMMARY
 
 
 def _prompt_entry_body(initial: str = "") -> str:
