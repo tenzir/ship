@@ -2167,7 +2167,8 @@ def release_publish_cmd(
     if not assume_yes:
         prompt = (
             f"Publish {manifest.version} to GitHub repository {config.repository}? "
-            "This will run 'gh release create'."
+            "This will run 'gh release create'. If the release already exists on GitHub, rerun manually with "
+            "'gh release edit --notes-file'."
         )
         if not click.confirm(prompt, default=True):
             console.print("[yellow]Aborted release publish.[/yellow]")
