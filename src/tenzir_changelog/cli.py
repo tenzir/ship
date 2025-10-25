@@ -54,6 +54,9 @@ from .releases import (
 from .validate import run_validation
 from .utils import (
     INFO_PREFIX,
+    CHECKMARK,
+    CROSS,
+    WARNING,
     configure_logging,
     console,
     extract_excerpt,
@@ -82,8 +85,11 @@ ENTRY_TYPE_EMOJIS = {
     "bugfix": "🐞",
     "change": "🔧",
 }
-
-
+STATUS_TABLE_CELLS: dict[str, RenderableType] = {
+    "new": Text.from_ansi(CHECKMARK),
+    "existing": Text(WARNING, style="yellow"),
+    "removed": Text.from_ansi(CROSS),
+}
 def _print_renderable(renderable: RenderableType) -> None:
     """Emit a Rich renderable to the console without logging prefixes."""
     console.print(renderable)
@@ -1844,20 +1850,24 @@ def release_create_cmd(
     if not entries_sorted:
         raise click.ClickException("No entries available to include in the release.")
 
-    table = Table(title=f"Entries for {version}")
-    table.add_column("ID", style="cyan")
+    table = Table()
+    table.add_column("✓", no_wrap=True, justify="center", header_style="dim")
     table.add_column("Title")
-    table.add_column("Type")
-    table.add_column("Status")
+    table.add_column("Type", no_wrap=True, justify="center")
+    table.add_column("ID", style="cyan")
     new_entry_ids = {entry.entry_id for entry in new_entries}
     for entry in entries_sorted:
-        status = "New" if entry.entry_id in new_entry_ids else "Existing"
-        status_style = "green" if status == "New" else "dim"
+        status = "new" if entry.entry_id in new_entry_ids else "existing"
+        status_cell = STATUS_TABLE_CELLS.get(status, Text("•"))
+        if isinstance(status_cell, Text):
+            status_cell = status_cell.copy()
+        type_value = entry.metadata.get("type", "change")
+        type_emoji = ENTRY_TYPE_EMOJIS.get(type_value, "•")
         table.add_row(
-            entry.entry_id,
+            status_cell,
             entry.metadata.get("title", "Untitled"),
-            entry.metadata.get("type", "change"),
-            f"[{status_style}]{status}[/{status_style}]",
+            type_emoji,
+            entry.entry_id,
         )
     _print_renderable(table)
 
@@ -1971,10 +1981,10 @@ def release_create_cmd(
         return
 
     if not assume_yes:
-        log_info(f"detected changes for release '{version}':")
+        log_info(f"changes for release {format_bold(version)}:")
         for reason in change_reasons:
-            log_info(f"change: {reason}")
-        log_info("re-run with --yes to apply these updates.")
+            log_success(reason)
+        log_info(f"re-run with {format_bold('--yes')} to apply these updates.")
         raise SystemExit(1)
 
     release_dir.mkdir(parents=True, exist_ok=True)
