@@ -35,7 +35,10 @@ pipelines all share the same workflow.
    `uvx tenzir-changelog show -m v0.2.0`.
 3. Add entries as you prepare pull requests:
    ```sh
-   uvx tenzir-changelog add --title "Introduce pipeline builder" --type feature --pr 101
+   uvx tenzir-changelog add \
+     --title "Introduce pipeline builder" \
+     --type feature \
+     --pr 101
    ```
    Pass flags for authors, projects, and descriptions to avoid interactive
    prompts, or let the CLI discover metadata automatically.

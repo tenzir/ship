@@ -37,6 +37,15 @@ class Entry:
         return str(self.metadata.get("type", "change"))
 
     @property
+    def component(self) -> Optional[str]:
+        value = self.metadata.get("component")
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.strip() or None
+        return str(value).strip() or None
+
+    @property
     def project(self) -> Optional[str]:
         """Return the single project an entry belongs to."""
         try:
@@ -75,6 +84,7 @@ def read_entry(path: Path) -> Entry:
     frontmatter, _, body = remainder.partition("\n---\n")
     metadata = yaml.safe_load(frontmatter) or {}
     _normalize_created_metadata(metadata)
+    _normalize_component_metadata(metadata, required=False)
     entry_id = path.stem
     sequence = _parse_entry_sequence(entry_id)
     return Entry(
@@ -190,6 +200,28 @@ def normalize_project(
     return project
 
 
+def _normalize_component_metadata(
+    metadata: dict[str, Any],
+    *,
+    required: bool,
+) -> Optional[str]:
+    """Ensure component metadata is stored as a trimmed string."""
+    value = metadata.get("component")
+    if value is None:
+        if required:
+            raise ValueError("Entry metadata missing required 'component' field.")
+        metadata.pop("component", None)
+        return None
+    component = str(value).strip()
+    if not component:
+        if required:
+            raise ValueError("Entry metadata 'component' must be a non-empty string.")
+        metadata.pop("component", None)
+        return None
+    metadata["component"] = component
+    return component
+
+
 def _normalize_created_metadata(
     metadata: dict[str, Any],
     *,
@@ -245,6 +277,7 @@ def write_entry(
     project_value = normalize_project(metadata, default=default_project)
     if default_project is not None and project_value == default_project:
         metadata.pop("project", None)
+    _normalize_component_metadata(metadata, required=False)
     if entry_id is None:
         sequence = _next_entry_sequence(directory)
         entry_id = generate_entry_id(sequence, metadata.get("title"))

@@ -8,7 +8,8 @@ import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from collections.abc import Iterable as IterableABC
+from typing import Iterable, Optional, cast
 
 from rich.console import Console, RenderableType
 from rich.style import Style
@@ -176,6 +177,27 @@ def slugify(value: str) -> str:
     while "--" in slug:
         slug = slug.replace("--", "-")
     return slug.strip("-") or "project"
+
+
+def normalize_string_choices(values: object | None) -> tuple[str, ...]:
+    """Return a tuple of distinct, stripped strings from user-provided config values."""
+    if values is None:
+        return ()
+    if isinstance(values, str):
+        candidate = values.strip()
+        return (candidate,) if candidate else ()
+    normalized: list[str] = []
+    if isinstance(values, IterableABC):
+        candidates = cast(Iterable[object], values)
+    else:
+        candidate = str(values).strip()
+        return (candidate,) if candidate else ()
+    for item in candidates:
+        text = str(item).strip()
+        if not text or text in normalized:
+            continue
+        normalized.append(text)
+    return tuple(normalized)
 
 
 def extract_excerpt(text: str) -> str:

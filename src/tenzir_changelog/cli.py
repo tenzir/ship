@@ -90,6 +90,8 @@ STATUS_TABLE_CELLS: dict[str, RenderableType] = {
     "existing": Text(WARNING, style="yellow"),
     "removed": Text.from_ansi(CROSS),
 }
+
+
 def _print_renderable(renderable: RenderableType) -> None:
     """Emit a Rich renderable to the console without logging prefixes."""
     console.print(renderable)
@@ -227,38 +229,68 @@ def _parse_pr_numbers(metadata: Mapping[str, Any]) -> list[int]:
     return pr_numbers
 
 
-def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, ColumnSpec]]:
+def _entries_table_layout(
+    console_width: int, include_component: bool
+) -> tuple[list[str], dict[str, ColumnSpec]]:
     """Return the visible columns and their specs for the current terminal width."""
 
     width = max(console_width, 60)
     if width < 70:
         columns = ["num", "date", "title", "type"]
         specs: dict[str, ColumnSpec] = {
-            "num": {"max_width": 3, "no_wrap": True},
+            "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
+            "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "title": {"min_width": 20, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
+        if include_component:
+            columns.append("component")
+            specs["component"] = {
+                "min_width": 4,
+                "max_width": 8,
+                "no_wrap": True,
+                "overflow": "ellipsis",
+            }
     elif width < 78:
         columns = ["num", "date", "version", "title", "type"]
         specs = {
-            "num": {"max_width": 3, "no_wrap": True},
+            "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
+            "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 8, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 30, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
+        if include_component:
+            columns.append("component")
+            specs["component"] = {
+                "min_width": 4,
+                "max_width": 8,
+                "no_wrap": True,
+                "overflow": "ellipsis",
+            }
     elif width < 88:
         columns = ["num", "date", "version", "title", "type", "prs"]
         specs = {
-            "num": {"max_width": 3, "no_wrap": True},
+            "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
+            "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 28, "overflow": "ellipsis", "no_wrap": True},
             "prs": {"max_width": 12, "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
+        if include_component:
+            columns.insert(5, "component")
+            specs["component"] = {
+                "min_width": 4,
+                "max_width": 10,
+                "no_wrap": True,
+                "overflow": "ellipsis",
+            }
     elif width < 110:
         columns = ["num", "date", "version", "title", "type", "prs", "authors"]
         specs = {
-            "num": {"max_width": 3, "no_wrap": True},
+            "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
+            "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 26, "overflow": "ellipsis", "no_wrap": True},
             "prs": {"max_width": 12, "no_wrap": True},
@@ -270,10 +302,19 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
             },
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
+        if include_component:
+            columns.insert(5, "component")
+            specs["component"] = {
+                "min_width": 4,
+                "max_width": 10,
+                "no_wrap": True,
+                "overflow": "ellipsis",
+            }
     elif width < 140:
         columns = ["num", "date", "version", "title", "type", "prs", "authors", "id"]
         specs = {
-            "num": {"max_width": 3, "no_wrap": True},
+            "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
+            "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 10, "no_wrap": True},
             "title": {"min_width": 18, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
             "prs": {"max_width": 12, "no_wrap": True},
@@ -286,10 +327,19 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
             "id": {"min_width": 16, "max_width": 22, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
+        if include_component:
+            columns.insert(5, "component")
+            specs["component"] = {
+                "min_width": 4,
+                "max_width": 10,
+                "no_wrap": True,
+                "overflow": "ellipsis",
+            }
     else:
         columns = ["num", "date", "version", "title", "type", "prs", "authors", "id"]
         specs = {
-            "num": {"max_width": 3, "no_wrap": True},
+            "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
+            "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 12, "no_wrap": True},
             "title": {"min_width": 20, "max_width": 40, "overflow": "fold"},
             "prs": {"max_width": 14, "no_wrap": True},
@@ -297,6 +347,14 @@ def _entries_table_layout(console_width: int) -> tuple[list[str], dict[str, Colu
             "id": {"min_width": 18, "max_width": 28, "overflow": "fold"},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
         }
+        if include_component:
+            columns.insert(5, "component")
+            specs["component"] = {
+                "min_width": 6,
+                "max_width": 12,
+                "no_wrap": True,
+                "overflow": "fold",
+            }
     return columns, specs
 
 
@@ -494,6 +552,42 @@ def _filter_entries_by_project(
     return filtered
 
 
+def _normalize_component_filters(values: Iterable[str], config: Config) -> set[str]:
+    """Validate and normalize component filters using config defaults."""
+    normalized: set[str] = set()
+    if not values:
+        return normalized
+    allowed_lookup = {component.lower(): component for component in config.components}
+    unknown: list[str] = []
+    for raw_value in values:
+        stripped = raw_value.strip()
+        if not stripped:
+            continue
+        lowered = stripped.lower()
+        if config.components and lowered not in allowed_lookup:
+            unknown.append(stripped)
+            continue
+        normalized.add(allowed_lookup.get(lowered, stripped))
+    if unknown:
+        allowed = ", ".join(config.components)
+        raise click.ClickException(
+            f"Unknown component filter(s): {', '.join(sorted(unknown))}. Allowed components: {allowed}"
+        )
+    return normalized
+
+
+def _filter_entries_by_component(entries: Iterable[Entry], components: set[str]) -> list[Entry]:
+    if not components:
+        return list(entries)
+    normalized = {component.lower() for component in components}
+    filtered: list[Entry] = []
+    for entry in entries:
+        component_value = entry.component
+        if component_value and component_value.lower() in normalized:
+            filtered.append(entry)
+    return filtered
+
+
 def _build_release_sort_order(project_root: Path) -> dict[str, int]:
     """Return a mapping from release version to display order rank."""
     manifests = list(iter_release_manifests(project_root))
@@ -581,7 +675,9 @@ def _render_entries(
     if show_banner:
         _render_project_header(config)
 
-    visible_columns, column_specs = _entries_table_layout(console.size.width)
+    entries_list = list(entries)
+    include_component = any(entry.component for entry in entries_list)
+    visible_columns, column_specs = _entries_table_layout(console.size.width, include_component)
     table_width = max(console.size.width, 40)
     table = Table(show_lines=False, expand=False, width=table_width, pad_edge=False)
     if "num" in visible_columns:
@@ -636,6 +732,17 @@ def _render_entries(
             overflow_default="ellipsis",
             no_wrap_default=True,
         )
+    if "component" in visible_columns:
+        _add_table_column(
+            table,
+            "Component",
+            "component",
+            column_specs,
+            style="green",
+            justify="center",
+            overflow_default="ellipsis",
+            no_wrap_default=True,
+        )
     if "prs" in visible_columns:
         _add_table_column(
             table,
@@ -668,12 +775,12 @@ def _render_entries(
 
     has_rows = False
     if release_order is not None:
-        sorted_entries = _sort_entries_for_display(entries, release_index, release_order)
+        sorted_entries = _sort_entries_for_display(entries_list, release_index, release_order)
         release_groups = [
             _entry_release_group(entry, release_index, release_order) for entry in sorted_entries
         ]
     else:
-        sorted_entries = sort_entries_desc(list(entries))
+        sorted_entries = sort_entries_desc(entries_list)
         release_groups = [None] * len(sorted_entries)
 
     total_rows = len(sorted_entries)
@@ -704,6 +811,9 @@ def _render_entries(
             row.append(_ellipsis_cell(metadata.get("title", "Untitled"), "title", column_specs))
         if "type" in visible_columns:
             row.append(type_display)
+        if "component" in visible_columns:
+            component_value = entry.component or "—"
+            row.append(_ellipsis_cell(component_value, "component", column_specs))
         if "prs" in visible_columns:
             pr_numbers = _parse_pr_numbers(metadata)
             pr_display = ", ".join(f"#{pr}" for pr in pr_numbers) if pr_numbers else "—"
@@ -769,19 +879,37 @@ def _render_release(
     table.add_column("Entry ID", style="cyan")
     table.add_column("Title")
     table.add_column("Type", style="magenta")
-    for index, entry_id in enumerate(manifest.entries, 1):
+
+    resolved_entries: list[Entry | None] = []
+    has_components = False
+    for entry_id in manifest.entries:
         entry = all_entries.get(entry_id)
         if entry is None:
             entry = load_release_entry(project_root, manifest, entry_id)
+        resolved_entries.append(entry)
+        if entry and entry.component:
+            has_components = True
+
+    if has_components:
+        table.add_column("Component", style="green")
+
+    for index, entry in enumerate(resolved_entries, 1):
+        entry_id = manifest.entries[index - 1]
         if entry:
-            table.add_row(
+            row = [
                 str(index),
                 entry_id,
                 entry.metadata.get("title", "Untitled"),
                 entry.metadata.get("type", "change"),
-            )
+            ]
+            if has_components:
+                row.append(entry.component or "—")
+            table.add_row(*row)
         else:
-            table.add_row(str(index), entry_id, "[red]Missing entry[/red]", "—")
+            row = [str(index), entry_id, "[red]Missing entry[/red]", "—"]
+            if has_components:
+                row.append("—")
+            table.add_row(*row)
     _print_renderable(table)
 
 
@@ -805,6 +933,8 @@ def _render_single_entry(
     metadata_parts = []
     metadata_parts.append(f"Entry ID:  [cyan]{entry.entry_id}[/cyan]")
     metadata_parts.append(f"Type:      [{type_color}]{entry.type}[/{type_color}]")
+    if entry.component:
+        metadata_parts.append(f"Component: [green]{entry.component}[/green]")
 
     if entry.created_at:
         metadata_parts.append(f"Created:   {entry.created_at}")
@@ -856,6 +986,7 @@ def _show_entries_table(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
     project_filter: tuple[str, ...],
+    component_filter: tuple[str, ...],
     banner: bool,
     *,
     include_emoji: bool,
@@ -863,6 +994,7 @@ def _show_entries_table(
     config = ctx.ensure_config()
     project_root = ctx.project_root
     projects = set(project_filter)
+    components = _normalize_component_filters(component_filter, config)
 
     # Collect all entries (unreleased and released)
     entries = list(iter_entries(project_root))
@@ -888,7 +1020,7 @@ def _show_entries_table(
             sorted_entries=sorted_entries,
             entry_map=entry_map,
         )
-        if len(resolutions) == 1 and resolutions[0].kind == "release":
+        if len(resolutions) == 1 and resolutions[0].kind == "release" and not components:
             manifest = resolutions[0].manifest
             if manifest is None:
                 raise click.ClickException(f"Release '{resolutions[0].identifier}' not found.")
@@ -902,6 +1034,7 @@ def _show_entries_table(
         entries = sorted_entries
 
     entries = _filter_entries_by_project(entries, projects, config.id)
+    entries = _filter_entries_by_component(entries, components)
     render_release_order = release_order if not identifiers else None
     _render_entries(
         entries,
@@ -1077,6 +1210,7 @@ def _gather_entry_context(
 def _show_entries_card(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
+    component_filter: tuple[str, ...],
     *,
     include_emoji: bool,
 ) -> None:
@@ -1088,6 +1222,7 @@ def _show_entries_card(
     config = ctx.ensure_config()
     project_root = ctx.project_root
     entry_map, release_index_all, _, sorted_entries = _gather_entry_context(project_root)
+    components = _normalize_component_filters(component_filter, config)
     resolutions = _resolve_identifiers_sequence(
         identifiers,
         project_root=project_root,
@@ -1097,17 +1232,26 @@ def _show_entries_card(
     )
 
     release_index = release_index_all
+    rendered = False
     for resolution in resolutions:
         if resolution.kind == "unreleased" and not resolution.entries:
             console.print("[yellow]No unreleased entries found.[/yellow]")
             continue
-        for entry in resolution.entries:
+        filtered_entries = _filter_entries_by_component(resolution.entries, components)
+        if not filtered_entries:
+            continue
+        for entry in filtered_entries:
             versions = release_index.get(entry.entry_id, [])
             if resolution.kind == "release" and resolution.manifest:
                 version = resolution.manifest.version
                 if version and version not in versions:
                     versions = versions + [version]
             _render_single_entry(entry, versions, include_emoji=include_emoji)
+            rendered = True
+    if not rendered:
+        raise click.ClickException(
+            "No entries matched the provided identifiers and component filters."
+        )
 
 
 def _show_entries_export(
@@ -1117,12 +1261,14 @@ def _show_entries_export(
     view: ShowView,
     compact: Optional[bool],
     include_emoji: bool,
+    component_filter: tuple[str, ...],
 ) -> None:
     if not identifiers:
         raise click.ClickException("Provide at least one identifier for markdown or json output.")
 
     config = ctx.ensure_config()
     project_root = ctx.project_root
+    components = _normalize_component_filters(component_filter, config)
     entry_map, _, _, sorted_entries = _gather_entry_context(project_root)
     resolutions = _resolve_identifiers_sequence(
         identifiers,
@@ -1148,9 +1294,12 @@ def _show_entries_export(
         for entry in resolution.entries:
             if entry.entry_id not in ordered_entries:
                 ordered_entries[entry.entry_id] = entry
-    export_entries = sort_entries_desc(list(ordered_entries.values()))
+    filtered_entries = _filter_entries_by_component(ordered_entries.values(), components)
+    export_entries = sort_entries_desc(filtered_entries)
     if not export_entries:
-        raise click.ClickException("No entries matched the provided identifier for export.")
+        raise click.ClickException(
+            "No entries matched the provided identifiers and component filters for export."
+        )
 
     if len(resolutions) == 1 and resolutions[0].kind == "unreleased":
         fallback_heading = "Unreleased Changes"
@@ -1240,6 +1389,7 @@ def _show_entries_export(
     multiple=True,
 )
 @click.option("--project", "project_filter", multiple=True, help="Filter by project key.")
+@click.option("--component", "component_filter", multiple=True, help="Filter by component.")
 @click.option("--banner", is_flag=True, help="Display a project banner above entries.")
 @click.option(
     "--compact",
@@ -1265,6 +1415,7 @@ def show_entries(
     identifiers: tuple[str, ...],
     view_flags: tuple[str, ...],
     project_filter: tuple[str, ...],
+    component_filter: tuple[str, ...],
     banner: bool,
     compact: Optional[bool],
     no_emoji: bool,
@@ -1286,6 +1437,7 @@ def show_entries(
             ctx,
             identifiers,
             project_filter,
+            component_filter,
             banner,
             include_emoji=include_emoji,
         )
@@ -1299,7 +1451,12 @@ def show_entries(
             raise click.ClickException(
                 "--compact/--no-compact only apply to markdown and json views."
             )
-        _show_entries_card(ctx, identifiers, include_emoji=include_emoji)
+        _show_entries_card(
+            ctx,
+            identifiers,
+            component_filter,
+            include_emoji=include_emoji,
+        )
         return
 
     if view in {"markdown", "json"}:
@@ -1309,6 +1466,7 @@ def show_entries(
             view=view,
             compact=compact,
             include_emoji=include_emoji,
+            component_filter=component_filter,
         )
         return
 
@@ -1411,6 +1569,8 @@ def _entry_to_dict(
         "version": version,
         "body": entry.body,
     }
+    if entry.component:
+        data["component"] = entry.component
     if compact:
         data["excerpt"] = extract_excerpt(entry.body)
     return data
@@ -1478,6 +1638,10 @@ def _format_author_line(entry: Entry, config: Config) -> str:
     "project_override",
     help="Assign the entry to a project (must match the configured project).",
 )
+@click.option(
+    "--component",
+    help="Component associated with the change.",
+)
 @click.option("--author", "authors", multiple=True, help="GitHub username of an author.")
 @click.option(
     "--pr",
@@ -1496,6 +1660,7 @@ def add(
     title: Optional[str],
     entry_type: Optional[str],
     project_override: Optional[str],
+    component: Optional[str],
     authors: tuple[str, ...],
     prs: tuple[str, ...],
     description: Optional[str],
@@ -1518,6 +1683,26 @@ def add(
     project_value = (project_override or "").strip() or config.id
     if project_value != config.id:
         raise click.ClickException(f"Unknown project '{project_value}'. Expected '{config.id}'.")
+
+    available_components = list(config.components)
+    component_value: Optional[str] = None
+    if component:
+        candidate = component.strip()
+        if candidate:
+            if available_components:
+                lookup = {value.lower(): value for value in available_components}
+                lowered = candidate.lower()
+                if lowered not in lookup:
+                    allowed = ", ".join(available_components)
+                    raise click.ClickException(
+                        f"Unknown component '{candidate}'. Allowed components: {allowed}"
+                    )
+                component_value = lookup[lowered]
+            else:
+                component_value = candidate
+    elif available_components and component == "":
+        # Explicit empty string passed via CLI (e.g., --component "")
+        component_value = None
 
     if authors:
         authors_list = [author.strip() for author in authors if author.strip()]
@@ -1547,6 +1732,8 @@ def add(
         "project": project_value,
         "authors": authors_list or None,
     }
+    if component_value:
+        metadata["component"] = component_value
     if pr_numbers:
         metadata["prs"] = pr_numbers
 
@@ -1582,6 +1769,9 @@ def _render_release_notes(
             title = entry.metadata.get("title", "Untitled")
             lines.append(f"### {title}")
             lines.append("")
+            if entry.component:
+                lines.append(f"**Component:** `{entry.component}`")
+                lines.append("")
             body = entry.body.strip()
             if body:
                 lines.append(body)
@@ -1621,7 +1811,11 @@ def _render_release_notes_compact(
         for entry in type_entries:
             excerpt = extract_excerpt(entry.body)
             bullet_text = excerpt or entry.metadata.get("title", "Untitled")
-            bullet = f"- {bullet_text}"
+            component_label = entry.component
+            if component_label:
+                bullet = f"- **{component_label}**: {bullet_text}"
+            else:
+                bullet = f"- {bullet_text}"
             author_text, pr_text = _collect_author_pr_text(entry, config)
             suffix_parts: list[str] = []
             if author_text:
@@ -2337,6 +2531,9 @@ def _export_markdown_release(
             title = metadata.get("title", "Untitled")
             lines.append(f"### {title}")
             lines.append("")
+            if entry.component:
+                lines.append(f"**Component:** `{entry.component}`")
+                lines.append("")
             body = entry.body.strip()
             if body:
                 lines.append(body)
@@ -2388,7 +2585,11 @@ def _export_markdown_compact(
             metadata = entry.metadata
             excerpt = extract_excerpt(entry.body)
             bullet_text = excerpt or metadata.get("title", "Untitled")
-            bullet = f"- {bullet_text}"
+            component_label = entry.component
+            if component_label:
+                bullet = f"- **{component_label}**: {bullet_text}"
+            else:
+                bullet = f"- {bullet_text}"
             author_text, pr_text = _collect_author_pr_text(entry, config)
             suffix_parts: list[str] = []
             if author_text:

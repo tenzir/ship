@@ -1,7 +1,6 @@
 ---
 title: Invert show table order
 type: breaking
-component: cli
 authors:
 - mavam
 - claude

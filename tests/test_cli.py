@@ -538,19 +538,31 @@ def test_show_orders_rows_oldest_to_newest(tmp_path: Path) -> None:
 
     write_entry(
         project_dir,
-        {"title": "Oldest", "type": "change", "created": date(2024, 1, 1)},
+        {
+            "title": "Oldest",
+            "type": "change",
+            "created": date(2024, 1, 1),
+        },
         "First body",
         default_project="project",
     )
     write_entry(
         project_dir,
-        {"title": "Middle", "type": "change", "created": date(2024, 2, 1)},
+        {
+            "title": "Middle",
+            "type": "change",
+            "created": date(2024, 2, 1),
+        },
         "Second body",
         default_project="project",
     )
     write_entry(
         project_dir,
-        {"title": "Newest", "type": "change", "created": date(2024, 3, 1)},
+        {
+            "title": "Newest",
+            "type": "change",
+            "created": date(2024, 3, 1),
+        },
         "Third body",
         default_project="project",
     )
@@ -792,6 +804,126 @@ def test_get_unreleased_token(tmp_path: Path) -> None:
         ["--root", str(project_dir), "show", "--", "-"],
     )
     assert list_dash.exit_code == 0, list_dash.output
+
+
+def test_component_filtering(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "config.yaml").write_text(
+        "\n".join(
+            [
+                "id: sample",
+                "name: Sample Project",
+                "components:",
+                "  - cli",
+                "  - docs",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    add_cli = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "CLI Entry",
+            "--type",
+            "change",
+            "--component",
+            "cli",
+            "--description",
+            "Touches the CLI.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_cli.exit_code == 0, add_cli.output
+
+    add_docs = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Docs Entry",
+            "--type",
+            "feature",
+            "--component",
+            "docs",
+            "--description",
+            "Updates documentation.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_docs.exit_code == 0, add_docs.output
+
+    table_docs = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "--component",
+            "docs",
+        ],
+    )
+    assert table_docs.exit_code == 0, table_docs.output
+    table_plain = click.utils.strip_ansi(table_docs.output)
+    assert "Docs Entry" in table_plain
+    assert "CLI Entry" not in table_plain
+
+    markdown_docs = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-m",
+            "--component",
+            "docs",
+            "unreleased",
+        ],
+    )
+    assert markdown_docs.exit_code == 0, markdown_docs.output
+    assert "**Component:** `docs`" in markdown_docs.output
+    assert "CLI Entry" not in markdown_docs.output
+
+    json_docs = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-j",
+            "--component",
+            "docs",
+            "unreleased",
+        ],
+    )
+    assert json_docs.exit_code == 0, json_docs.output
+    payload = json.loads(json_docs.output)
+    assert len(payload["entries"]) == 1
+    assert payload["entries"][0]["title"] == "Docs Entry"
+    assert payload["entries"][0]["component"] == "docs"
+
+    bad_filter = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "--component",
+            "qa",
+        ],
+    )
+    assert bad_filter.exit_code != 0
+    assert "Unknown component filter" in bad_filter.output
 
 
 def test_release_create_appends_entries(tmp_path: Path) -> None:
@@ -1427,10 +1559,20 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
         cwd=project_dir,
         check=True,
     )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
+        cwd=project_dir,
+        check=True,
+    )
     (project_dir / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=project_dir, check=True)
     subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
+        ["git", "commit", "-m", "Initial commit", "--no-gpg-sign"],
         cwd=project_dir,
         check=True,
         stdout=subprocess.PIPE,
@@ -1533,7 +1675,7 @@ def test_release_publish_skips_existing_tag(tmp_path: Path) -> None:
     (project_dir / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=project_dir, check=True)
     subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
+        ["git", "commit", "-m", "Initial commit", "--no-gpg-sign"],
         cwd=project_dir,
         check=True,
         stdout=subprocess.PIPE,

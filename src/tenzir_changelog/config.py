@@ -8,6 +8,8 @@ from typing import Any, Literal, MutableMapping, cast
 
 import yaml
 
+from .utils import normalize_string_choices
+
 ExportStyle = Literal["standard", "compact"]
 CONFIG_RELATIVE_PATH = Path("config.yaml")
 
@@ -35,6 +37,7 @@ class Config:
     intro_template: str | None = None
     assets_dir: str | None = None
     export_style: ExportStyle = EXPORT_STYLE_STANDARD
+    components: tuple[str, ...] = ()
 
 
 def load_config(path: Path) -> Config:
@@ -67,6 +70,8 @@ def load_config(path: Path) -> Config:
             raise ValueError(f"Config option 'export_style' must be one of: {allowed}")
         export_style = cast(ExportStyle, normalized_export_style)
 
+    components = normalize_string_choices(raw.get("components"))
+
     return Config(
         id=project_value,
         name=str(name_raw or "Unnamed Project"),
@@ -75,6 +80,7 @@ def load_config(path: Path) -> Config:
         intro_template=(str(raw["intro_template"]) if raw.get("intro_template") else None),
         assets_dir=str(raw["assets_dir"]) if raw.get("assets_dir") else None,
         export_style=export_style,
+        components=components,
     )
 
 
@@ -94,6 +100,8 @@ def dump_config(config: Config) -> dict[str, Any]:
         data["assets_dir"] = config.assets_dir
     if config.export_style != EXPORT_STYLE_STANDARD:
         data["export_style"] = config.export_style
+    if config.components:
+        data["components"] = list(config.components)
     return data
 
 

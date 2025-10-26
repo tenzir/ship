@@ -8,8 +8,8 @@ from tenzir_changelog.entries import iter_entries, sort_entries_desc, write_entr
 
 
 def test_sort_entries_desc_orders_by_numeric_prefix(tmp_path: Path) -> None:
-    metadata_a = {"title": "Entry A", "type": "change"}
-    metadata_b = {"title": "Entry B", "type": "change"}
+    metadata_a = {"title": "Entry A", "type": "change", "component": "cli"}
+    metadata_b = {"title": "Entry B", "type": "change", "component": "cli"}
 
     entry_a = write_entry(tmp_path, dict(metadata_a), "First body")
     entry_b = write_entry(tmp_path, dict(metadata_b), "Second body")
