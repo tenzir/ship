@@ -338,6 +338,7 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "mdformat" },
+    { name = "packaging" },
     { name = "pyyaml" },
     { name = "rich" },
 ]
@@ -356,6 +357,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "mdformat", specifier = ">=0.7.17" },
+    { name = "packaging", specifier = ">=24.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.7" },
 ]

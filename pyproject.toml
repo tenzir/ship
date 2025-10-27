@@ -22,6 +22,7 @@ classifiers = [
 ]
 dependencies = [
   "click>=8.1",
+  "packaging>=24.0",
   "pyyaml>=6.0",
   "rich>=13.7",
   "mdformat>=0.7.17",
