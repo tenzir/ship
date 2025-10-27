@@ -9,6 +9,7 @@ import sys
 import textwrap
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from importlib.metadata import PackageNotFoundError, version as metadata_version
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, TypedDict, Literal, cast
 
@@ -23,6 +24,7 @@ from rich.rule import Rule
 
 from packaging.version import InvalidVersion, Version
 
+from . import __version__ as package_version
 from .config import (
     Config,
     EXPORT_STYLE_COMPACT,
@@ -75,6 +77,16 @@ from .utils import (
 )
 
 __all__ = ["cli", "INFO_PREFIX"]
+
+VERSION_FLAGS = {"--version", "-V"}
+
+
+def _resolve_cli_version() -> str:
+    try:
+        return metadata_version("tenzir-changelog")
+    except PackageNotFoundError:
+        return package_version
+
 
 ENTRY_TYPE_STYLES = {
     "breaking": "bold red",
@@ -540,6 +552,9 @@ def cli(ctx: click.Context, root: Path, config: Optional[Path], debug: bool) -> 
 
     if ctx.invoked_subcommand is None:
         ctx.invoke(show_entries)
+
+
+cli = click.version_option(version=_resolve_cli_version())(cli)
 
 
 def _filter_entries_by_project(
@@ -2695,17 +2710,21 @@ def _export_json_payload(
 
 def main(argv: Optional[list[str]] = None) -> int:
     """Entry point for console_scripts."""
-    argv = argv if argv is not None else sys.argv[1:]
+    args = list(argv) if argv is not None else list(sys.argv[1:])
+
+    if any(flag in args for flag in VERSION_FLAGS):
+        click.echo(_resolve_cli_version())
+        return 0
 
     # If no command is specified, default to 'show'
     # Check if any arg is a known command
-    has_command = any(arg in cli.commands for arg in argv)
+    has_command = any(arg in cli.commands for arg in args)
     if not has_command:
         # No command found, inject 'show' at the end (after options like --root)
-        argv = list(argv) + ["show"]
+        args.append("show")
 
     try:
-        cli.main(args=list(argv), prog_name="tenzir-changelog", standalone_mode=False)
+        cli.main(args=args, prog_name="tenzir-changelog", standalone_mode=False)
     except click.ClickException as exc:
         exc.show(file=sys.stderr)
         exit_code = getattr(exc, "exit_code", 1)

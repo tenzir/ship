@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Sequence
 
 from .utils import configure_logging, log_info
@@ -29,6 +30,20 @@ def main() -> int:
     configure_logging(debug=False)
     for command in _COMMANDS:
         _run(command)
+    wheel_candidates = list(Path("dist").glob("*.whl"))
+    if not wheel_candidates:
+        raise SystemExit("uv build did not produce a wheel in dist/")
+    wheel_path = max(wheel_candidates, key=lambda path: path.stat().st_mtime)
+    _run(
+        (
+            "uvx",
+            "--no-cache",
+            "--from",
+            str(wheel_path),
+            "tenzir-changelog",
+            "--version",
+        )
+    )
     return 0
 
 

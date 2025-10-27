@@ -5,17 +5,25 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import pytest
 from datetime import date
 from pathlib import Path
 
 import click
-from click.testing import CliRunner
+import pytest
 import yaml
+from click.testing import CliRunner
 
-from tenzir_changelog.cli import INFO_PREFIX, cli
+from tenzir_changelog import __version__
+from tenzir_changelog.cli import INFO_PREFIX, cli, main
 from tenzir_changelog.config import Config, save_config
 from tenzir_changelog.entries import ENTRY_PREFIX_WIDTH, read_entry, write_entry
+
+
+def test_cli_version_option(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = main(["--version"])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == __version__
 
 
 def test_add_initializes_and_release(tmp_path: Path) -> None:
