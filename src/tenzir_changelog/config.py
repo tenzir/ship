@@ -110,3 +110,41 @@ def save_config(config: Config, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(dump_config(config), handle, sort_keys=False)
+
+
+def load_configs(roots: list[Path]) -> list[tuple[Path, Config]]:
+    """Load configurations from multiple project roots.
+
+    Returns a list of tuples containing (project_root, config) for each root.
+    Raises an error if any root doesn't have a valid config.
+    """
+    result: list[tuple[Path, Config]] = []
+    seen_roots: set[Path] = set()
+
+    for root in roots:
+        resolved_root = root.resolve()
+        if resolved_root in seen_roots:
+            raise ValueError(f"Duplicate root specified: {root}")
+        seen_roots.add(resolved_root)
+
+        config_path = default_config_path(resolved_root)
+        if not config_path.exists():
+            raise ValueError(
+                f"No config found at {config_path}. "
+                f"Ensure {resolved_root} is a valid changelog project root."
+            )
+
+        config = load_config(config_path)
+        result.append((resolved_root, config))
+
+    # Warn about name collisions
+    names = [cfg.name for _, cfg in result]
+    if len(names) != len(set(names)):
+        from collections import Counter
+
+        duplicates = [name for name, count in Counter(names).items() if count > 1]
+        from .utils import log_warning
+
+        log_warning(f"Multiple projects share the same name: {', '.join(duplicates)}")
+
+    return result

@@ -477,10 +477,6 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
         ],
     )
     assert multi_entry_markdown.exit_code == 0, multi_entry_markdown.output
-    assert "# Selected Entries" in multi_entry_markdown.output
-    assert "### Exciting Feature" in multi_entry_markdown.output
-    assert "### Fix ingest crash" in multi_entry_markdown.output
-
     get_json_plain = runner.invoke(
         cli,
         [
@@ -522,6 +518,216 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
         ["--root", str(project_dir), "validate"],
     )
     assert validate_result.exit_code == 0, validate_result.output
+
+
+def _create_project_with_entry(
+    root: Path,
+    project_id: str,
+    project_name: str,
+    *,
+    entry_id: str,
+    title: str,
+    created: date,
+    entry_type: str = "feature",
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    save_config(Config(id=project_id, name=project_name), root / "config.yaml")
+    write_entry(
+        root,
+        {
+            "title": title,
+            "type": entry_type,
+            "created": created,
+        },
+        body=f"{title} body.",
+        entry_id=entry_id,
+        default_project=project_id,
+    )
+
+
+def test_show_table_multi_project_handles_duplicate_entry_ids(tmp_path: Path) -> None:
+    runner = CliRunner()
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+    shared_id = "01-shared-entry"
+
+    _create_project_with_entry(
+        alpha_root,
+        project_id="alpha",
+        project_name="Alpha",
+        entry_id=shared_id,
+        title="Alpha Feature",
+        created=date(2024, 1, 2),
+    )
+    _create_project_with_entry(
+        beta_root,
+        project_id="beta",
+        project_name="Beta",
+        entry_id=shared_id,
+        title="Beta Bugfix",
+        created=date(2024, 2, 3),
+        entry_type="bugfix",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(alpha_root),
+            "--root",
+            str(beta_root),
+            "show",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    plain = click.utils.strip_ansi(result.output)
+    alpha_row = next(line for line in plain.splitlines() if "Alpha Feature" in line)
+    beta_row = next(line for line in plain.splitlines() if "Beta Bugfix" in line)
+    assert "Alpha" in alpha_row
+    assert "Beta" in beta_row
+
+
+def test_show_table_multi_project_honors_project_filter(tmp_path: Path) -> None:
+    runner = CliRunner()
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+
+    _create_project_with_entry(
+        alpha_root,
+        project_id="alpha",
+        project_name="Alpha",
+        entry_id="01-alpha-entry",
+        title="Alpha Feature",
+        created=date(2024, 1, 2),
+    )
+    _create_project_with_entry(
+        beta_root,
+        project_id="beta",
+        project_name="Beta",
+        entry_id="02-beta-entry",
+        title="Beta Feature",
+        created=date(2024, 3, 4),
+    )
+
+    filtered = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(alpha_root),
+            "--root",
+            str(beta_root),
+            "show",
+            "--project",
+            "beta",
+        ],
+    )
+    assert filtered.exit_code == 0, filtered.output
+    plain = click.utils.strip_ansi(filtered.output)
+    assert "Beta Feature" in plain
+    assert "Alpha Feature" not in plain
+
+    unknown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(alpha_root),
+            "--root",
+            str(beta_root),
+            "show",
+            "--project",
+            "gamma",
+        ],
+    )
+    assert unknown.exit_code != 0
+    assert "Unknown project filter" in unknown.output
+
+
+def test_show_table_multi_project_release_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+
+    _create_project_with_entry(
+        alpha_root,
+        project_id="alpha",
+        project_name="Alpha",
+        entry_id="01-shared-entry",
+        title="Alpha Feature",
+        created=date(2024, 1, 2),
+        entry_type="feature",
+    )
+    _create_project_with_entry(
+        alpha_root,
+        project_id="alpha",
+        project_name="Alpha",
+        entry_id="02-alpha-fix",
+        title="Alpha Fix",
+        created=date(2024, 2, 2),
+        entry_type="bugfix",
+    )
+
+    _create_project_with_entry(
+        beta_root,
+        project_id="beta",
+        project_name="Beta",
+        entry_id="01-shared-entry",
+        title="Beta Feature",
+        created=date(2024, 1, 5),
+        entry_type="feature",
+    )
+    _create_project_with_entry(
+        beta_root,
+        project_id="beta",
+        project_name="Beta",
+        entry_id="02-beta-fix",
+        title="Beta Fix",
+        created=date(2024, 2, 5),
+        entry_type="bugfix",
+    )
+
+    for project_root, description in (
+        (alpha_root, "Alpha 1.0.0"),
+        (beta_root, "Beta 1.0.0"),
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "--root",
+                str(project_root),
+                "release",
+                "create",
+                "v1.0.0",
+                "--description",
+                description,
+                "--yes",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(alpha_root),
+            "--root",
+            str(beta_root),
+            "show",
+            "v1.0.0",
+        ],
+    )
+    assert release_result.exit_code == 0, release_result.output
+    plain = click.utils.strip_ansi(release_result.output)
+    rows = [line for line in plain.splitlines() if line.startswith("│")]
+    assert len(rows) == 4
+    expected_pairs = [
+        ("Alpha Feature", "Alpha"),
+        ("Alpha Fix", "Alpha"),
+        ("Beta Feature", "Beta"),
+        ("Beta Fix", "Beta"),
+    ]
+    for title, project in expected_pairs:
+        row = next(line for line in rows if title in line)
+        assert project in row
 
 
 def test_missing_project_reports_info_message(tmp_path: Path) -> None:

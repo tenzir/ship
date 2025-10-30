@@ -18,28 +18,36 @@ pipelines all share the same workflow.
 ## Quick Start
 
 1. Create your first changelog entry (this also scaffolds the project):
+
    ```sh
    uvx tenzir-changelog add --title "Initial setup" --type change --description "Track changelog work."
    ```
+
    The first invocation writes `config.yaml`, prepares `unreleased/` and
    `releases/`, and infers sensible defaults from the directory name—no
    separate bootstrap step required.
+
 2. View the current changelog for your working tree:
+
    ```sh
    uvx tenzir-changelog show
    ```
+
    The default table lists every entry with row numbers, making it easy to
    reference specific items. Row numbers count backward from the newest entry,
    so `#1` always targets the latest change. Inspect a card layout with
    `uvx tenzir-changelog show -c 1` or export a release via
    `uvx tenzir-changelog show -m v0.2.0`.
+
 3. Add entries as you prepare pull requests:
+
    ```sh
    uvx tenzir-changelog add \
      --title "Introduce pipeline builder" \
      --type feature \
      --pr 101
    ```
+
    Pass flags for authors, projects, and descriptions to avoid interactive
    prompts, or let the CLI discover metadata automatically.
 
@@ -66,7 +74,7 @@ to `config.yaml`) and `--root` to operate on another repository.
   - Supply multiple identifiers to target a mix of rows, entry IDs, releases, or `unreleased`—the CLI deduplicates them before formatting.
 
 - **`tenzir-changelog add`**
-Create a new change entry in `unreleased/`. Highlights:
+  Create a new change entry in `unreleased/`. Highlights:
   - Prompts for change type (`breaking`, `feature`, `bugfix`, `change`) with one-key shortcuts
     (`0`, `1`, `2`, `3`), the project, summary, and detailed notes
   - Auto-detects authors, PR number, title, and body via `gh` or the GitHub API
@@ -137,23 +145,244 @@ Create a new change entry in `unreleased/`. Highlights:
 
 ## Example Workflows
 
-- **First-time setup:**  
+- **First-time setup:**
   Run `uvx tenzir-changelog show` in any repository to confirm the CLI sees
   your changelog project, and rely on `uvx tenzir-changelog add` to create the
   scaffold automatically on first use.
 
-- **Daily development:**  
+- **Daily development:**
   Developers run `uvx tenzir-changelog add` while preparing pull requests to
   capture changes. CI pipelines can enforce `uvx tenzir-changelog validate` to
   guarantee metadata completeness.
 
-- **Cutting a release:**  
+- **Cutting a release:**
   Maintainers run `uvx tenzir-changelog release create v5.4.0` to preview
   changes. When the summary looks good, they re-run the command with `--yes`
   to move entries, refresh `notes.md`, and update `manifest.yaml`. Afterward,
   `uvx tenzir-changelog release notes v5.4.0` re-exports the Markdown for
   review, and `uvx tenzir-changelog release publish v5.4.0 --yes` pushes the
   notes to GitHub once everything looks ready.
+
+## Multi-Project Changelog Management
+
+For teams managing multiple related projects (such as multi-repo or monorepo
+architectures), `tenzir-changelog` supports coordinated changelog operations
+across multiple project roots using the `--root` flag multiple times.
+
+### Multi-Project Overview
+
+When you specify multiple `--root` flags, the CLI enters multi-project mode:
+
+- The `show` command displays entries from all projects in a unified table with
+  a Project column
+- Markdown and JSON exports group entries by project using a hierarchical
+  format: version → project → entry type → entries
+- The `release create` command performs atomic coordinated releases across all
+  projects
+
+### Multi-Project Commands
+
+**View entries across multiple projects:**
+
+```sh
+uvx tenzir-changelog show \
+  --root ~/tenzir-core \
+  --root ~/tenzir-cloud \
+  --root ~/tenzir-cli
+```
+
+The table view includes a Project column showing which project each entry
+belongs to, with entries sorted by project order (as specified by `--root`
+flags) and then by date within each project.
+
+Use `--project` with a project ID from each `config.yaml` (for example,
+`--project core`) to focus the output on specific projects. The CLI validates
+unknown IDs and still respects `--component` filters, letting you narrow the
+view to a single project/component combination without losing the multi-project
+context.
+
+You can also target a shared release directly:
+
+```sh
+uvx tenzir-changelog show v5.0.0 \
+  --root ~/tenzir-core \
+  --root ~/tenzir-cloud
+```
+
+The table includes every entry shipped in `v5.0.0` for each project (or filters
+down to specific projects/components when those flags are present). Use
+`unreleased` or `-` to focus on the next release bucket across all roots.
+
+```sh
+uvx tenzir-changelog show \
+  --root ~/tenzir-core \
+  --root ~/tenzir-cloud \
+  --project cloud
+```
+
+Entry identifiers may repeat across projects—`01-initial-release.md` exists in
+almost every repository—and the CLI now keeps them correctly scoped to their
+origin project when rendering tables or exports.
+
+**Export unified release notes:**
+
+```sh
+uvx tenzir-changelog show -m v5.0.0 \
+  --root ~/tenzir-core \
+  --root ~/tenzir-cloud \
+  > release-notes.md
+```
+
+Multi-project markdown exports follow this hierarchical structure:
+
+```markdown
+# v5.0.0
+
+## Tenzir Core
+
+### Features
+
+- **Add pipeline builder**: Introduces the new pipeline builder UI.
+
+### Bug fixes
+
+- **Fix authentication timeout**: Resolves session expiry issue.
+
+## Tenzir Cloud
+
+### Features
+
+- **Add SSO support**: Integrates enterprise SSO for authentication.
+```
+
+**Export as JSON:**
+
+```sh
+uvx tenzir-changelog show -j unreleased \
+  --root ~/proj-a \
+  --root ~/proj-b
+```
+
+JSON exports include project information for each entry:
+
+```json
+{
+  "version": "unreleased",
+  "projects": [
+    {
+      "name": "Project A",
+      "entries": [
+        {
+          "id": "01-feature",
+          "type": "feature",
+          "title": "Add new feature",
+          "body": "Description...",
+          "created": "2025-10-29"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Create coordinated releases:**
+
+```sh
+uvx tenzir-changelog release create v5.0.0 \
+  --root ~/tenzir-core \
+  --root ~/tenzir-cloud \
+  --root ~/tenzir-cli \
+  --yes
+```
+
+This atomically:
+
+- Creates `releases/v5.0.0/` in each project with manifest and notes
+- Moves unreleased entries to releases in all projects
+- Validates that all projects can create the release before making changes
+
+If any project fails validation (e.g., the version already exists), no changes
+are made to any project. Invocations without `--yes` perform a dry-run summary
+and exit so you can review the project counts first. Version bump flags such as
+`--patch` are not available in multi-project mode—always supply the explicit
+version string you want to ship.
+
+### Multi-Project Workflows
+
+**Monorepo coordinated release:**
+
+```sh
+# From monorepo root with structure: services/api/changelog/,
+# services/worker/changelog/, services/ui/changelog/
+
+# Preview unreleased changes across all services
+uvx tenzir-changelog show \
+  --root services/api/changelog \
+  --root services/worker/changelog \
+  --root services/ui/changelog
+
+# Create coordinated release
+uvx tenzir-changelog release create v5.0.0 \
+  --root services/api/changelog \
+  --root services/worker/changelog \
+  --root services/ui/changelog \
+  --yes
+
+# Generate unified release notes
+uvx tenzir-changelog show -m v5.0.0 \
+  --root services/api/changelog \
+  --root services/worker/changelog \
+  --root services/ui/changelog \
+  > release-notes.md
+
+# Commit and publish
+git add .
+git commit -m "Release v5.0.0"
+git tag -a v5.0.0 -m "Release v5.0.0"
+gh release create v5.0.0 --notes-file release-notes.md
+```
+
+**Multi-repo coordinated release:**
+
+```sh
+# Preview changes across separate repositories
+uvx tenzir-changelog show \
+  --root ~/repos/tenzir-core \
+  --root ~/repos/tenzir-cloud \
+  --root ~/repos/tenzir-cli
+
+# Create releases in all repos
+uvx tenzir-changelog release create v5.0.0 \
+  --root ~/repos/tenzir-core \
+  --root ~/repos/tenzir-cloud \
+  --root ~/repos/tenzir-cli \
+  --yes
+
+# Generate unified notes
+uvx tenzir-changelog show -m v5.0.0 \
+  --root ~/repos/tenzir-core \
+  --root ~/repos/tenzir-cloud \
+  --root ~/repos/tenzir-cli \
+  > release-notes.md
+
+# Tag and push each repository
+cd ~/repos/tenzir-core && git tag -a v5.0.0 -m "Release v5.0.0" && git push --tags
+cd ~/repos/tenzir-cloud && git tag -a v5.0.0 -m "Release v5.0.0" && git push --tags
+cd ~/repos/tenzir-cli && git tag -a v5.0.0 -m "Release v5.0.0" && git push --tags
+
+# Publish unified release (e.g., to umbrella repo)
+cd ~/repos/tenzir-umbrella
+gh release create v5.0.0 --notes-file ../release-notes.md
+```
+
+### Multi-Project Limitations
+
+- Version bumping (`--patch`, `--minor`, `--major`) is not supported in
+  multi-project mode; you must provide an explicit version
+- The `--config` flag is ignored when using multiple `--root` flags; each
+  project uses its own `config.yaml`
+- The `add` and `validate` commands do not support multi-project mode; operate
+  on each project individually for these tasks
 
 ## Tutorial
 
@@ -162,7 +391,8 @@ how to initialize a repository, add entries, preview the backlog, and publish a
 release manifest with richer introductory material. All commands run from the
 project root.
 
-1. **Create a sandbox:**  
+1. **Create a sandbox:**
+
    ```sh
    mkdir my-changelog
    cd my-changelog
@@ -173,8 +403,10 @@ project root.
      --author alice \
      --pr 101
    ```
+
    The first `add` invocation scaffolds the project automatically—no manual
    config editing needed. After the command completes, inspect `config.yaml`:
+
    ```yaml
    id: my-changelog
    name: My Changelog
@@ -182,6 +414,7 @@ project root.
 
 2. **Capture entries:**  
    Record additional representative changes with authors and pull-request numbers:
+
    ```sh
    uvx tenzir-changelog add \
      --title "Fix ingest crash" \
@@ -198,17 +431,19 @@ project root.
      --author carol \
      --pr 103
    ```
+
    Each invocation writes a Markdown file inside `unreleased/`. For example,
    `add-pipeline-builder.md` looks like:
+
    ```markdown
    ---
    title: Add pipeline builder
    type: feature
    authors:
-   - alice
+     - alice
    created: 2025-10-16
    prs:
-   - 101
+     - 101
    ---
 
    Introduces the new pipeline builder UI.
@@ -219,12 +454,15 @@ stores a `prs:` list in the generated frontmatter automatically, even when
 there is only one related pull request.
 
 3. **Preview the changelog:**
+
    ```sh
    uvx tenzir-changelog show
    ```
+
    The default table mirrors the old `list` command, summarizing IDs, titles,
    types, projects, pull-request numbers, and authors. Inspect a detailed card
    for any entry with:
+
    ```sh
    uvx tenzir-changelog show -c 1
    ```
@@ -233,24 +471,28 @@ there is only one related pull request.
    Author an intro snippet that can include Markdown links, call-outs, or image
    references. Save it as `intro.md` (feel free to delete the
    file after publishing the release):
+
    ```markdown
    Welcome to the first release of the Tenzir changelog!
 
    ![Release Overview](images/release-overview.png)
 
-     We cover breaking changes, highlights, upgrades, and fixes below.
+   We cover breaking changes, highlights, upgrades, and fixes below.
    ```
 
-5. **Cut the release:**  
+5. **Cut the release:**
+
    ```sh
    uvx tenzir-changelog release create v0.1.0 \
      --description "Stitches together initial features." \
      --intro-file intro.md
    ```
+
    Confirm the prompt to include all pending entries. The tool writes the release
    artifacts under `releases/v0.1.0/`:
    - `manifest.yaml` records the release date (and optional intro), while the
      `entries/` subdirectory serves as the authoritative list of shipped files:
+
      ```yaml
      created: 2025-10-18
      intro: |-
@@ -260,7 +502,9 @@ there is only one related pull request.
 
        We cover breaking changes, highlights, upgrades, and fixes below.
      ```
+
    - `notes.md` stitches together the description, intro, and generated sections:
+
      ```markdown
      Stitches together initial features.
 
@@ -286,22 +530,27 @@ there is only one related pull request.
 
      - **Improve CLI help**: Tweaks command descriptions for clarity.
      ```
+
    - `entries/` contains the archived entry files that were moved out of
      `unreleased/`.
 
-6. **Validate the project:**  
+6. **Validate the project:**
+
    ```sh
    uvx tenzir-changelog validate
    ```
+
    A clean run prints `All changelog files look good!`. At this point you have
    entries, an introductory release manifest, and supporting assets ready for
    downstream documentation. You can remove `intro.md` now that its content is
    embedded in the release file.
 
-7. **Export the release:**  
+7. **Export the release:**
+
    ```sh
    uvx tenzir-changelog show -m v0.1.0
    ```
+
    The command prints a Markdown summary grouped by entry type to STDOUT. Use
    `--format json` for machine-readable output or add `-c` for the compact
    bullet list.

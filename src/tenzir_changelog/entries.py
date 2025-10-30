@@ -308,3 +308,34 @@ def write_entry(
         if body:
             handle.write("\n" + body.strip() + "\n")
     return path
+
+
+@dataclass
+class MultiProjectEntry:
+    """An entry with its associated project information."""
+
+    entry: Entry
+    project_root: Path
+    project_id: str
+    project_name: str
+
+
+def iter_multi_project_entries(projects: list[tuple[Path, Any]]) -> Iterable[MultiProjectEntry]:
+    """Yield entries from multiple projects with project context.
+
+    Args:
+        projects: List of (project_root, config) tuples
+
+    Yields:
+        MultiProjectEntry instances with entry and project information
+    """
+    for project_root, config in projects:
+        project_id = getattr(config, "id", slugify(project_root.name))
+        project_name = getattr(config, "name", str(project_root.name))
+        for entry in iter_entries(project_root):
+            yield MultiProjectEntry(
+                entry=entry,
+                project_root=project_root,
+                project_id=project_id,
+                project_name=project_name,
+            )
