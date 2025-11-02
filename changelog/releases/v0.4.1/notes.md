@@ -1,4 +1,4 @@
-Improve GitHub release note formatting.
+This release improves GitHub release note formatting.
 
 ## 🐞 Bug fixes
 

@@ -1,2 +1,5 @@
 created: 2025-10-27
 title: Changelog v0.4.0
+description: >-
+  This release adds components to entries, supports tagging during publish, and polishes
+  release creation output while inverting the show table order.

@@ -1,4 +1,4 @@
-Support multi-project operations and package-aware discovery
+This release adds support for multi-project operations and package-aware discovery.
 
 ## 🚀 Features
 

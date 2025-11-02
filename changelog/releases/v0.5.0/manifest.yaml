@@ -1,3 +1,4 @@
 created: 2025-11-02
 title: Changelog v0.5.0
-description: Support multi-project operations and package-aware discovery
+description: >-
+  This release adds support for multi-project operations and package-aware discovery.

@@ -1,2 +1,5 @@
 created: 2025-10-21
 title: Changelog v0.2.0
+description: >-
+  This release improves table and export layouts, simplifies configuration, and streamlines
+  the release archive while fixing logging and ordering.

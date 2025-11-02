@@ -19,6 +19,18 @@ def _represent_date(dumper: yaml.SafeDumper, data: date) -> Node:
 
 yaml.SafeDumper.add_representer(date, _represent_date)
 
+
+class _FoldedString(str):
+    """Marker type for YAML folded (>) scalars."""
+
+
+def _represent_folded_string(dumper: yaml.SafeDumper, data: _FoldedString) -> Node:
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data), style=">")
+
+
+# Register custom representation for folded strings.
+yaml.SafeDumper.add_representer(_FoldedString, _represent_folded_string)
+
 NOTES_FILENAME = "notes.md"
 RELEASE_DIR = Path("releases")
 
@@ -107,9 +119,11 @@ def serialize_release_manifest(manifest: ReleaseManifest) -> str:
     if manifest.title:
         payload["title"] = manifest.title
     if manifest.description:
-        payload["description"] = manifest.description
+        # Always emit description using a folded block scalar (">").
+        payload["description"] = _FoldedString(manifest.description)
     if manifest.intro:
         payload["intro"] = manifest.intro
+    # Use default wrapping width for readability; preserve key order.
     return yaml.safe_dump(payload, sort_keys=False)
 
 

@@ -1,3 +1,5 @@
+This release adds components to entries, supports tagging during publish, and polishes release creation output while inverting the show table order.
+
 ## 💥 Breaking changes
 
 ### Invert show table order

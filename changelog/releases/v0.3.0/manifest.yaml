@@ -1,2 +1,5 @@
 created: 2025-10-24
 title: Changelog v0.3.0
+description: >-
+  This release refines the workflow and exports, introduces numeric entry prefixes
+  and emoji-styled types, and improves table layout and PR metadata.
