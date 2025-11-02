@@ -12,6 +12,8 @@ from .utils import normalize_string_choices
 
 ExportStyle = Literal["standard", "compact"]
 CONFIG_RELATIVE_PATH = Path("config.yaml")
+PACKAGE_METADATA_FILENAME = "package.yaml"
+CHANGELOG_DIRECTORY_NAME = "changelog"
 
 EXPORT_STYLE_STANDARD: ExportStyle = "standard"
 EXPORT_STYLE_COMPACT: ExportStyle = "compact"
@@ -24,6 +26,12 @@ EXPORT_STYLE_CHOICES: tuple[ExportStyle, ...] = (
 def default_config_path(project_root: Path) -> Path:
     """Return the default config path for a project root."""
     return project_root / CONFIG_RELATIVE_PATH
+
+
+def package_metadata_path(project_root: Path) -> Path:
+    """Return the expected package metadata path for a project root."""
+
+    return project_root.parent / PACKAGE_METADATA_FILENAME
 
 
 @dataclass
@@ -58,6 +66,8 @@ def load_config(path: Path) -> Config:
     name_raw = raw.get("name", project_value)
     description_raw = raw.get("description", "")
     repository_raw = raw.get("repository")
+    intro_template_raw = raw.get("intro_template")
+    assets_dir_raw = raw.get("assets_dir")
 
     export_style_raw = raw.get("export_style")
     export_style: ExportStyle = EXPORT_STYLE_STANDARD
@@ -77,10 +87,72 @@ def load_config(path: Path) -> Config:
         name=str(name_raw or "Unnamed Project"),
         description=str(description_raw or ""),
         repository=(str(repository_raw) if repository_raw else None),
-        intro_template=(str(raw["intro_template"]) if raw.get("intro_template") else None),
-        assets_dir=str(raw["assets_dir"]) if raw.get("assets_dir") else None,
+        intro_template=(str(intro_template_raw) if intro_template_raw else None),
+        assets_dir=(str(assets_dir_raw) if assets_dir_raw else None),
         export_style=export_style,
         components=components,
+    )
+
+
+def load_package_config(path: Path) -> Config:
+    """Load configuration metadata from a package manifest."""
+
+    with path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    if not isinstance(raw, MutableMapping):
+        raise ValueError("Package metadata must be a mapping")
+
+    package_id = str(raw.get("id", "")).strip()
+    if not package_id:
+        raise ValueError(f"Package metadata at {path} missing required 'id'")
+
+    package_name = str(raw.get("name", "")).strip()
+    if not package_name:
+        raise ValueError(f"Package metadata at {path} missing required 'name'")
+
+    description_raw = raw.get("description", "")
+    repository_raw = raw.get("repository")
+    intro_template_raw = raw.get("intro_template")
+    assets_dir_raw = raw.get("assets_dir")
+
+    export_style_raw = raw.get("export_style")
+    export_style: ExportStyle = EXPORT_STYLE_STANDARD
+    if export_style_raw is not None:
+        if not isinstance(export_style_raw, str):
+            raise ValueError("Package metadata option 'export_style' must be a string.")
+        normalized_export_style = export_style_raw.strip().lower()
+        if normalized_export_style not in EXPORT_STYLE_CHOICES:
+            allowed = ", ".join(EXPORT_STYLE_CHOICES)
+            raise ValueError(f"Package metadata option 'export_style' must be one of: {allowed}")
+        export_style = cast(ExportStyle, normalized_export_style)
+
+    components = normalize_string_choices(raw.get("components"))
+
+    return Config(
+        id=package_id,
+        name=package_name,
+        description=str(description_raw or ""),
+        repository=(str(repository_raw) if repository_raw else None),
+        intro_template=(str(intro_template_raw) if intro_template_raw else None),
+        assets_dir=(str(assets_dir_raw) if assets_dir_raw else None),
+        export_style=export_style,
+        components=components,
+    )
+
+
+def load_project_config(project_root: Path) -> Config:
+    """Load a project config, falling back to package metadata when needed."""
+
+    config_path = default_config_path(project_root)
+    if config_path.exists():
+        return load_config(config_path)
+
+    package_path = package_metadata_path(project_root)
+    if package_path.exists():
+        return load_package_config(package_path)
+
+    raise FileNotFoundError(
+        f"No config found at {config_path} and no package metadata at {package_path}."
     )
 
 
@@ -127,14 +199,13 @@ def load_configs(roots: list[Path]) -> list[tuple[Path, Config]]:
             raise ValueError(f"Duplicate root specified: {root}")
         seen_roots.add(resolved_root)
 
-        config_path = default_config_path(resolved_root)
-        if not config_path.exists():
+        try:
+            config = load_project_config(resolved_root)
+        except FileNotFoundError as error:
             raise ValueError(
-                f"No config found at {config_path}. "
-                f"Ensure {resolved_root} is a valid changelog project root."
-            )
-
-        config = load_config(config_path)
+                f"No changelog configuration found for {resolved_root}. "
+                "Provide a config.yaml or package.yaml."
+            ) from error
         result.append((resolved_root, config))
 
     # Warn about name collisions

@@ -744,6 +744,131 @@ def test_missing_project_reports_info_message(tmp_path: Path) -> None:
     assert "Error:" not in result.output
 
 
+def _write_package_metadata(path: Path, *, package_id: str = "pkg", name: str = "Package") -> None:
+    path.write_text(
+        yaml.safe_dump({"id": package_id, "name": name}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def test_package_mode_uses_package_metadata(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "demo"
+    changelog_root = package_dir / "changelog"
+    changelog_root.mkdir(parents=True)
+    _write_package_metadata(package_dir / "package.yaml")
+
+    result = runner.invoke(cli, ["--root", str(changelog_root), "show"])
+    assert result.exit_code == 0, result.output
+
+
+def test_package_mode_requires_id_and_name(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "broken"
+    changelog_root = package_dir / "changelog"
+    changelog_root.mkdir(parents=True)
+    (package_dir / "package.yaml").write_text(yaml.safe_dump({"id": "pkg"}), encoding="utf-8")
+
+    result = runner.invoke(cli, ["--root", str(changelog_root), "show"])
+    assert result.exit_code == 1
+    assert "missing required 'name'" in result.output
+
+
+def test_package_mode_detects_root_from_package_directories(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "workspace"
+    changelog_root = package_dir / "changelog"
+    changelog_root.mkdir(parents=True)
+    _write_package_metadata(package_dir / "package.yaml", package_id="workspace", name="Workspace")
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(package_dir)
+        package_invocation = runner.invoke(cli, ["show"])
+    finally:
+        os.chdir(original_cwd)
+    assert package_invocation.exit_code == 0, package_invocation.output
+
+    try:
+        os.chdir(changelog_root)
+        changelog_invocation = runner.invoke(cli, ["show"])
+    finally:
+        os.chdir(original_cwd)
+    assert changelog_invocation.exit_code == 0, changelog_invocation.output
+
+
+def test_package_mode_bootstraps_changelog_from_package_root(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "workspace"
+    package_dir.mkdir()
+    _write_package_metadata(package_dir / "package.yaml", package_id="workspace", name="Workspace")
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(package_dir)
+        result = runner.invoke(
+            cli,
+            [
+                "add",
+                "--title",
+                "Bootstrap Package",
+                "--type",
+                "feature",
+                "--author",
+                "codex",
+                "--description",
+                "Initialized changelog project from package root.",
+            ],
+            env={"EDITOR": "true"},
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+
+    changelog_root = package_dir / "changelog"
+    assert changelog_root.is_dir()
+    assert (changelog_root / "unreleased").is_dir()
+    assert not (changelog_root / "releases").exists()
+
+    created_entries = list((changelog_root / "unreleased").glob("*.md"))
+    assert created_entries, "Expected an entry to be created in package mode"
+
+    assert not (package_dir / "config.yaml").exists()
+    assert not (changelog_root / "config.yaml").exists()
+
+
+def test_add_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    save_config(Config(id="project", name="Project"), project_dir / "config.yaml")
+
+    def raise_interrupt(*_: object, **__: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("tenzir_changelog.cli.click.edit", raise_interrupt)
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Interrupted",
+            "--type",
+            "feature",
+            "--author",
+            "codex",
+        ],
+    )
+
+    assert result.exit_code == 130
+    plain_output = click.utils.strip_ansi(result.output)
+    assert "operation cancelled by user (Ctrl+C)." in plain_output
+
+
 def test_show_orders_rows_oldest_to_newest(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -1792,8 +1917,9 @@ def test_release_publish_handles_abort(monkeypatch: pytest.MonkeyPatch, tmp_path
         ],
     )
 
-    assert publish_result.exit_code == 0, publish_result.output
-    assert "Traceback" not in publish_result.output
+    assert publish_result.exit_code == 130
+    plain_output = click.utils.strip_ansi(publish_result.output)
+    assert "operation cancelled by user (Ctrl+C)." in plain_output
 
 
 def test_release_publish_creates_git_tag(tmp_path: Path) -> None:

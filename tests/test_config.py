@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
-from tenzir_changelog.config import Config, dump_config, load_config
+from tenzir_changelog.config import (
+    Config,
+    dump_config,
+    load_config,
+    load_package_config,
+    load_project_config,
+)
 
 
 def write_yaml(path: Path, content: dict[str, object]) -> None:
@@ -39,3 +46,22 @@ def test_dump_config_omits_empty_fields() -> None:
     payload = dump_config(config)
 
     assert payload == {"id": "node", "name": "Node Project"}
+
+
+def test_load_project_config_uses_package_metadata(tmp_path: Path) -> None:
+    changelog_root = tmp_path / "package" / "changelog"
+    changelog_root.mkdir(parents=True)
+    write_yaml(changelog_root.parent / "package.yaml", {"id": "pkg", "name": "Package"})
+
+    config = load_project_config(changelog_root)
+
+    assert config.id == "pkg"
+    assert config.name == "Package"
+
+
+def test_load_package_config_requires_id(tmp_path: Path) -> None:
+    package_path = tmp_path / "package.yaml"
+    write_yaml(package_path, {"name": "Package"})
+
+    with pytest.raises(ValueError, match="missing required 'id'"):
+        load_package_config(package_path)

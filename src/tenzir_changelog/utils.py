@@ -9,9 +9,10 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 from collections.abc import Iterable as IterableABC
-from typing import Iterable, Optional, cast
+from typing import Iterable, Optional, cast, NoReturn
 
 import mdformat
+import click
 from rich.console import Console, RenderableType
 from rich.style import Style
 from rich.theme import Theme
@@ -91,6 +92,13 @@ def log_warning(message: str) -> None:
 def log_debug(message: str) -> None:
     """Log a debug message with the standardized prefix."""
     _log(DEBUG_PREFIX_WITH_SPACE, message, logging.DEBUG)
+
+
+def abort_on_user_interrupt(exc: BaseException | None = None) -> NoReturn:
+    """Log a standardized cancellation message and exit the command."""
+
+    log_error("operation cancelled by user (Ctrl+C).")
+    raise click.exceptions.Exit(130) from exc
 
 
 def format_bold(text: str) -> str:

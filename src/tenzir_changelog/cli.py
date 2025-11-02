@@ -26,10 +26,13 @@ from packaging.version import InvalidVersion, Version
 
 from . import __version__ as package_version
 from .config import (
+    CHANGELOG_DIRECTORY_NAME,
     Config,
     EXPORT_STYLE_COMPACT,
+    PACKAGE_METADATA_FILENAME,
     default_config_path,
-    load_config,
+    load_project_config,
+    package_metadata_path,
     save_config,
 )
 from .entries import (
@@ -63,6 +66,7 @@ from .utils import (
     INFO_PREFIX,
     WARNING,
     create_annotated_git_tag,
+    abort_on_user_interrupt,
     configure_logging,
     console,
     emit_output,
@@ -463,7 +467,9 @@ class CLIContext:
             config_path = self.config_path
             project_root = config_path.parent
             self.project_root = project_root
-            if not config_path.exists():
+            try:
+                self._config = load_project_config(project_root)
+            except FileNotFoundError:
                 if not create_if_missing:
                     log_info(f"no tenzir-changelog project detected at {project_root}.")
                     log_info("run 'tenzir-changelog add' from your project root or provide --root.")
@@ -473,10 +479,8 @@ class CLIContext:
                     config_path=config_path,
                 )
                 self._config = config
-            else:
-                self._config = load_config(config_path)
-        entry_directory(self.project_root).mkdir(parents=True, exist_ok=True)
-        release_directory(self.project_root).mkdir(parents=True, exist_ok=True)
+            except ValueError as error:
+                raise click.ClickException(str(error)) from error
         return self._config
 
     def reset_config(self, config: Config) -> None:
@@ -499,13 +503,46 @@ def _initialize_project_scaffold(*, project_root: Path, config_path: Path) -> Co
     config = Config(id=project_id, name=project_name)
     save_config(config, config_path)
     entry_directory(project_root).mkdir(parents=True, exist_ok=True)
-    release_directory(project_root).mkdir(parents=True, exist_ok=True)
     log_success(f"initialized changelog project at {project_root}")
     return config
 
 
 def _resolve_project_root(value: Path) -> Path:
-    return value.resolve()
+    resolved = value.resolve()
+
+    def _has_config(path: Path) -> bool:
+        return default_config_path(path).exists()
+
+    def _is_package_root(path: Path) -> bool:
+        metadata = path / PACKAGE_METADATA_FILENAME
+        if not metadata.is_file():
+            return False
+        changelog_dir = path / CHANGELOG_DIRECTORY_NAME
+        if changelog_dir.exists() and not changelog_dir.is_dir():
+            return False
+        return True
+
+    def _is_package_changelog(path: Path) -> bool:
+        if path.name != CHANGELOG_DIRECTORY_NAME:
+            return False
+        metadata = package_metadata_path(path)
+        return metadata.is_file()
+
+    if resolved.is_dir():
+        if _has_config(resolved) or _is_package_changelog(resolved):
+            return resolved
+        if _is_package_root(resolved):
+            return (resolved / CHANGELOG_DIRECTORY_NAME).resolve()
+
+    for candidate in [resolved] + list(resolved.parents):
+        if not candidate.is_dir():
+            continue
+        if _has_config(candidate) or _is_package_changelog(candidate):
+            return candidate
+        if _is_package_root(candidate):
+            return (candidate / CHANGELOG_DIRECTORY_NAME).resolve()
+
+    return resolved
 
 
 def _normalize_optional(value: Optional[str]) -> Optional[str]:
@@ -522,11 +559,14 @@ def _normalize_optional(value: Optional[str]) -> Optional[str]:
 def _prompt_project(existing: Optional[str], project_root: Path) -> str:
     """Prompt for the primary project slug."""
     default_value = existing or slugify(project_root.name)
-    project = click.prompt(
-        "Project name (used in entry metadata)",
-        default=default_value,
-        show_default=True,
-    ).strip()
+    try:
+        project = click.prompt(
+            "Project name (used in entry metadata)",
+            default=default_value,
+            show_default=True,
+        ).strip()
+    except (click.exceptions.Abort, KeyboardInterrupt) as exc:
+        abort_on_user_interrupt(exc)
     if not project:
         raise click.ClickException("Project name cannot be empty.")
     return slugify(project)
@@ -1522,10 +1562,8 @@ def _export_multi_project_release_markdown(
         )
 
         # Try to get config for better name
-        from .config import load_config, default_config_path
-
         try:
-            cfg = load_config(default_config_path(project_root))
+            cfg = load_project_config(project_root)
             project_name = cfg.name
         except Exception:
             pass
@@ -1595,7 +1633,6 @@ def _export_multi_project_unreleased_json(projects: list[tuple[Path, Config]]) -
 
 def _export_multi_project_release_json(multi_release: Any) -> dict[str, Any]:
     """Export a multi-project release as JSON."""
-    from .config import load_config, default_config_path
 
     result: dict[str, Any] = {"version": multi_release.version, "projects": []}
 
@@ -1605,7 +1642,7 @@ def _export_multi_project_release_json(multi_release: Any) -> dict[str, Any]:
             manifest.title if manifest.title and manifest.title != manifest.version else "Project"
         )
         try:
-            cfg = load_config(default_config_path(project_root))
+            cfg = load_project_config(project_root)
             project_name = cfg.name
         except Exception:
             pass
@@ -1902,15 +1939,19 @@ show_entries.short_help = SHOW_COMMAND_SUMMARY
 
 
 def _prompt_entry_body(initial: str = "") -> str:
-    edited = click.edit(
-        textwrap.dedent(
-            """\
-            # Write the entry body below. Lines starting with '#' are ignored.
-            # Save and close the editor to finish. Leave empty to skip.
-            """
+    log_info("launching editor for entry body (set EDITOR or pass --description to skip).")
+    try:
+        edited = click.edit(
+            textwrap.dedent(
+                """\
+                # Write the entry body below. Lines starting with '#' are ignored.
+                # Save and close the editor to finish. Leave empty to skip.
+                """
+            )
+            + ("\n" + initial if initial else "\n")
         )
-        + ("\n" + initial if initial else "\n")
-    )
+    except (click.exceptions.Abort, KeyboardInterrupt) as exc:
+        abort_on_user_interrupt(exc)
     if edited is None:
         return ""
     return _mask_comment_block(edited)
@@ -1918,7 +1959,10 @@ def _prompt_entry_body(initial: str = "") -> str:
 
 def _prompt_text(label: str, **kwargs: Any) -> str:
     prompt_suffix = kwargs.pop("prompt_suffix", ": ")
-    result = click.prompt(click.style(label, bold=True), prompt_suffix=prompt_suffix, **kwargs)
+    try:
+        result = click.prompt(click.style(label, bold=True), prompt_suffix=prompt_suffix, **kwargs)
+    except (click.exceptions.Abort, KeyboardInterrupt) as exc:
+        abort_on_user_interrupt(exc)
     return str(result)
 
 
@@ -1950,7 +1994,10 @@ def _prompt_entry_type(default: str = DEFAULT_ENTRY_TYPE) -> str:
     console.print(prompt_text)
 
     while True:
-        key = click.getchar()
+        try:
+            key = click.getchar()
+        except (KeyboardInterrupt, EOFError, click.exceptions.Abort) as exc:
+            abort_on_user_interrupt(exc)
         if key in {"\r", "\n"}:
             selection = default
             break
@@ -2900,7 +2947,7 @@ def release_publish_cmd(
 
     if not config.repository:
         raise click.ClickException(
-            "Set the 'repository' field in config.yaml before publishing releases."
+            "Set the 'repository' field in config.yaml or package.yaml before publishing releases."
         )
 
     gh_path = shutil.which("gh")
@@ -2992,9 +3039,8 @@ def release_publish_cmd(
                 prompt_suffix="[Y/n]: ",
                 show_default=False,
             )
-        except click.Abort:
-            log_info("aborted release publish.")
-            return
+        except (click.exceptions.Abort, KeyboardInterrupt) as exc:
+            abort_on_user_interrupt(exc)
         if not confirmed:
             log_info("aborted release publish.")
             return
@@ -3224,6 +3270,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         exc.show(file=sys.stderr)
         exit_code = getattr(exc, "exit_code", 1)
         return exit_code if isinstance(exit_code, int) else 1
+    except KeyboardInterrupt as exc:
+        try:
+            abort_on_user_interrupt(exc)
+        except click.exceptions.Exit as exit_exc:
+            exit_code = getattr(exit_exc, "exit_code", 130)
+            return exit_code if isinstance(exit_code, int) else 130
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 0
     return 0

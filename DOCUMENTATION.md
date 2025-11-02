@@ -25,7 +25,9 @@ pipelines all share the same workflow.
 
    The first invocation writes `config.yaml`, prepares `unreleased/` and
    `releases/`, and infers sensible defaults from the directory name—no
-   separate bootstrap step required.
+   separate bootstrap step required. Projects that already expose
+   `package.yaml` next to their `changelog/` directory reuse the package `id`
+   and `name` automatically, so no extra files are created.
 
 2. View the current changelog for your working tree:
 
@@ -55,7 +57,11 @@ pipelines all share the same workflow.
 
 `tenzir-changelog` offers a focused set of commands. All commands accept
 `--config` to point at an explicit configuration file (YAML format, defaulting
-to `config.yaml`) and `--root` to operate on another repository.
+to `config.yaml`) and `--root` to operate on another repository. When neither
+option is provided, the CLI now looks for `config.yaml` inside the changelog
+root or, failing that, for a `package.yaml` one directory above the changelog
+folder. This "package mode" lets you run commands from either the package root
+or the `changelog/` directory without repeating `--root`.
 
 - **`tenzir-changelog show [identifiers...]`**
   Display changelog entries in multiple views. With no flags it renders a rich
@@ -107,8 +113,9 @@ to `config.yaml`) and `--root` to operate on another repository.
   to mirror bullet-style notes, and `--no-emoji` to drop type icons.
 
 - **`tenzir-changelog release publish <version>`**  
-  Ship a release directly to GitHub via the `gh` CLI. The command reads
-  `config.yaml` for the target repository slug, validates that `notes.md`
+  Ship a release directly to GitHub via the `gh` CLI. The command reads the
+  project metadata (from `config.yaml` or `package.yaml`) for the target
+  repository slug, validates that `notes.md`
   exists, and shells out to `gh release create ... --notes-file notes.md`.
   Pass `--draft`, `--prerelease`, `--tag`, and `--yes` to control the publication
   flow. When `--tag` is present, the CLI pushes the current branch, creates an
@@ -127,18 +134,17 @@ to `config.yaml`) and `--root` to operate on another repository.
   Every entry and release references the same project string.
 - **Entry:** A changelog consists of a set of entries. Each entry uses one of
   four hard-coded types—`breaking`, `feature`, `bugfix`, or `change`.
-- **Configuration File:** Settings live in `config.yaml` by default. The file
-  captures repository metadata, the single project name, GitHub repository
-  slugs, and any other instance-specific options (such as preferred intro
-  templates or asset directories) so commands like `add` and `release`
-  can infer context without repeated flags. All options sit at the top level
-  (`id`, `name`, `description`, `repository`, `intro_template`,
-  `assets_dir`, `export_style`), making the configuration easy to read and diff. The `id`
-  serves as the canonical slug written into entry metadata, while `name`
-  provides the human-friendly label surfaced in release titles and CLI output.
-  Set `export_style` to `compact` to prefer the bullet-list layout for release
-  notes and `tenzir-changelog show -m` without passing `--compact`
-  each time.
+- **Configuration Metadata:** Settings live in `config.yaml` by default, but the
+  CLI also understands `package.yaml` stored alongside the `changelog/`
+  directory. When both files exist, `config.yaml` takes precedence; otherwise
+  the package manifest supplies the same top-level fields (`id`, `name`,
+  `description`, `repository`, `intro_template`, `assets_dir`, `export_style`).
+  These options capture repository metadata so commands like `add` and
+  `release` can infer context without repeated flags. The `id` serves as the
+  canonical slug written into entry frontmatter, while `name` provides the
+  human-friendly label surfaced in release titles and CLI output. Set
+  `export_style` to `compact` to prefer the bullet-list layout for release
+  notes and `tenzir-changelog show -m` without passing `--compact` each time.
 - **Repositories:** A project may pull changelog entries from other repositories
   (e.g., satellites or private modules). Configuration entries include the
   repository slug, Git remote URL, and branch-to-track for releases.
@@ -148,7 +154,9 @@ to `config.yaml`) and `--root` to operate on another repository.
 - **First-time setup:**
   Run `uvx tenzir-changelog show` in any repository to confirm the CLI sees
   your changelog project, and rely on `uvx tenzir-changelog add` to create the
-  scaffold automatically on first use.
+  scaffold automatically on first use. When `package.yaml` sits next to the
+  `changelog/` directory, you can execute commands from either location without
+  adding `--root`.
 
 - **Daily development:**
   Developers run `uvx tenzir-changelog add` while preparing pull requests to
@@ -195,7 +203,8 @@ The table view includes a Project column showing which project each entry
 belongs to, with entries sorted by project order (as specified by `--root`
 flags) and then by date within each project.
 
-Use `--project` with a project ID from each `config.yaml` (for example,
+Use `--project` with a project ID from each project's configuration (listed in
+its `config.yaml` or `package.yaml`; for example,
 `--project core`) to focus the output on specific projects. The CLI validates
 unknown IDs and still respects `--component` filters, letting you narrow the
 view to a single project/component combination without losing the multi-project
@@ -380,7 +389,7 @@ gh release create v5.0.0 --notes-file ../release-notes.md
 - Version bumping (`--patch`, `--minor`, `--major`) is not supported in
   multi-project mode; you must provide an explicit version
 - The `--config` flag is ignored when using multiple `--root` flags; each
-  project uses its own `config.yaml`
+  project uses its own configuration metadata (`config.yaml` or `package.yaml`)
 - The `add` and `validate` commands do not support multi-project mode; operate
   on each project individually for these tasks
 
@@ -405,7 +414,8 @@ project root.
    ```
 
    The first `add` invocation scaffolds the project automatically—no manual
-   config editing needed. After the command completes, inspect `config.yaml`:
+  config editing needed. After the command completes, inspect `config.yaml`
+  (or update `package.yaml` if you are using the package layout):
 
    ```yaml
    id: my-changelog
