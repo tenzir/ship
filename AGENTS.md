@@ -8,8 +8,8 @@
   Keep changes typed and centralize helpers in `utils.py`.
 - `changelog/` stores this repository's changelog project; run CLI commands
   with `--root changelog` so they operate on the dogfooded data and refresh
-  those files alongside root docs (`README.md`, `DOCUMENTATION.md`,
-  `DEVELOPMENT.md`) when behavior changes.
+  those files alongside root docs (`README.md`, `DEVELOPMENT.md`) when behavior
+  changes.
 - `tests/` stores pytest suites that exercise flows with `CliRunner`; mirror
   module names (e.g., `test_cli.py`) and keep fixtures close to usage.
 
