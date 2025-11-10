@@ -7,6 +7,7 @@ import pytest
 from tenzir_changelog import Changelog
 from tenzir_changelog.config import Config, save_config
 from tenzir_changelog import cli as cli_module
+from tenzir_changelog.entries import read_entry
 
 
 def _bootstrap_project(tmp_path: Path) -> Path:
@@ -82,3 +83,34 @@ def test_python_api_show_delegates(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert captured["banner"] is True
     assert captured["compact"] is None
     assert captured["include_emoji"] is False
+
+
+def test_python_api_add_handles_missing_authors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    monkeypatch.setattr("tenzir_changelog.cli.detect_github_login", lambda log_success=False: None)
+    client = Changelog(root=project_dir)
+
+    path = client.add(
+        title="No author entry",
+        entry_type="feature",
+        description="Body",
+        authors=None,
+    )
+
+    entry = read_entry(path)
+    assert entry.metadata.get("authors") is None
+
+
+def test_python_api_add_defaults_entry_type(tmp_path: Path) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    path = client.add(
+        title="Default type entry",
+        description="Body",
+    )
+
+    entry = read_entry(path)
+    assert entry.metadata.get("type") == "feature"

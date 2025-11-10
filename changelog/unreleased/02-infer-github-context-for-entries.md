@@ -4,6 +4,7 @@ type: feature
 authors:
 - codex
 - mavam
+component: cli
 created: 2025-11-10
 ---
 

@@ -2,3 +2,6 @@ id: changelog
 name: Changelog
 description: The Tenzir Changelog Management Utility
 repository: tenzir/changelog
+components:
+- cli
+- python

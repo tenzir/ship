@@ -2143,13 +2143,21 @@ def create_entry(
     authors: Sequence[str] | None = None,
     prs: Sequence[str] | None = None,
     description: Optional[str] = None,
+    allow_interactive: bool = True,
 ) -> Path:
     """Python wrapper for creating entries that mirrors the CLI behavior."""
 
     config = ctx.ensure_config(create_if_missing=True)
     project_root = ctx.project_root
 
-    title = title or _prompt_text("Title")
+    normalized_title = (title or "").strip()
+    if not normalized_title:
+        if not allow_interactive:
+            raise click.ClickException(
+                "Title is required when running the API non-interactively."
+            )
+        normalized_title = _prompt_text("Title")
+    title = normalized_title
     if entry_type:
         normalized_type = _normalize_entry_type(entry_type)
         if normalized_type is None:
@@ -2158,7 +2166,7 @@ def create_entry(
             )
         entry_type = normalized_type
     else:
-        entry_type = _prompt_entry_type()
+        entry_type = _prompt_entry_type() if allow_interactive else DEFAULT_ENTRY_TYPE
 
     project_value = (project_override or "").strip() or config.id
     if project_value != config.id:
@@ -2192,15 +2200,20 @@ def create_entry(
         if inferred_author:
             log_info(f"detected GitHub login '@{inferred_author}' and recorded it as the author.")
             authors_list = [inferred_author]
-        else:
+        elif allow_interactive:
             author_value = _prompt_optional("Authors (comma separated)", default="")
             authors_list = (
                 [item.strip() for item in author_value.split(",") if item.strip()]
                 if author_value
                 else []
             )
+        else:
+            authors_list = []
 
-    body = description or _prompt_entry_body()
+    if description is not None:
+        body = description
+    else:
+        body = _prompt_entry_body() if allow_interactive else ""
 
     pr_numbers: list[int] = []
     for pr_value in tuple(prs or ()):  # normalize sequence for prompts

@@ -98,6 +98,7 @@ class Changelog:
             authors=authors,
             prs=prs,
             description=description,
+            allow_interactive=False,
         )
 
     def release_create(
