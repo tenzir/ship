@@ -516,6 +516,59 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert validate_result.exit_code == 0, validate_result.output
 
 
+def test_add_infers_metadata_from_gh_context(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    gh_stub = project_dir / "gh"
+    gh_stub.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env python3",
+                "import sys",
+                "args = sys.argv[1:]",
+                "if len(args) >= 2 and args[0] == 'api' and args[1] == 'user':",
+                "    sys.stdout.write('codex\\n')",
+                "    sys.exit(0)",
+                "if len(args) >= 2 and args[0] == 'pr' and args[1] == 'view':",
+                "    sys.stdout.write('123\\n')",
+                "    sys.exit(0)",
+                "sys.exit(1)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gh_stub.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{project_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "GH Context Entry",
+            "--type",
+            "feature",
+            "--description",
+            "Entry inherits metadata from gh.",
+        ],
+        env=env,
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    entries_dir = project_dir / "unreleased"
+    entry_files = list(entries_dir.glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert entry.metadata["authors"] == ["codex"]
+    assert entry.metadata["prs"] == [123]
+
+
 def _create_project_with_entry(
     root: Path,
     project_id: str,

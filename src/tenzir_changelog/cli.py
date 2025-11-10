@@ -69,6 +69,8 @@ from .utils import (
     abort_on_user_interrupt,
     configure_logging,
     console,
+    detect_github_login,
+    detect_github_pr_number,
     emit_output,
     extract_excerpt,
     format_bold,
@@ -2186,12 +2188,17 @@ def create_entry(
     if author_values:
         authors_list = [author.strip() for author in author_values if author.strip()]
     else:
-        author_value = _prompt_optional("Authors (comma separated)", default="")
-        authors_list = (
-            [item.strip() for item in author_value.split(",") if item.strip()]
-            if author_value
-            else []
-        )
+        inferred_author = detect_github_login(log_success=False)
+        if inferred_author:
+            log_info(f"detected GitHub login '@{inferred_author}' and recorded it as the author.")
+            authors_list = [inferred_author]
+        else:
+            author_value = _prompt_optional("Authors (comma separated)", default="")
+            authors_list = (
+                [item.strip() for item in author_value.split(",") if item.strip()]
+                if author_value
+                else []
+            )
 
     body = description or _prompt_entry_body()
 
@@ -2204,6 +2211,11 @@ def create_entry(
             pr_numbers.append(int(pr_value))
         except ValueError as exc:
             raise click.ClickException(f"PR value '{pr_value}' must be numeric.") from exc
+    if not pr_numbers:
+        inferred_pr = detect_github_pr_number(project_root, log_success=False)
+        if inferred_pr is not None:
+            log_info(f"detected open pull request #{inferred_pr} for the current branch.")
+            pr_numbers.append(inferred_pr)
 
     metadata: dict[str, Any] = {
         "title": title,

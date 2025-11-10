@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
 from collections.abc import Iterable as IterableABC
-from typing import Iterable, Optional, cast, NoReturn
+from typing import Iterable, Mapping, Optional, cast, NoReturn
 
 import mdformat
 import click
@@ -186,6 +188,127 @@ def slugify(value: str) -> str:
     while "--" in slug:
         slug = slug.replace("--", "-")
     return slug.strip("-") or "project"
+
+
+_GH_LOGIN_ENV_KEYS = (
+    "TENZIR_CHANGELOG_AUTHOR",
+    "GH_USERNAME",
+    "GH_USER",
+    "GITHUB_ACTOR",
+    "GITHUB_USER",
+)
+_GH_PR_ENV_KEYS = (
+    "GH_PR_NUMBER",
+    "GITHUB_PR_NUMBER",
+    "PR_NUMBER",
+)
+
+
+def _find_gh_executable(env: Mapping[str, str] | None) -> Optional[str]:
+    """Return the path to the gh CLI using the provided environment PATH."""
+    path_env = None
+    if env is not None:
+        path_env = env.get("PATH")
+    return shutil.which("gh", path=path_env)
+
+
+def detect_github_login(
+    *,
+    env: Mapping[str, str] | None = None,
+    log_success: bool = True,
+) -> Optional[str]:
+    """Return an authenticated GitHub login via environment or the gh CLI."""
+
+    env_mapping = env if env is not None else os.environ
+    for key in _GH_LOGIN_ENV_KEYS:
+        value = env_mapping.get(key)
+        if value:
+            stripped = value.strip()
+            if stripped:
+                if log_success:
+                    log_info(f"detected GitHub login '@{stripped}' from environment key {key}.")
+                else:
+                    log_debug(f"detected GitHub login '{stripped}' from environment key {key}.")
+                return stripped
+
+    gh_path = _find_gh_executable(env_mapping)
+    if gh_path is None:
+        log_debug("gh CLI not found, skipping GitHub login detection.")
+        return None
+
+    subprocess_env = dict(env_mapping) if env is not None else None
+    try:
+        result = subprocess.run(
+            [gh_path, "api", "user", "--cache", "1m", "--jq", ".login"],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=subprocess_env,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        log_debug(f"gh CLI failed to report login: {exc}")
+        return None
+
+    login = result.stdout.strip()
+    if login:
+        if log_success:
+            log_info(f"detected GitHub login '@{login}' via gh CLI.")
+        else:
+            log_debug(f"detected GitHub login '{login}' via gh CLI.")
+        return login
+    return None
+
+
+def detect_github_pr_number(
+    project_root: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    log_success: bool = True,
+) -> Optional[int]:
+    """Return the pull request number for the current branch, if any."""
+
+    env_mapping = env if env is not None else os.environ
+    for key in _GH_PR_ENV_KEYS:
+        value = env_mapping.get(key)
+        if value:
+            stripped = value.strip()
+            if stripped.isdigit():
+                if log_success:
+                    log_info(f"detected open pull request #{stripped} from environment key {key}.")
+                else:
+                    log_debug(f"detected PR #{stripped} from environment key {key}.")
+                return int(stripped)
+
+    gh_path = _find_gh_executable(env_mapping)
+    if gh_path is None:
+        log_debug("gh CLI not found, skipping PR detection.")
+        return None
+
+    subprocess_env = dict(env_mapping) if env is not None else None
+    try:
+        result = subprocess.run(
+            [gh_path, "pr", "view", "--json", "number", "--jq", ".number"],
+            cwd=str(project_root),
+            check=True,
+            capture_output=True,
+            text=True,
+            env=subprocess_env,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        log_debug(f"gh CLI failed to detect PR for current branch: {exc}")
+        return None
+
+    text = result.stdout.strip()
+    if not text or not text.isdigit():
+        return None
+    number = int(text)
+    if number <= 0:
+        return None
+    if log_success:
+        log_info(f"detected open pull request #{number} via gh CLI.")
+    else:
+        log_debug(f"detected PR #{number} via gh CLI.")
+    return number
 
 
 def normalize_string_choices(values: object | None) -> tuple[str, ...]:

@@ -9,7 +9,7 @@ change logs across public and private repositories.
 - 🚀 Bootstrap a changelog project with sensible defaults and YAML
   configuration in seconds.
 - 🧾 Capture changelog entries via an interactive assistant that pulls metadata
-  from Git and GitHub.
+  from Git and GitHub, pre-filling authors from your `gh` login and current PRs.
 - 📦 Assemble release manifests that include narrative introductions before the
   structured list of entries.
 - 🔍 Validate entry metadata and release manifests to keep docs tooling happy.
