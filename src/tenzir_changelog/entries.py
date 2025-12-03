@@ -117,7 +117,7 @@ def _entry_sort_key(entry: Entry) -> tuple[datetime, str]:
     Orders by created datetime (ascending) with entry_id as tie-breaker.
     Entries without a created datetime sort to the beginning (epoch).
     """
-    created = entry.created_at or datetime.min
+    created = entry.created_at or datetime.min.replace(tzinfo=timezone.utc)
     return created, entry.entry_id
 
 

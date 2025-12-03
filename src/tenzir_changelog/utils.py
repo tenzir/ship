@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from collections.abc import Iterable as IterableABC
 from typing import Iterable, Mapping, Optional, cast, NoReturn
@@ -149,28 +149,34 @@ def coerce_date(value: object) -> Optional[date]:
 
 
 def coerce_datetime(value: object) -> Optional[datetime]:
-    """Return a datetime object for ISO-like inputs, preserving None.
+    """Return a UTC-aware datetime object for ISO-like inputs, preserving None.
 
-    Accepts datetime objects, date objects (converted to midnight),
+    Accepts datetime objects, date objects (converted to midnight UTC),
     and ISO-formatted strings (with or without time component).
+    All returned datetimes are timezone-aware (UTC).
     """
     if value is None:
         return None
     if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
         return value
     if isinstance(value, date):
-        return datetime(value.year, value.month, value.day)
+        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
     text = str(value).strip()
     if not text:
         return None
     try:
-        return datetime.fromisoformat(text)
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
     except ValueError:
         pass
-    # Try parsing as date-only and convert to midnight
+    # Try parsing as date-only and convert to midnight UTC
     try:
         d = date.fromisoformat(text)
-        return datetime(d.year, d.month, d.day)
+        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
     except ValueError:
         return None
 

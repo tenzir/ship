@@ -8,7 +8,7 @@ import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as metadata_version
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence, TypedDict, Literal, cast
@@ -722,7 +722,7 @@ def _filter_entries_by_component(entries: Iterable[Entry], components: set[str])
 def _build_release_sort_order(project_root: Path) -> dict[str, int]:
     """Return a mapping from release version to display order rank."""
     manifests = list(iter_release_manifests(project_root))
-    manifests.sort(key=lambda manifest: (manifest.created, manifest.version), reverse=True)
+    manifests.sort(key=lambda manifest: (manifest.created, manifest.version))
     return {manifest.version: index for index, manifest in enumerate(manifests)}
 
 
@@ -733,16 +733,16 @@ def _sort_entries_for_display(
 ) -> list[Entry]:
     """Sort entries so the newest entry ends up last in the table view."""
     entries_list = list(entries)
-    fallback_rank = len(release_order) + 1
+    unreleased_rank = len(release_order) + 1
 
     def sort_key(entry: Entry) -> tuple[int, datetime, str]:
         versions = release_index.get(entry.entry_id) or []
         if versions:
-            ranks = [release_order.get(version, fallback_rank) for version in versions]
-            release_rank = min(ranks) + 1
+            ranks = [release_order.get(version, unreleased_rank) for version in versions]
+            release_rank = min(ranks)
         else:
-            release_rank = 0  # unreleased entries first
-        created = entry.created_at or datetime.min
+            release_rank = unreleased_rank  # unreleased entries last
+        created = entry.created_at or datetime.min.replace(tzinfo=timezone.utc)
         return (release_rank, created, entry.entry_id)
 
     # Sort ascending by (release_rank, created, entry_id): oldest entries first
@@ -1137,12 +1137,12 @@ def _render_entries_multi_project(
     table.add_column("Type", style="magenta", justify="center", no_wrap=True)
 
     # Reference date for computing reverse datetime (larger value = older date)
-    reference = datetime(9999, 12, 31, 23, 59, 59)
+    reference = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
 
     def sort_key(item: MultiProjectEntry) -> tuple[int, float, str]:
         entry = item.entry
         project_idx = project_order.get(item.project_id, len(project_order))
-        created = entry.created_at or datetime.min
+        created = entry.created_at or datetime.min.replace(tzinfo=timezone.utc)
         # Use seconds until reference date for descending datetime order
         reverse_created = (reference - created).total_seconds()
         return (project_idx, reverse_created, entry.entry_id)

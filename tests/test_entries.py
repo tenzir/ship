@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tenzir_changelog.entries import iter_entries, read_entry, sort_entries_desc, write_entry
@@ -31,8 +31,8 @@ def test_sort_entries_desc_orders_by_created_datetime(tmp_path: Path) -> None:
 
     # Entry B is newer, so it should come first in descending order
     assert [entry.entry_id for entry in ordered] == ["entry-b", "entry-a"]
-    assert ordered[0].created_at == datetime(2024, 2, 1, 11, 0, 0)
-    assert ordered[1].created_at == datetime(2024, 1, 1, 10, 0, 0)
+    assert ordered[0].created_at == datetime(2024, 2, 1, 11, 0, 0, tzinfo=timezone.utc)
+    assert ordered[1].created_at == datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
 
 def test_read_entry_normalizes_singular_pr_to_prs(tmp_path: Path) -> None:
