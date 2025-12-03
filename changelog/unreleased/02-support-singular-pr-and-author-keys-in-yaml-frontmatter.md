@@ -1,5 +1,5 @@
 ---
-title: Support singular pr and author keys in YAML frontmatter
+title: Support singular pr and author keys
 type: feature
 authors:
 - claude
