@@ -23,4 +23,4 @@ pr: 42
 author: codex
 ```
 
-Both forms are supported, and the singular form is automatically normalized to the plural form when the entry is read. When both singular and plural forms are present, the plural form takes precedence.
+Both forms are supported, and the singular form is automatically normalized to the plural form when the entry is read. Using both forms in the same entry is an error.
