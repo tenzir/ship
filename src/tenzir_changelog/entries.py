@@ -85,6 +85,8 @@ def read_entry(path: Path) -> Entry:
     metadata = yaml.safe_load(frontmatter) or {}
     _normalize_created_metadata(metadata)
     _normalize_component_metadata(metadata, required=False)
+    _normalize_prs_metadata(metadata)
+    _normalize_authors_metadata(metadata)
     entry_id = path.stem
     sequence = _parse_entry_sequence(entry_id)
     return Entry(
@@ -244,6 +246,30 @@ def _normalize_created_metadata(
             metadata["created"] = date.today()
         return
     raise ValueError(f"Invalid created date value: {raw_created!r}")
+
+
+def _normalize_prs_metadata(metadata: dict[str, Any]) -> None:
+    """Normalize singular `pr` key to plural `prs` key."""
+    if "pr" in metadata:
+        if "prs" in metadata:
+            raise ValueError("Entry cannot have both 'pr' and 'prs' keys; use one or the other.")
+        pr_value = metadata.pop("pr")
+        if pr_value is not None:
+            metadata["prs"] = [pr_value] if not isinstance(pr_value, list) else pr_value
+
+
+def _normalize_authors_metadata(metadata: dict[str, Any]) -> None:
+    """Normalize singular `author` key to plural `authors` key."""
+    if "author" in metadata:
+        if "authors" in metadata:
+            raise ValueError(
+                "Entry cannot have both 'author' and 'authors' keys; use one or the other."
+            )
+        author_value = metadata.pop("author")
+        if author_value is not None:
+            metadata["authors"] = (
+                [author_value] if not isinstance(author_value, list) else author_value
+            )
 
 
 def format_frontmatter(metadata: dict[str, Any]) -> str:

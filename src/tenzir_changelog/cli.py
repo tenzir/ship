@@ -242,9 +242,13 @@ class ColumnSpec(TypedDict, total=False):
 
 
 def _parse_pr_numbers(metadata: Mapping[str, Any]) -> list[int]:
-    """Normalize PR metadata into a list of integers."""
+    """Normalize PR metadata into a list of integers.
 
+    Supports both plural `prs` and singular `pr` keys, with `prs` taking precedence.
+    """
     value = metadata.get("prs")
+    if value is None:
+        value = metadata.get("pr")
     if value is None:
         return []
 
@@ -2096,7 +2100,11 @@ def _join_with_conjunction(items: list[str]) -> str:
 
 def _collect_author_pr_text(entry: Entry, config: Config) -> tuple[str, str]:
     metadata = entry.metadata
-    authors = metadata.get("authors") or []
+    # Support both plural `authors` and singular `author` keys
+    authors = metadata.get("authors")
+    if authors is None:
+        authors = metadata.get("author")
+    authors = authors or []
     if isinstance(authors, str):
         authors = [authors]
     authors = [author.strip() for author in authors if author and author.strip()]
@@ -2232,12 +2240,20 @@ def create_entry(
         "title": title,
         "type": entry_type,
         "project": project_value,
-        "authors": authors_list or None,
     }
+    # Use singular form for single values, plural for multiple
+    if authors_list:
+        if len(authors_list) == 1:
+            metadata["author"] = authors_list[0]
+        else:
+            metadata["authors"] = authors_list
     if component_value:
         metadata["component"] = component_value
     if pr_numbers:
-        metadata["prs"] = pr_numbers
+        if len(pr_numbers) == 1:
+            metadata["pr"] = pr_numbers[0]
+        else:
+            metadata["prs"] = pr_numbers
 
     path = write_entry(project_root, metadata, body, default_project=config.id)
     log_success(f"entry created: {path.relative_to(project_root)}")

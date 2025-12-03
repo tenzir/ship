@@ -106,8 +106,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert len(feature_entry.stem.split("-", 1)[0]) >= ENTRY_PREFIX_WIDTH
     entry_text = feature_entry.read_text(encoding="utf-8")
     assert "created:" in entry_text
-    assert "prs:" in entry_text
-    assert "- 42" in entry_text
+    assert "pr: 42" in entry_text  # singular form for single PR
     assert "project:" not in entry_text
     parsed_entry = read_entry(feature_entry)
     assert isinstance(parsed_entry.metadata["created"], date)
