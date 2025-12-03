@@ -551,6 +551,10 @@ def _resolve_project_root(value: Path) -> Path:
             return resolved
         if _is_package_root(resolved):
             return (resolved / CHANGELOG_DIRECTORY_NAME).resolve()
+        # Check if a changelog/ subdirectory exists with a valid config.
+        changelog_subdir = resolved / CHANGELOG_DIRECTORY_NAME
+        if changelog_subdir.is_dir() and _has_config(changelog_subdir):
+            return changelog_subdir.resolve()
 
     for candidate in [resolved] + list(resolved.parents):
         if not candidate.is_dir():

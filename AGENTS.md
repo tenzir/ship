@@ -6,10 +6,9 @@
   companion modules (`config.py`, `entries.py`, `releases.py`, `validate.py`,
   `utils.py`) cover config, entries, releases, validation, and shared helpers.
   Keep changes typed and centralize helpers in `utils.py`.
-- `changelog/` stores this repository's changelog project; run CLI commands
-  with `--root changelog` so they operate on the dogfooded data and refresh
-  those files alongside root docs (`README.md`, `DEVELOPMENT.md`) when behavior
-  changes.
+- `changelog/` stores this repository's changelog project; CLI commands
+  automatically detect this directory as root. Refresh these files alongside
+  root docs (`README.md`, `DEVELOPMENT.md`) when behavior changes.
 - `tests/` stores pytest suites that exercise flows with `CliRunner`; mirror
   module names (e.g., `test_cli.py`) and keep fixtures close to usage.
 
@@ -54,9 +53,9 @@
 ## Writing Changelog Entries
 
 - When you implement new changes, features, or fix bugs, create a new changelog
-  entry with `uv run tenzir-changelog --root changelog add ...`; do not
-  hand-write changelog entry files. Pass the appropriate component as argument,
-  based on the available components in `changelog/config.yaml`.
+  entry with `uv run tenzir-changelog add ...`; do not hand-write changelog
+  entry files. Pass the appropriate component as argument, based on the
+  available components in `changelog/config.yaml`.
 - If you are a coding agent, add your own name as author, e.g., claude or codex.
   Keep the author list alphabetically sorted.
 - Focus on the user-facing impact of your changes. Do not mention internal
