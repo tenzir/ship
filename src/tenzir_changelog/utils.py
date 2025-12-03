@@ -148,6 +148,33 @@ def coerce_date(value: object) -> Optional[date]:
         return None
 
 
+def coerce_datetime(value: object) -> Optional[datetime]:
+    """Return a datetime object for ISO-like inputs, preserving None.
+
+    Accepts datetime objects, date objects (converted to midnight),
+    and ISO-formatted strings (with or without time component).
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    # Try parsing as date-only and convert to midnight
+    try:
+        d = date.fromisoformat(text)
+        return datetime(d.year, d.month, d.day)
+    except ValueError:
+        return None
+
+
 def guess_git_remote(project_root: Path) -> Optional[str]:
     """Return the GitHub repository slug (owner/name) if available."""
     try:

@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
 import yaml
 from click import ClickException
 
-from .utils import coerce_date, slugify
+from .utils import coerce_datetime, slugify
 
 UNRELEASED_DIR = Path("unreleased")
 ENTRY_TYPES = ("breaking", "feature", "bugfix", "change")
-ENTRY_PREFIX_WIDTH = 2
-ENTRY_FILENAME_SEPARATOR = "-"
 
 
 @dataclass
@@ -26,7 +24,6 @@ class Entry:
     metadata: dict[str, Any]
     body: str
     path: Path
-    sequence: int
 
     @property
     def title(self) -> str:
@@ -65,8 +62,14 @@ class Entry:
         return self.projects
 
     @property
-    def created_at(self) -> Optional[date]:
-        return coerce_date(self.metadata.get("created"))
+    def created_at(self) -> Optional[datetime]:
+        return coerce_datetime(self.metadata.get("created"))
+
+    @property
+    def created_date(self) -> Optional[date]:
+        """Return just the date portion of created_at for display."""
+        dt = self.created_at
+        return dt.date() if dt else None
 
 
 def entry_directory(project_root: Path) -> Path:
@@ -88,36 +91,12 @@ def read_entry(path: Path) -> Entry:
     _normalize_prs_metadata(metadata)
     _normalize_authors_metadata(metadata)
     entry_id = path.stem
-    sequence = _parse_entry_sequence(entry_id)
     return Entry(
         entry_id=entry_id,
         metadata=metadata,
         body=body.strip(),
         path=path,
-        sequence=sequence,
     )
-
-
-def _parse_entry_sequence(entry_id: str) -> int:
-    """Extract the numeric prefix from an entry identifier."""
-    if ENTRY_FILENAME_SEPARATOR in entry_id:
-        prefix, _ = entry_id.split(ENTRY_FILENAME_SEPARATOR, 1)
-    else:
-        prefix = entry_id
-    if not prefix.isdigit():
-        raise ValueError(f"Entry id '{entry_id}' must start with a numeric prefix.")
-    if len(prefix) < ENTRY_PREFIX_WIDTH:
-        raise ValueError(f"Entry id '{entry_id}' must use at least {ENTRY_PREFIX_WIDTH} digits.")
-    return int(prefix)
-
-
-def _next_entry_sequence(directory: Path) -> int:
-    """Return the next sequence number for the given entry directory."""
-    max_sequence = 0
-    for path in directory.glob("*.md"):
-        existing_sequence = _parse_entry_sequence(path.stem)
-        max_sequence = max(max_sequence, existing_sequence)
-    return max_sequence + 1 if max_sequence else 1
 
 
 def iter_entries(project_root: Path) -> Iterable[Entry]:
@@ -132,27 +111,27 @@ def iter_entries(project_root: Path) -> Iterable[Entry]:
             raise ClickException(f"Failed to read entry '{path.name}': {exc}") from exc
 
 
-def _entry_sort_key(entry: Entry) -> tuple[int, str]:
-    """Return a tuple for deterministic entry ordering."""
-    return entry.sequence, entry.entry_id
+def _entry_sort_key(entry: Entry) -> tuple[datetime, str]:
+    """Return a tuple for deterministic entry ordering.
+
+    Orders by created datetime (ascending) with entry_id as tie-breaker.
+    Entries without a created datetime sort to the beginning (epoch).
+    """
+    created = entry.created_at or datetime.min
+    return created, entry.entry_id
 
 
 def sort_entries_desc(entries: Iterable[Entry]) -> list[Entry]:
-    """Return entries sorted from highest to lowest numeric prefix."""
+    """Return entries sorted from newest to oldest by created datetime."""
     return sorted(entries, key=_entry_sort_key, reverse=True)
 
 
-def generate_entry_id(sequence: int, seed: Optional[str] = None) -> str:
-    """Generate a numeric-prefixed entry id based on optional seed."""
-    if sequence < 10**ENTRY_PREFIX_WIDTH:
-        prefix = f"{sequence:0{ENTRY_PREFIX_WIDTH}d}"
-    else:
-        prefix = str(sequence)
-    if seed:
-        slug = slugify(seed)
-        if slug:
-            return f"{prefix}{ENTRY_FILENAME_SEPARATOR}{slug[:80]}"
-    return prefix
+def generate_entry_id(title: str) -> str:
+    """Generate an entry id from the title slug."""
+    slug = slugify(title)
+    if not slug:
+        raise ValueError("Cannot generate entry ID: title produces an empty slug.")
+    return slug[:80]
 
 
 def _coerce_project(value: Any, *, source: str) -> Optional[str]:
@@ -227,25 +206,25 @@ def _normalize_component_metadata(
 def _normalize_created_metadata(
     metadata: dict[str, Any],
     *,
-    default_today: bool = False,
+    default_now: bool = False,
 ) -> None:
-    """Ensure the created field is stored as a date object."""
+    """Ensure the created field is stored as a datetime object."""
     if "created" not in metadata or metadata["created"] is None:
         metadata.pop("created", None)
-        if default_today:
-            metadata["created"] = date.today()
+        if default_now:
+            metadata["created"] = datetime.now()
         return
     raw_created = metadata["created"]
-    created_value = coerce_date(raw_created)
+    created_value = coerce_datetime(raw_created)
     if created_value is not None:
         metadata["created"] = created_value
         return
     if isinstance(raw_created, str) and not raw_created.strip():
         metadata.pop("created", None)
-        if default_today:
-            metadata["created"] = date.today()
+        if default_now:
+            metadata["created"] = datetime.now()
         return
-    raise ValueError(f"Invalid created date value: {raw_created!r}")
+    raise ValueError(f"Invalid created datetime value: {raw_created!r}")
 
 
 def _normalize_prs_metadata(metadata: dict[str, Any]) -> None:
@@ -304,30 +283,21 @@ def write_entry(
     if default_project is not None and project_value == default_project:
         metadata.pop("project", None)
     _normalize_component_metadata(metadata, required=False)
-    if entry_id is None:
-        sequence = _next_entry_sequence(directory)
-        entry_id = generate_entry_id(sequence, metadata.get("title"))
-        path = directory / f"{entry_id}.md"
-        while path.exists():
-            sequence += 1
-            entry_id = generate_entry_id(sequence, metadata.get("title"))
-            path = directory / f"{entry_id}.md"
-    else:
-        _parse_entry_sequence(entry_id)
-        path = directory / f"{entry_id}.md"
-        if path.exists():
-            base = entry_id
-            counter = 1
-            while True:
-                candidate = f"{base}-{counter}"
-                candidate_path = directory / f"{candidate}.md"
-                if not candidate_path.exists():
-                    entry_id = candidate
-                    path = candidate_path
-                    break
-                counter += 1
 
-    _normalize_created_metadata(metadata, default_today=True)
+    if entry_id is None:
+        title = metadata.get("title")
+        if not title:
+            raise ValueError("Cannot create entry: 'title' is required in metadata.")
+        entry_id = generate_entry_id(title)
+
+    path = directory / f"{entry_id}.md"
+    if path.exists():
+        raise ValueError(
+            f"An entry with id '{entry_id}' already exists. "
+            "Please use a different title to generate a unique entry id."
+        )
+
+    _normalize_created_metadata(metadata, default_now=True)
     frontmatter = format_frontmatter(metadata)
     with path.open("w", encoding="utf-8") as handle:
         handle.write(frontmatter)

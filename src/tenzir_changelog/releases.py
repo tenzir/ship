@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -17,7 +17,12 @@ def _represent_date(dumper: yaml.SafeDumper, data: date) -> Node:
     return dumper.represent_scalar("tag:yaml.org,2002:timestamp", data.isoformat())
 
 
+def _represent_datetime(dumper: yaml.SafeDumper, data: datetime) -> Node:
+    return dumper.represent_scalar("tag:yaml.org,2002:timestamp", data.isoformat())
+
+
 yaml.SafeDumper.add_representer(date, _represent_date)
+yaml.SafeDumper.add_representer(datetime, _represent_datetime)
 
 
 class _FoldedString(str):
