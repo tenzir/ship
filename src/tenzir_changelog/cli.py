@@ -735,19 +735,18 @@ def _sort_entries_for_display(
     entries_list = list(entries)
     fallback_rank = len(release_order) + 1
 
-    def sort_key(entry: Entry) -> tuple[int, int, int, str]:
+    def sort_key(entry: Entry) -> tuple[int, datetime, str]:
         versions = release_index.get(entry.entry_id) or []
         if versions:
             ranks = [release_order.get(version, fallback_rank) for version in versions]
             release_rank = min(ranks) + 1
         else:
             release_rank = 0  # unreleased entries first
-        created = entry.created_at or date.min
-        created_ord = created.toordinal()
-        return (release_rank, -created_ord, -entry.sequence, entry.entry_id)
+        created = entry.created_at or datetime.min
+        return (release_rank, created, entry.entry_id)
 
-    sorted_desc = sorted(entries_list, key=sort_key)
-    return list(reversed(sorted_desc))
+    # Sort ascending by (release_rank, created, entry_id): oldest entries first
+    return sorted(entries_list, key=sort_key)
 
 
 def _entry_release_group(
@@ -918,7 +917,7 @@ def _render_entries(
 
     for index, entry in enumerate(sorted_entries):
         metadata = entry.metadata
-        created_display = entry.created_at.isoformat() if entry.created_at else "—"
+        created_display = entry.created_date.isoformat() if entry.created_date else "—"
         type_value = metadata.get("type", "change")
         versions = release_index.get(entry.entry_id)
         version_display = ", ".join(versions) if versions else "—"
@@ -1137,12 +1136,16 @@ def _render_entries_multi_project(
     table.add_column("Title", style="bold")
     table.add_column("Type", style="magenta", justify="center", no_wrap=True)
 
-    def sort_key(item: MultiProjectEntry) -> tuple[int, int, int, str]:
+    # Reference date for computing reverse datetime (larger value = older date)
+    reference = datetime(9999, 12, 31, 23, 59, 59)
+
+    def sort_key(item: MultiProjectEntry) -> tuple[int, float, str]:
         entry = item.entry
         project_idx = project_order.get(item.project_id, len(project_order))
-        created = entry.created_at or date.min
-        created_ord = -created.toordinal()
-        return (project_idx, created_ord, -entry.sequence, entry.entry_id)
+        created = entry.created_at or datetime.min
+        # Use seconds until reference date for descending datetime order
+        reverse_created = (reference - created).total_seconds()
+        return (project_idx, reverse_created, entry.entry_id)
 
     sorted_entries = sorted(entries, key=sort_key)
 
@@ -1150,7 +1153,7 @@ def _render_entries_multi_project(
     for index, multi_entry in enumerate(sorted_entries, 1):
         entry = multi_entry.entry
         project_name = multi_entry.project_name
-        created_display = entry.created_at.isoformat() if entry.created_at else "—"
+        created_display = entry.created_date.isoformat() if entry.created_date else "—"
         type_value = entry.metadata.get("type", "change")
 
         if include_emoji:

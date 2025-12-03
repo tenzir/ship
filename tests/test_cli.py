@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import click
@@ -16,7 +16,7 @@ from click.testing import CliRunner
 from tenzir_changelog import __version__
 from tenzir_changelog.cli import INFO_PREFIX, cli, main
 from tenzir_changelog.config import Config, save_config
-from tenzir_changelog.entries import ENTRY_PREFIX_WIDTH, read_entry, write_entry
+from tenzir_changelog.entries import read_entry, write_entry
 
 
 def test_cli_version_option(capsys: pytest.CaptureFixture[str]) -> None:
@@ -99,27 +99,26 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     entry_files = sorted(entries_dir.glob("*.md"))
     assert len(entry_files) == 3
 
-    feature_entry_matches = list(entries_dir.glob("*-exciting-feature.md"))
+    feature_entry_matches = list(entries_dir.glob("exciting-feature.md"))
     assert feature_entry_matches
     feature_entry = feature_entry_matches[0]
-    assert feature_entry.stem.split("-", 1)[0].isdigit()
-    assert len(feature_entry.stem.split("-", 1)[0]) >= ENTRY_PREFIX_WIDTH
+    assert feature_entry.stem == "exciting-feature"
     entry_text = feature_entry.read_text(encoding="utf-8")
     assert "created:" in entry_text
     assert "pr: 42" in entry_text  # singular form for single PR
     assert "project:" not in entry_text
     parsed_entry = read_entry(feature_entry)
-    assert isinstance(parsed_entry.metadata["created"], date)
+    assert isinstance(parsed_entry.metadata["created"], datetime)
     assert parsed_entry.created_at == parsed_entry.metadata["created"]
 
-    breaking_entry_matches = list(entries_dir.glob("*-remove-legacy-api.md"))
+    breaking_entry_matches = list(entries_dir.glob("remove-legacy-api.md"))
     assert breaking_entry_matches
     breaking_entry = breaking_entry_matches[0]
     breaking_text = breaking_entry.read_text(encoding="utf-8")
     assert "type: breaking" in breaking_text
     assert "Removes the deprecated ingest API to prepare for v1." in breaking_text
 
-    bugfix_entry_matches = list(entries_dir.glob("*-fix-ingest-crash.md"))
+    bugfix_entry_matches = list(entries_dir.glob("fix-ingest-crash.md"))
     assert bugfix_entry_matches
     bugfix_entry = bugfix_entry_matches[0]
     bugfix_text = bugfix_entry.read_text(encoding="utf-8")
@@ -217,13 +216,13 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
 
     release_entries_dir = release_dir / "entries"
     assert release_entries_dir.is_dir()
-    assert list(release_entries_dir.glob("*-exciting-feature.md"))
-    assert list(release_entries_dir.glob("*-remove-legacy-api.md"))
-    assert list(release_entries_dir.glob("*-fix-ingest-crash.md"))
+    assert list(release_entries_dir.glob("exciting-feature.md"))
+    assert list(release_entries_dir.glob("remove-legacy-api.md"))
+    assert list(release_entries_dir.glob("fix-ingest-crash.md"))
     release_entry_stems = {path.stem for path in release_entries_dir.glob("*.md")}
-    assert any(stem.endswith("exciting-feature") for stem in release_entry_stems)
-    assert any(stem.endswith("remove-legacy-api") for stem in release_entry_stems)
-    assert any(stem.endswith("fix-ingest-crash") for stem in release_entry_stems)
+    assert "exciting-feature" in release_entry_stems
+    assert "remove-legacy-api" in release_entry_stems
+    assert "fix-ingest-crash" in release_entry_stems
     assert not any(entries_dir.iterdir())
 
     idempotent_result = runner.invoke(
@@ -583,7 +582,7 @@ def _create_project_with_entry(
     *,
     entry_id: str,
     title: str,
-    created: date,
+    created: datetime | date,
     entry_type: str = "feature",
 ) -> None:
     root.mkdir(parents=True, exist_ok=True)
@@ -605,7 +604,7 @@ def test_show_table_multi_project_handles_duplicate_entry_ids(tmp_path: Path) ->
     runner = CliRunner()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
-    shared_id = "01-shared-entry"
+    shared_id = "shared-entry"
 
     _create_project_with_entry(
         alpha_root,
@@ -613,7 +612,7 @@ def test_show_table_multi_project_handles_duplicate_entry_ids(tmp_path: Path) ->
         project_name="Alpha",
         entry_id=shared_id,
         title="Alpha Feature",
-        created=date(2024, 1, 2),
+        created=datetime(2024, 1, 2, 10, 0, 0),
     )
     _create_project_with_entry(
         beta_root,
@@ -621,7 +620,7 @@ def test_show_table_multi_project_handles_duplicate_entry_ids(tmp_path: Path) ->
         project_name="Beta",
         entry_id=shared_id,
         title="Beta Bugfix",
-        created=date(2024, 2, 3),
+        created=datetime(2024, 2, 3, 11, 0, 0),
         entry_type="bugfix",
     )
 
@@ -652,17 +651,17 @@ def test_show_table_multi_project_honors_project_filter(tmp_path: Path) -> None:
         alpha_root,
         project_id="alpha",
         project_name="Alpha",
-        entry_id="01-alpha-entry",
+        entry_id="alpha-entry",
         title="Alpha Feature",
-        created=date(2024, 1, 2),
+        created=datetime(2024, 1, 2, 10, 0, 0),
     )
     _create_project_with_entry(
         beta_root,
         project_id="beta",
         project_name="Beta",
-        entry_id="02-beta-entry",
+        entry_id="beta-entry",
         title="Beta Feature",
-        created=date(2024, 3, 4),
+        created=datetime(2024, 3, 4, 11, 0, 0),
     )
 
     filtered = runner.invoke(
@@ -707,18 +706,18 @@ def test_show_table_multi_project_release_version(tmp_path: Path) -> None:
         alpha_root,
         project_id="alpha",
         project_name="Alpha",
-        entry_id="01-shared-entry",
+        entry_id="alpha-feature",
         title="Alpha Feature",
-        created=date(2024, 1, 2),
+        created=datetime(2024, 1, 2, 10, 0, 0),
         entry_type="feature",
     )
     _create_project_with_entry(
         alpha_root,
         project_id="alpha",
         project_name="Alpha",
-        entry_id="02-alpha-fix",
+        entry_id="alpha-fix",
         title="Alpha Fix",
-        created=date(2024, 2, 2),
+        created=datetime(2024, 2, 2, 11, 0, 0),
         entry_type="bugfix",
     )
 
@@ -726,18 +725,18 @@ def test_show_table_multi_project_release_version(tmp_path: Path) -> None:
         beta_root,
         project_id="beta",
         project_name="Beta",
-        entry_id="01-shared-entry",
+        entry_id="beta-feature",
         title="Beta Feature",
-        created=date(2024, 1, 5),
+        created=datetime(2024, 1, 5, 12, 0, 0),
         entry_type="feature",
     )
     _create_project_with_entry(
         beta_root,
         project_id="beta",
         project_name="Beta",
-        entry_id="02-beta-fix",
+        entry_id="beta-fix",
         title="Beta Fix",
-        created=date(2024, 2, 5),
+        created=datetime(2024, 2, 5, 13, 0, 0),
         entry_type="bugfix",
     )
 

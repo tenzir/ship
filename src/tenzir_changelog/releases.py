@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -17,7 +17,21 @@ def _represent_date(dumper: yaml.SafeDumper, data: date) -> Node:
     return dumper.represent_scalar("tag:yaml.org,2002:timestamp", data.isoformat())
 
 
+def _represent_datetime(dumper: yaml.SafeDumper, data: datetime) -> Node:
+    # Use Z suffix for UTC, otherwise use the offset format
+    if data.tzinfo is not None and data.utcoffset() == timezone.utc.utcoffset(None):
+        # Format as ISO with Z suffix for UTC
+        iso_str = data.strftime("%Y-%m-%dT%H:%M:%S")
+        if data.microsecond:
+            iso_str += f".{data.microsecond:06d}".rstrip("0")
+        iso_str += "Z"
+    else:
+        iso_str = data.isoformat()
+    return dumper.represent_scalar("tag:yaml.org,2002:timestamp", iso_str)
+
+
 yaml.SafeDumper.add_representer(date, _represent_date)
+yaml.SafeDumper.add_representer(datetime, _represent_datetime)
 
 
 class _FoldedString(str):
