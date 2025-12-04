@@ -525,7 +525,7 @@ def _initialize_project_scaffold(*, project_root: Path, config_path: Path) -> Co
     return config
 
 
-def _resolve_project_root(value: Path) -> Path:
+def _resolve_project_root(value: Path, *, bootstrap_in_subdir: bool = False) -> Path:
     resolved = value.resolve()
 
     def _has_config(path: Path) -> bool:
@@ -564,6 +564,10 @@ def _resolve_project_root(value: Path) -> Path:
         if _is_package_root(candidate):
             return (candidate / CHANGELOG_DIRECTORY_NAME).resolve()
 
+    # No existing project found. When bootstrapping without explicit --root,
+    # default to changelog/ subdirectory for consistency with package mode.
+    if bootstrap_in_subdir:
+        return (resolved / CHANGELOG_DIRECTORY_NAME).resolve()
     return resolved
 
 
@@ -616,13 +620,15 @@ def create_cli_context(
     root_candidates = list(roots or [])
 
     if len(root_candidates) == 0:
-        root = _resolve_project_root(Path("."))
+        # No explicit --root: bootstrap into changelog/ subdirectory if needed.
+        root = _resolve_project_root(Path("."), bootstrap_in_subdir=True)
         config_path = config.resolve() if config else default_config_path(root)
         log_debug(f"resolved project root: {root}")
         log_debug(f"using config path: {config_path}")
         return CLIContext(project_root=root, config_path=config_path)
 
     if len(root_candidates) == 1:
+        # Explicit --root: use that directory as-is for bootstrapping.
         root = _resolve_project_root(root_candidates[0])
         config_path = config.resolve() if config else default_config_path(root)
         log_debug(f"resolved project root: {root}")
@@ -2263,7 +2269,11 @@ def create_entry(
             metadata["prs"] = pr_numbers
 
     path = write_entry(project_root, metadata, body, default_project=config.id)
-    log_success(f"entry created: {path.relative_to(project_root)}")
+    try:
+        display_path = path.relative_to(Path.cwd())
+    except ValueError:
+        display_path = path
+    log_success(f"entry created: {display_path}")
     return path
 
 

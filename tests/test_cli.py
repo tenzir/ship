@@ -893,6 +893,46 @@ def test_package_mode_bootstraps_changelog_from_package_root(tmp_path: Path) -> 
     assert not (changelog_root / "config.yaml").exists()
 
 
+def test_bootstrap_creates_changelog_subdirectory(tmp_path: Path) -> None:
+    """Running add in empty directory should create changelog/ subdirectory."""
+    runner = CliRunner()
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = runner.invoke(
+            cli,
+            [
+                "add",
+                "--title",
+                "First entry",
+                "--type",
+                "feature",
+                "--author",
+                "test",
+                "--description",
+                "Test description.",
+            ],
+            env={"EDITOR": "true"},
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+
+    # Should create changelog/ subdirectory, not in project root
+    changelog_root = project_dir / "changelog"
+    assert changelog_root.is_dir()
+    assert (changelog_root / "config.yaml").exists()
+    assert (changelog_root / "unreleased").is_dir()
+
+    # Should NOT create in project root
+    assert not (project_dir / "config.yaml").exists()
+    assert not (project_dir / "unreleased").exists()
+
+
 def test_add_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
