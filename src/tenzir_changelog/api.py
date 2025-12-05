@@ -84,6 +84,7 @@ class Changelog:
         project_override: Optional[str] = None,
         components: Sequence[str] | None = None,
         authors: Sequence[str] | None = None,
+        co_authors: Sequence[str] | None = None,
         prs: Sequence[str] | None = None,
         description: Optional[str] = None,
     ) -> Path:
@@ -96,6 +97,7 @@ class Changelog:
             project_override=project_override,
             components=components,
             authors=authors,
+            co_authors=co_authors,
             prs=prs,
             description=description,
             allow_interactive=False,

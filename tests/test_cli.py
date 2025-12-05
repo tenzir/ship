@@ -2424,3 +2424,143 @@ def test_add_description_file_empty(tmp_path: Path) -> None:
 
     entry_files = list((project_dir / "unreleased").glob("*.md"))
     assert len(entry_files) == 1
+
+
+def test_add_co_author_with_explicit_author(tmp_path: Path) -> None:
+    """Test that --co-author is additive to explicit --author."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Co-authored Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A feature with multiple authors.",
+            "--author",
+            "mavam",
+            "--co-author",
+            "claude",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    entry_files = list((project_dir / "unreleased").glob("*.md"))
+    assert len(entry_files) == 1
+    entry_text = entry_files[0].read_text(encoding="utf-8")
+    # Both authors should be present
+    assert "authors:" in entry_text
+    assert "mavam" in entry_text
+    assert "claude" in entry_text
+
+
+def test_add_multiple_co_authors(tmp_path: Path) -> None:
+    """Test that multiple --co-author flags work correctly."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Multi Co-authored Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A feature with many authors.",
+            "--author",
+            "mavam",
+            "--co-author",
+            "claude",
+            "--co-author",
+            "copilot",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    entry_files = list((project_dir / "unreleased").glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert entry.metadata.get("authors") == ["mavam", "claude", "copilot"]
+
+
+def test_add_co_author_deduplication(tmp_path: Path) -> None:
+    """Test that duplicate authors are removed while preserving order."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Deduplicated Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A feature with duplicate authors.",
+            "--author",
+            "mavam",
+            "--co-author",
+            "mavam",
+            "--co-author",
+            "claude",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    entry_files = list((project_dir / "unreleased").glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    # mavam should appear only once, order preserved
+    assert entry.metadata.get("authors") == ["mavam", "claude"]
+
+
+def test_add_co_author_without_explicit_author(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that --co-author triggers author inference and adds to it."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Mock the GitHub login detection to return a known value
+    monkeypatch.setenv("TENZIR_CHANGELOG_AUTHOR", "inferred-user")
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Inferred Co-authored Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A feature using inference plus co-author.",
+            "--co-author",
+            "claude",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    entry_files = list((project_dir / "unreleased").glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    # Should have inferred user first, then co-author
+    assert entry.metadata.get("authors") == ["inferred-user", "claude"]

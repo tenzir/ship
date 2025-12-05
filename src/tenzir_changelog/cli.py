@@ -2190,6 +2190,7 @@ def create_entry(
     project_override: Optional[str] = None,
     components: Sequence[str] | None = None,
     authors: Sequence[str] | None = None,
+    co_authors: Sequence[str] | None = None,
     prs: Sequence[str] | None = None,
     description: Optional[str] = None,
     allow_interactive: bool = True,
@@ -2254,6 +2255,13 @@ def create_entry(
             )
         else:
             authors_list = []
+
+    # Append co-authors (always additive)
+    if co_authors:
+        co_authors_cleaned = [a.strip() for a in co_authors if a.strip()]
+        authors_list.extend(co_authors_cleaned)
+        # Deduplicate while preserving order
+        authors_list = list(dict.fromkeys(authors_list))
 
     if description is not None:
         body = description
@@ -2326,6 +2334,12 @@ def create_entry(
 )
 @click.option("--author", "authors", multiple=True, help="GitHub username of an author.")
 @click.option(
+    "--co-author",
+    "co_authors",
+    multiple=True,
+    help="Additional author (combined with inferred/explicit author).",
+)
+@click.option(
     "--pr",
     "prs",
     multiple=True,
@@ -2349,6 +2363,7 @@ def add(
     project_override: Optional[str],
     components: tuple[str, ...],
     authors: tuple[str, ...],
+    co_authors: tuple[str, ...],
     prs: tuple[str, ...],
     description: Optional[str],
     description_file: Optional[Path],
@@ -2362,6 +2377,7 @@ def add(
         project_override=project_override,
         components=components,
         authors=authors,
+        co_authors=co_authors,
         prs=prs,
         description=resolved_description,
     )
