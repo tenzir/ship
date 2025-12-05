@@ -1,0 +1,6 @@
+created: 2025-12-04
+title: Tenzir Changelog v0.10.0
+intro: >-
+  This release adds support for reading changelog entry descriptions from files
+
+  or stdin, making it easier to integrate with automated workflows and pipelines.
