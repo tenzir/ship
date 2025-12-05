@@ -110,7 +110,7 @@ def _resolve_cli_version() -> str:
 
 
 ENTRY_TYPE_STYLES = {
-    "breaking": "bold red",
+    "breaking": "orange3",
     "feature": "green",
     "bugfix": "red",
     "change": "blue",
@@ -1147,7 +1147,9 @@ def _render_single_entry(
     )
 
     # Display everything in a single panel with the title
-    _print_renderable(Panel(content, title=title, title_align="left", expand=True))
+    _print_renderable(
+        Panel(content, title=title, title_align="left", expand=True, border_style=type_color)
+    )
 
 
 def _render_entries_multi_project(
