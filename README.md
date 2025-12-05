@@ -31,8 +31,6 @@ caches the result for snappy subsequent invocations.
 
 - [User Reference](https://docs.tenzir.com/reference/changelog-framework):
   Concise description of concepts and abstractions.
-- [Development guide](DEVELOPMENT.md): Local workflows, quality gates, and
-  release procedures for maintainers.
 
 ## 🐶 Dogfooded Project
 
