@@ -144,6 +144,13 @@ def _format_section_title(entry_type: str, include_emoji: bool) -> str:
     return f"{emoji} {section_title}"
 
 
+def _format_author(author: str) -> str:
+    """Format an author for display, adding @ prefix only for GitHub-style handles."""
+    if " " in author:
+        return author
+    return f"@{author}"
+
+
 def _command_help_text(
     summary: str,
     command_name: str,
@@ -1109,7 +1116,7 @@ def _render_single_entry(
 
     authors = entry.metadata.get("authors")
     if authors:
-        authors_str = ", ".join(f"@{a}" for a in authors)
+        authors_str = ", ".join(_format_author(a) for a in authors)
         metadata_parts.append(f"Authors:   {authors_str}")
 
     # Include pull-request references when available.
@@ -1220,7 +1227,9 @@ def _component_matches(entry: Entry, normalized_components: set[str]) -> bool:
     if not normalized_components:
         return True
     entry_components = entry.components
-    return bool(entry_components and any(c.lower() in normalized_components for c in entry_components))
+    return bool(
+        entry_components and any(c.lower() in normalized_components for c in entry_components)
+    )
 
 
 def _show_entries_table(
@@ -2152,7 +2161,7 @@ def _collect_author_pr_text(entry: Entry, config: Config) -> tuple[str, str]:
         authors = [authors]
     authors = [author.strip() for author in authors if author and author.strip()]
 
-    author_handles = [f"@{author}" for author in authors]
+    author_handles = [_format_author(author) for author in authors]
     author_text = _join_with_conjunction(author_handles)
 
     prs = _parse_pr_numbers(metadata)
