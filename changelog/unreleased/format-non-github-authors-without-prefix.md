@@ -1,9 +1,11 @@
 ---
 title: Format non-GitHub authors without @ prefix
 type: change
+components:
+  - cli
 authors:
-- mavam
-- claude
+  - mavam
+  - claude
 created: 2025-12-11T09:59:54.648556Z
 ---
 

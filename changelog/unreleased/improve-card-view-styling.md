@@ -1,9 +1,11 @@
 ---
 title: Improve card view styling
 type: change
+components:
+  - cli
 authors:
-- mavam
-- claude
+  - mavam
+  - claude
 created: 2025-12-05T16:59:46.132826Z
 ---
 
