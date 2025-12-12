@@ -1,3 +1,7 @@
+# Skills
+
+Load the `python:following-conventions` skill when working with code, tooling, or infrastructure.
+
 # Repository Structure
 
 ## CLI
