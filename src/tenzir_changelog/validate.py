@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from .config import Config
 from .entries import ENTRY_TYPES, Entry, iter_entries
@@ -14,6 +14,9 @@ from .releases import (
     load_release_entry,
     resolve_release_entry_path,
 )
+
+if TYPE_CHECKING:
+    from .modules import Module
 
 
 @dataclass
@@ -100,4 +103,77 @@ def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
         issues.extend(validate_entry(entry, config))
 
     validate_release_ids(all_entries, releases, project_root, issues)
+    return issues
+
+
+def validate_modules(
+    parent_root: Path,
+    config: Config,
+    modules: list["Module"],
+) -> list[ValidationIssue]:
+    """Validate module configuration.
+
+    Checks:
+    - Module ID uniqueness (no duplicates among modules or with parent)
+    - No circular references (module cannot reference parent)
+    """
+    issues: list[ValidationIssue] = []
+
+    # Check for duplicate module IDs
+    seen_ids: dict[str, Path] = {config.id: parent_root}
+    for module in modules:
+        module_id = module.config.id
+        if module_id in seen_ids:
+            other_path = seen_ids[module_id]
+            issues.append(
+                ValidationIssue(
+                    module.root,
+                    f"Duplicate module ID '{module_id}' (also at {other_path})",
+                )
+            )
+        else:
+            seen_ids[module_id] = module.root
+
+        # Check that module doesn't reference parent (circular reference)
+        if module.root.resolve() == parent_root.resolve():
+            issues.append(
+                ValidationIssue(
+                    parent_root,
+                    "Module pattern matches parent directory (circular reference)",
+                )
+            )
+
+    return issues
+
+
+def run_validation_with_modules(
+    project_root: Path,
+    config: Config,
+    modules: list["Module"],
+) -> list[ValidationIssue]:
+    """Validate parent and all modules, returning combined issues.
+
+    Issues from modules are prefixed with the module ID for clarity.
+    """
+    issues: list[ValidationIssue] = []
+
+    # Validate module configuration itself
+    issues.extend(validate_modules(project_root, config, modules))
+
+    # Validate parent project
+    parent_issues = run_validation(project_root, config)
+    issues.extend(parent_issues)
+
+    # Validate each module
+    for module in modules:
+        module_issues = run_validation(module.root, module.config)
+        # Prefix issues with module ID for clarity
+        for issue in module_issues:
+            prefixed_issue = ValidationIssue(
+                path=issue.path,
+                message=f"[{module.config.id}] {issue.message}",
+                severity=issue.severity,
+            )
+            issues.append(prefixed_issue)
+
     return issues

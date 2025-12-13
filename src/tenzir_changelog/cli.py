@@ -45,6 +45,7 @@ from .entries import (
     sort_entries_desc,
     write_entry,
 )
+from .modules import Module, discover_modules_from_config
 from .releases import (
     ReleaseManifest,
     NOTES_FILENAME,
@@ -59,7 +60,7 @@ from .releases import (
     used_entry_ids,
     write_release_manifest,
 )
-from .validate import run_validation
+from .validate import run_validation, run_validation_with_modules
 from .utils import (
     CHECKMARK,
     CROSS,
@@ -470,6 +471,7 @@ class CLIContext:
     config_path: Path
     _config: Optional[Config] = None
     project_roots: list[Path] | None = None
+    _modules: list[Module] | None = None  # cached discovered modules
 
     def is_multi_project(self) -> bool:
         """Return True if this context is for multiple projects."""
@@ -510,6 +512,20 @@ class CLIContext:
 
     def reset_config(self, config: Config) -> None:
         self._config = config
+
+    def has_modules(self) -> bool:
+        """Return True if modules are configured."""
+        return self.ensure_config().modules is not None
+
+    def get_modules(self) -> list[Module]:
+        """Discover and return cached modules.
+
+        Returns an empty list if no modules are configured.
+        """
+        if self._modules is None:
+            config = self.ensure_config()
+            self._modules = discover_modules_from_config(self.project_root, config)
+        return self._modules
 
 
 def _default_project_id(project_root: Path) -> str:
@@ -1240,8 +1256,12 @@ def _show_entries_table(
     banner: bool,
     *,
     include_emoji: bool,
+    include_modules: bool = True,
 ) -> None:
-    # Multi-project mode
+    # Build list of projects (including modules if configured)
+    modules = ctx.get_modules() if include_modules else []
+
+    # Multi-project mode (explicit --root flags)
     if ctx.is_multi_project():
         all_projects = ctx.get_projects()
         project_filters = {value.strip() for value in project_filter if value.strip()}
@@ -1311,6 +1331,43 @@ def _show_entries_table(
 
         multi_entries = filtered(iter_multi_project_entries(all_projects))
         _render_entries_multi_project(multi_entries, all_projects, include_emoji=include_emoji)
+        return
+
+    # Single-project with modules mode
+    if modules:
+        config = ctx.ensure_config()
+        # Build combined project list: parent + modules
+        combined_projects: list[tuple[Path, Config]] = [(ctx.project_root, config)]
+        combined_projects.extend((m.root, m.config) for m in modules)
+
+        project_filters = {value.strip() for value in project_filter if value.strip()}
+        available_projects = {cfg.id for _, cfg in combined_projects}
+        unknown_filters = sorted(project_filters - available_projects)
+        if unknown_filters:
+            available_display = ", ".join(sorted(available_projects))
+            raise click.ClickException(
+                f"Unknown project filter(s): {', '.join(unknown_filters)}. "
+                f"Available projects: {available_display or 'none'}."
+            )
+
+        normalized_components = {
+            value.strip().lower() for value in component_filter if value and value.strip()
+        }
+
+        def filtered_with_modules(
+            entries: Iterable[MultiProjectEntry],
+        ) -> list[MultiProjectEntry]:
+            return [
+                multi_entry
+                for multi_entry in entries
+                if (
+                    (not project_filters or multi_entry.project_id in project_filters)
+                    and _component_matches(multi_entry.entry, normalized_components)
+                )
+            ]
+
+        multi_entries = filtered_with_modules(iter_multi_project_entries(combined_projects))
+        _render_entries_multi_project(multi_entries, combined_projects, include_emoji=include_emoji)
         return
 
     # Single-project mode (existing logic)
@@ -1527,6 +1584,7 @@ def run_show_entries(
     banner: bool = False,
     compact: Optional[bool] = None,
     include_emoji: bool = True,
+    include_modules: bool = True,
 ) -> None:
     """Python-friendly wrapper around the ``show`` command."""
 
@@ -1546,6 +1604,7 @@ def run_show_entries(
             component_filters,
             banner,
             include_emoji=include_emoji,
+            include_modules=include_modules,
         )
         return
 
@@ -1998,6 +2057,12 @@ def _show_entries_export(
     is_flag=True,
     help="Disable type emoji in entry output.",
 )
+@click.option(
+    "--include-modules/--no-modules",
+    "include_modules",
+    default=True,
+    help="Include entries from discovered modules (default: include).",
+)
 @click.pass_obj
 def show_entries(
     ctx: CLIContext,
@@ -2008,6 +2073,7 @@ def show_entries(
     banner: bool,
     compact: Optional[bool],
     no_emoji: bool,
+    include_modules: bool,
 ) -> None:
     """Display changelog entries in tables, cards, or export formats."""
 
@@ -2023,6 +2089,7 @@ def show_entries(
         banner=banner,
         compact=compact,
         include_emoji=not no_emoji,
+        include_modules=include_modules,
     )
 
 
@@ -3310,7 +3377,11 @@ def run_validate(ctx: CLIContext) -> None:
     """Python wrapper for validating changelog files."""
 
     config = ctx.ensure_config()
-    issues = run_validation(ctx.project_root, config)
+    modules = ctx.get_modules()
+    if modules:
+        issues = run_validation_with_modules(ctx.project_root, config, modules)
+    else:
+        issues = run_validation(ctx.project_root, config)
     if not issues:
         log_success("all changelog files look good")
         return
@@ -3327,6 +3398,40 @@ def validate_cmd(ctx: CLIContext) -> None:
     """Validate entries and release manifests."""
 
     run_validate(ctx)
+
+
+@cli.command("modules")
+@click.pass_obj
+def modules_cmd(ctx: CLIContext) -> None:
+    """List discovered modules."""
+
+    config = ctx.ensure_config()
+    if not config.modules:
+        log_info("No modules configured.")
+        log_info("Add a 'modules' field to config.yaml with a glob pattern.")
+        return
+
+    modules = ctx.get_modules()
+    if not modules:
+        log_info(f"No modules found matching pattern: {config.modules}")
+        return
+
+    table = Table(box=None, padding=(0, 2, 0, 0), show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("NAME")
+    table.add_column("PATH", style="dim")
+    table.add_column("UNRELEASED", justify="right")
+
+    for module in modules:
+        unreleased_count = sum(1 for _ in iter_entries(module.root))
+        table.add_row(
+            module.config.id,
+            module.config.name,
+            module.relative_path,
+            str(unreleased_count),
+        )
+
+    console.print(table)
 
 
 def _export_markdown_release(

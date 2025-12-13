@@ -27,3 +27,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Local documentation clone
+.docs/

@@ -56,6 +56,7 @@ def test_python_api_show_delegates(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         banner: bool,
         compact: bool | None,
         include_emoji: bool,
+        include_modules: bool = True,
     ) -> None:
         captured["ctx"] = ctx
         captured["identifiers"] = identifiers
@@ -65,6 +66,7 @@ def test_python_api_show_delegates(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         captured["banner"] = banner
         captured["compact"] = compact
         captured["include_emoji"] = include_emoji
+        captured["include_modules"] = include_modules
 
     monkeypatch.setattr("tenzir_changelog.api.run_show_entries", fake_run_show_entries)
 

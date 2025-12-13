@@ -44,6 +44,7 @@ class Config:
     repository: str | None = None
     export_style: ExportStyle = EXPORT_STYLE_STANDARD
     components: tuple[str, ...] = ()
+    modules: str | None = None  # glob pattern for nested changelog projects
 
 
 def load_config(path: Path) -> Config:
@@ -76,6 +77,8 @@ def load_config(path: Path) -> Config:
         export_style = cast(ExportStyle, normalized_export_style)
 
     components = normalize_string_choices(raw.get("components"))
+    modules_raw = raw.get("modules")
+    modules = str(modules_raw).strip() if modules_raw else None
 
     return Config(
         id=project_value,
@@ -84,6 +87,7 @@ def load_config(path: Path) -> Config:
         repository=(str(repository_raw) if repository_raw else None),
         export_style=export_style,
         components=components,
+        modules=modules,
     )
 
 
@@ -117,6 +121,8 @@ def load_package_config(path: Path) -> Config:
         export_style = cast(ExportStyle, normalized_export_style)
 
     components = normalize_string_choices(raw.get("components"))
+    modules_raw = raw.get("modules")
+    modules = str(modules_raw).strip() if modules_raw else None
 
     return Config(
         id=package_id,
@@ -125,6 +131,7 @@ def load_package_config(path: Path) -> Config:
         repository=(str(repository_raw) if repository_raw else None),
         export_style=export_style,
         components=components,
+        modules=modules,
     )
 
 
@@ -158,6 +165,8 @@ def dump_config(config: Config) -> dict[str, Any]:
         data["export_style"] = config.export_style
     if config.components:
         data["components"] = list(config.components)
+    if config.modules:
+        data["modules"] = config.modules
     return data
 
 

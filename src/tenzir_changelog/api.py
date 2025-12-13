@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence
 
 from .cli import (
     CLIContext,
@@ -62,6 +62,7 @@ class Changelog:
         banner: bool = False,
         compact: Optional[bool] = None,
         include_emoji: bool = True,
+        include_modules: bool = True,
     ) -> None:
         """Render entries using the same layouts as ``tenzir-changelog show``."""
 
@@ -74,6 +75,7 @@ class Changelog:
             banner=banner,
             compact=compact,
             include_emoji=include_emoji,
+            include_modules=include_modules,
         )
 
     def add(
@@ -174,3 +176,42 @@ class Changelog:
         """Run the validator against the configured project."""
 
         run_validate(self._ctx)
+
+    def list_modules(self) -> list[dict[str, Any]]:
+        """Return discovered modules as a list of dictionaries.
+
+        Each dictionary contains:
+        - id: The module's project ID
+        - name: The module's display name
+        - path: The absolute path to the module's changelog directory
+        - relative_path: The path relative to the parent for display
+        """
+        return [
+            {
+                "id": m.config.id,
+                "name": m.config.name,
+                "path": str(m.root),
+                "relative_path": m.relative_path,
+            }
+            for m in self._ctx.get_modules()
+        ]
+
+    def get_module(self, module_id: str) -> "Changelog":
+        """Return a Changelog instance for a specific module.
+
+        Args:
+            module_id: The ID of the module to retrieve.
+
+        Returns:
+            A new Changelog instance configured for the module.
+
+        Raises:
+            ValueError: If no module with the given ID is found.
+        """
+        for module in self._ctx.get_modules():
+            if module.config.id == module_id:
+                return Changelog(root=module.root)
+        available = [m.config.id for m in self._ctx.get_modules()]
+        raise ValueError(
+            f"Module '{module_id}' not found. Available: {', '.join(available) or 'none'}"
+        )
