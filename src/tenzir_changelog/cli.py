@@ -145,11 +145,19 @@ def _format_section_title(entry_type: str, include_emoji: bool) -> str:
     return f"{emoji} {section_title}"
 
 
-def _format_author(author: str) -> str:
-    """Format an author for display, adding @ prefix only for GitHub-style handles."""
+def _format_author(author: str, *, explicit_links: bool = False) -> str:
+    """Format an author for display, adding @ prefix only for GitHub-style handles.
+
+    Args:
+        author: The author name or GitHub handle.
+        explicit_links: If True, wrap GitHub handles in markdown links.
+    """
     if " " in author:
         return author
-    return f"@{author}"
+    handle = f"@{author}"
+    if explicit_links:
+        return f"[{handle}](https://github.com/{author})"
+    return handle
 
 
 def _command_help_text(
@@ -1585,6 +1593,7 @@ def run_show_entries(
     compact: Optional[bool] = None,
     include_emoji: bool = True,
     include_modules: bool = True,
+    explicit_links: bool = False,
 ) -> None:
     """Python-friendly wrapper around the ``show`` command."""
 
@@ -1631,6 +1640,7 @@ def run_show_entries(
             view=view,
             compact=compact,
             include_emoji=include_emoji,
+            explicit_links=explicit_links,
             component_filter=component_filters,
         )
         return
@@ -1875,6 +1885,7 @@ def _show_entries_export(
     view: ShowView,
     compact: Optional[bool],
     include_emoji: bool,
+    explicit_links: bool,
     component_filter: tuple[str, ...],
 ) -> None:
     if not identifiers:
@@ -1977,6 +1988,7 @@ def _show_entries_export(
                 config,
                 release_index_export,
                 include_emoji=include_emoji,
+                explicit_links=explicit_links,
                 fallback_heading=fallback_heading,
             )
         else:
@@ -1986,6 +1998,7 @@ def _show_entries_export(
                 config,
                 release_index_export,
                 include_emoji=include_emoji,
+                explicit_links=explicit_links,
                 fallback_heading=fallback_heading,
             )
         emit_output(content, newline=False)
@@ -2058,6 +2071,11 @@ def _show_entries_export(
     help="Disable type emoji in entry output.",
 )
 @click.option(
+    "--explicit-links",
+    is_flag=True,
+    help="Render @mentions and PR references as explicit Markdown links.",
+)
+@click.option(
     "--include-modules/--no-modules",
     "include_modules",
     default=True,
@@ -2073,6 +2091,7 @@ def show_entries(
     banner: bool,
     compact: Optional[bool],
     no_emoji: bool,
+    explicit_links: bool,
     include_modules: bool,
 ) -> None:
     """Display changelog entries in tables, cards, or export formats."""
@@ -2089,6 +2108,7 @@ def show_entries(
         banner=banner,
         compact=compact,
         include_emoji=not no_emoji,
+        explicit_links=explicit_links,
         include_modules=include_modules,
     )
 
@@ -2217,7 +2237,9 @@ def _join_with_conjunction(items: list[str]) -> str:
     return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
-def _collect_author_pr_text(entry: Entry, config: Config) -> tuple[str, str]:
+def _collect_author_pr_text(
+    entry: Entry, config: Config, *, explicit_links: bool = False
+) -> tuple[str, str]:
     metadata = entry.metadata
     # Support both plural `authors` and singular `author` keys
     authors = metadata.get("authors")
@@ -2228,26 +2250,26 @@ def _collect_author_pr_text(entry: Entry, config: Config) -> tuple[str, str]:
         authors = [authors]
     authors = [author.strip() for author in authors if author and author.strip()]
 
-    author_handles = [_format_author(author) for author in authors]
+    author_handles = [_format_author(author, explicit_links=explicit_links) for author in authors]
     author_text = _join_with_conjunction(author_handles)
 
     prs = _parse_pr_numbers(metadata)
 
     repo = config.repository
-    pr_links: list[str] = []
+    pr_refs: list[str] = []
     for pr in prs:
         label = f"#{pr}"
-        if repo:
-            pr_links.append(f"[{label}](https://github.com/{repo}/pull/{pr})")
+        if explicit_links and repo:
+            pr_refs.append(f"[{label}](https://github.com/{repo}/pull/{pr})")
         else:
-            pr_links.append(label)
+            pr_refs.append(label)
 
-    pr_text = _join_with_conjunction(pr_links)
+    pr_text = _join_with_conjunction(pr_refs)
     return author_text, pr_text
 
 
-def _format_author_line(entry: Entry, config: Config) -> str:
-    author_text, pr_text = _collect_author_pr_text(entry, config)
+def _format_author_line(entry: Entry, config: Config, *, explicit_links: bool = False) -> str:
+    author_text, pr_text = _collect_author_pr_text(entry, config, explicit_links=explicit_links)
 
     if not author_text and not pr_text:
         return ""
@@ -2466,6 +2488,7 @@ def _render_release_notes(
     config: Config,
     *,
     include_emoji: bool = True,
+    explicit_links: bool = False,
 ) -> str:
     """Render Markdown sections for the provided entries."""
 
@@ -2497,7 +2520,7 @@ def _render_release_notes(
             if body:
                 lines.append(body)
                 lines.append("")
-            author_line = _format_author_line(entry, config)
+            author_line = _format_author_line(entry, config, explicit_links=explicit_links)
             if author_line:
                 lines.append(author_line)
                 lines.append("")
@@ -2513,6 +2536,7 @@ def _render_release_notes_compact(
     config: Config,
     *,
     include_emoji: bool = True,
+    explicit_links: bool = False,
 ) -> str:
     """Render compact Markdown bullet list for the provided entries."""
 
@@ -2541,7 +2565,9 @@ def _render_release_notes_compact(
                 bullet = f"- **{components_display}**: {bullet_text}"
             else:
                 bullet = f"- {bullet_text}"
-            author_text, pr_text = _collect_author_pr_text(entry, config)
+            author_text, pr_text = _collect_author_pr_text(
+                entry, config, explicit_links=explicit_links
+            )
             suffix_parts: list[str] = []
             if author_text:
                 suffix_parts.append(f"by {author_text}")
@@ -3072,6 +3098,7 @@ def render_release_notes(
     compact: Optional[bool],
     include_emoji: bool,
     compact_explicit: bool,
+    explicit_links: bool = False,
 ) -> None:
     """Python wrapper to display release notes in code contexts."""
 
@@ -3122,9 +3149,19 @@ def render_release_notes(
 
     if resolution.kind == "release":
         release_body = (
-            _render_release_notes_compact(entries_for_output, config, include_emoji=include_emoji)
+            _render_release_notes_compact(
+                entries_for_output,
+                config,
+                include_emoji=include_emoji,
+                explicit_links=explicit_links,
+            )
             if compact_flag
-            else _render_release_notes(entries_for_output, config, include_emoji=include_emoji)
+            else _render_release_notes(
+                entries_for_output,
+                config,
+                include_emoji=include_emoji,
+                explicit_links=explicit_links,
+            )
         )
         output = _compose_release_document(
             manifest.intro if manifest else None,
@@ -3139,6 +3176,7 @@ def render_release_notes(
                 config,
                 release_index_export,
                 include_emoji=include_emoji,
+                explicit_links=explicit_links,
                 fallback_heading=fallback_heading,
             )
             if compact_flag
@@ -3147,6 +3185,7 @@ def render_release_notes(
                 entries_for_output,
                 config,
                 release_index_export,
+                explicit_links=explicit_links,
                 include_emoji=include_emoji,
                 fallback_heading=fallback_heading,
             )
@@ -3181,6 +3220,11 @@ def render_release_notes(
     is_flag=True,
     help="Disable type emoji in Markdown output.",
 )
+@click.option(
+    "--explicit-links",
+    is_flag=True,
+    help="Render @mentions and PR references as explicit Markdown links.",
+)
 @click.pass_obj
 def release_notes_cmd(
     ctx: CLIContext,
@@ -3188,6 +3232,7 @@ def release_notes_cmd(
     format_choice: str,
     compact: Optional[bool],
     no_emoji: bool,
+    explicit_links: bool,
 ) -> None:
     """Display release notes for a release or the unreleased bucket."""
 
@@ -3200,6 +3245,7 @@ def release_notes_cmd(
         view=view_choice,
         compact=compact,
         include_emoji=not no_emoji,
+        explicit_links=explicit_links,
         compact_explicit=compact_explicit,
     )
 
@@ -3441,6 +3487,7 @@ def _export_markdown_release(
     release_index: dict[str, list[str]],
     *,
     include_emoji: bool = True,
+    explicit_links: bool = False,
     fallback_heading: str = "Unreleased Changes",
 ) -> str:
     lines: list[str] = []
@@ -3478,7 +3525,7 @@ def _export_markdown_release(
             if body:
                 lines.append(body)
                 lines.append("")
-            author_line = _format_author_line(entry, config)
+            author_line = _format_author_line(entry, config, explicit_links=explicit_links)
             if author_line:
                 lines.append(author_line)
                 lines.append("")
@@ -3497,6 +3544,7 @@ def _export_markdown_compact(
     release_index: dict[str, list[str]],
     *,
     include_emoji: bool = True,
+    explicit_links: bool = False,
     fallback_heading: str = "Unreleased Changes",
 ) -> str:
     lines: list[str] = []
@@ -3531,7 +3579,9 @@ def _export_markdown_compact(
                 bullet = f"- **{components_display}**: {bullet_text}"
             else:
                 bullet = f"- {bullet_text}"
-            author_text, pr_text = _collect_author_pr_text(entry, config)
+            author_text, pr_text = _collect_author_pr_text(
+                entry, config, explicit_links=explicit_links
+            )
             suffix_parts: list[str] = []
             if author_text:
                 suffix_parts.append(f"by {author_text}")

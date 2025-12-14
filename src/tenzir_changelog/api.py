@@ -63,6 +63,7 @@ class Changelog:
         compact: Optional[bool] = None,
         include_emoji: bool = True,
         include_modules: bool = True,
+        explicit_links: bool = False,
     ) -> None:
         """Render entries using the same layouts as ``tenzir-changelog show``."""
 
@@ -76,6 +77,7 @@ class Changelog:
             compact=compact,
             include_emoji=include_emoji,
             include_modules=include_modules,
+            explicit_links=explicit_links,
         )
 
     def add(
@@ -140,6 +142,7 @@ class Changelog:
         view: LiteralMarkdownJson = "markdown",
         compact: Optional[bool] = None,
         include_emoji: bool = True,
+        explicit_links: bool = False,
     ) -> None:
         """Render release notes for a specific release or ``-`` for unreleased."""
 
@@ -149,6 +152,7 @@ class Changelog:
             view=view,
             compact=compact,
             include_emoji=include_emoji,
+            explicit_links=explicit_links,
             compact_explicit=compact is not None,
         )
 

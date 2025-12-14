@@ -2564,3 +2564,253 @@ def test_add_co_author_without_explicit_author(
     entry = read_entry(entry_files[0])
     # Should have inferred user first, then co-author
     assert entry.metadata.get("authors") == ["inferred-user", "claude"]
+
+
+def test_explicit_links_flag_in_show_command(tmp_path: Path) -> None:
+    """Test that --explicit-links converts @mentions and PRs to Markdown links."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # First create a config with repository set (needed for PR links)
+    config_path = project_dir / "config.yaml"
+    config_path.write_text(
+        "id: test-project\nname: Test Project\nrepository: octocat/test-repo\n",
+        encoding="utf-8",
+    )
+
+    # Create an entry with an author and PR
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Explicit Links Test",
+            "--type",
+            "feature",
+            "--description",
+            "A test entry.",
+            "--author",
+            "octocat",
+            "--pr",
+            "42",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Test without --explicit-links (default) - plain references
+    show_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-m",
+            "unreleased",
+        ],
+    )
+    assert show_result.exit_code == 0, show_result.output
+    # Should have plain @mention and plain #PR
+    assert "@octocat" in show_result.output
+    assert "#42" in show_result.output
+    assert "[@octocat](https://github.com/octocat)" not in show_result.output
+    assert "[#42](https://github.com/octocat/test-repo/pull/42)" not in show_result.output
+
+    # Test with --explicit-links - full Markdown links
+    show_linked_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-m",
+            "--explicit-links",
+            "unreleased",
+        ],
+    )
+    assert show_linked_result.exit_code == 0, show_linked_result.output
+    # Should have linked @mention and linked PR
+    assert "[@octocat](https://github.com/octocat)" in show_linked_result.output
+    assert "[#42](https://github.com/octocat/test-repo/pull/42)" in show_linked_result.output
+
+
+def test_explicit_links_flag_in_release_notes_command(tmp_path: Path) -> None:
+    """Test that --explicit-links works in release notes command."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create a config with repository set
+    config_path = project_dir / "config.yaml"
+    config_path.write_text(
+        "id: test-project\nname: Test Project\nrepository: octocat/test-repo\n",
+        encoding="utf-8",
+    )
+
+    # Create an entry with an author and PR
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Release Notes Link Test",
+            "--type",
+            "feature",
+            "--description",
+            "A test entry.",
+            "--author",
+            "octocat",
+            "--pr",
+            "99",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Create a release
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Test without --explicit-links (default)
+    notes_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "notes",
+            "v1.0.0",
+        ],
+    )
+    assert notes_result.exit_code == 0, notes_result.output
+    # Should have plain @mention and plain #PR
+    assert "@octocat" in notes_result.output
+    assert "#99" in notes_result.output
+    assert "[@octocat](https://github.com/octocat)" not in notes_result.output
+
+    # Test with --explicit-links
+    notes_linked_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "notes",
+            "--explicit-links",
+            "v1.0.0",
+        ],
+    )
+    assert notes_linked_result.exit_code == 0, notes_linked_result.output
+    # Should have linked @mention and linked PR
+    assert "[@octocat](https://github.com/octocat)" in notes_linked_result.output
+    assert "[#99](https://github.com/octocat/test-repo/pull/99)" in notes_linked_result.output
+
+
+def test_explicit_links_preserves_full_names(tmp_path: Path) -> None:
+    """Test that --explicit-links preserves full names without linking."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create an entry with a full name author (contains spaces)
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Full Name Author Test",
+            "--type",
+            "feature",
+            "--description",
+            "A test entry.",
+            "--author",
+            "Jane Doe",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Test with --explicit-links
+    show_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-m",
+            "--explicit-links",
+            "unreleased",
+        ],
+    )
+    assert show_result.exit_code == 0, show_result.output
+    # Full names should NOT be linked (no @-prefix, no link)
+    assert "Jane Doe" in show_result.output
+    assert "[@Jane Doe]" not in show_result.output
+
+
+def test_explicit_links_without_repository(tmp_path: Path) -> None:
+    """Test --explicit-links behavior when no repository is configured."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # No repository in config - just id and name
+    config_path = project_dir / "config.yaml"
+    config_path.write_text(
+        "id: test-project\nname: Test Project\n",
+        encoding="utf-8",
+    )
+
+    # Create an entry with a GitHub handle author and PR
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "No Repo Test",
+            "--type",
+            "feature",
+            "--description",
+            "A test entry.",
+            "--author",
+            "octocat",
+            "--pr",
+            "42",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Test with --explicit-links but no repository configured
+    show_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "-m",
+            "--explicit-links",
+            "unreleased",
+        ],
+    )
+    assert show_result.exit_code == 0, show_result.output
+    # Author should still be linked (GitHub profiles work independently)
+    assert "[@octocat](https://github.com/octocat)" in show_result.output
+    # PR should NOT be linked (no repository to construct URL)
+    assert "#42" in show_result.output
+    assert "[#42](" not in show_result.output
