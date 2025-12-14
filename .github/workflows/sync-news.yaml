@@ -19,6 +19,7 @@ jobs:
         with:
           app-id: ${{ vars.TENZIR_AUTOBUMPER_APP_ID }}
           private-key: ${{ secrets.TENZIR_AUTOBUMPER_APP_PRIVATE_KEY }}
+          repositories: news
 
       - name: Trigger sync workflow
         uses: tenzir/news/.github/actions/sync@main
