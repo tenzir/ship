@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, MutableMapping, cast
 
 import yaml
 
-from .utils import normalize_string_choices
+from .utils import normalize_string_choices, parse_components
 
 ExportStyle = Literal["standard", "compact"]
 CONFIG_RELATIVE_PATH = Path("config.yaml")
@@ -43,7 +43,7 @@ class Config:
     description: str = ""
     repository: str | None = None
     export_style: ExportStyle = EXPORT_STYLE_STANDARD
-    components: tuple[str, ...] = ()
+    components: dict[str, str] = field(default_factory=dict)
     modules: str | None = None  # glob pattern for nested changelog projects
 
 
@@ -76,7 +76,7 @@ def load_config(path: Path) -> Config:
             raise ValueError(f"Config option 'export_style' must be one of: {allowed}")
         export_style = cast(ExportStyle, normalized_export_style)
 
-    components = normalize_string_choices(raw.get("components"))
+    components = parse_components(raw.get("components"))
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
 
@@ -120,7 +120,7 @@ def load_package_config(path: Path) -> Config:
             raise ValueError(f"Package metadata option 'export_style' must be one of: {allowed}")
         export_style = cast(ExportStyle, normalized_export_style)
 
-    components = normalize_string_choices(raw.get("components"))
+    components = parse_components(raw.get("components"))
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
 
@@ -164,7 +164,7 @@ def dump_config(config: Config) -> dict[str, Any]:
     if config.export_style != EXPORT_STYLE_STANDARD:
         data["export_style"] = config.export_style
     if config.components:
-        data["components"] = list(config.components)
+        data["components"] = dict(config.components)
     if config.modules:
         data["modules"] = config.modules
     return data

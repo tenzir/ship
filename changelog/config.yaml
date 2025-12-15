@@ -5,5 +5,5 @@ description: >-
   and assembles public changelogs.
 repository: tenzir/changelog
 components:
-  - cli
-  - python
+  cli: The command-line interface accessible via `tenzir-changelog`.
+  python: User-facing Python API (not the project-internal Python code).
