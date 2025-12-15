@@ -114,6 +114,12 @@ def iter_entries(project_root: Path) -> Iterable[Entry]:
     for path in sorted(directory.glob("*.md")):
         try:
             yield read_entry(path)
+        except yaml.YAMLError as exc:
+            raise ClickException(
+                f"Failed to parse YAML frontmatter in '{path.name}': {exc}\n\n"
+                "Hint: If your title or other fields contain colons, "
+                "wrap them in quotes."
+            ) from exc
         except ValueError as exc:
             raise ClickException(f"Failed to read entry '{path.name}': {exc}") from exc
 
