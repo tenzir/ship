@@ -1345,10 +1345,9 @@ def _show_entries_table(
     banner: bool,
     *,
     include_emoji: bool,
-    include_modules: bool = True,
 ) -> None:
     # Build list of projects (including modules if configured)
-    modules = ctx.get_modules() if include_modules else []
+    modules = ctx.get_modules()
 
     # Single-project with modules mode
     if modules:
@@ -1601,7 +1600,6 @@ def run_show_entries(
     banner: bool = False,
     compact: Optional[bool] = None,
     include_emoji: bool = True,
-    include_modules: bool = True,
     explicit_links: bool = False,
 ) -> None:
     """Python-friendly wrapper around the ``show`` command."""
@@ -1622,7 +1620,6 @@ def run_show_entries(
             component_filters,
             banner,
             include_emoji=include_emoji,
-            include_modules=include_modules,
         )
         return
 
@@ -1659,7 +1656,9 @@ def run_show_entries(
 
 def _gather_entry_context(
     project_root: Path,
+    modules: list[Module] | None = None,
 ) -> tuple[dict[str, Entry], dict[str, list[str]], dict[str, int], list[Entry]]:
+    # Collect entries from main project
     entries = list(iter_entries(project_root))
     entry_map = {entry.entry_id: entry for entry in entries}
     released_entries = collect_release_entries(project_root)
@@ -1667,6 +1666,28 @@ def _gather_entry_context(
         entry_map.setdefault(entry_id, entry)
     release_index_all = build_entry_release_index(project_root, project=None)
     release_order = _build_release_sort_order(project_root)
+
+    # Include module entries if provided
+    if modules:
+        for module in modules:
+            module_entries = list(iter_entries(module.root))
+            for entry in module_entries:
+                entry_map.setdefault(entry.entry_id, entry)
+            module_released = collect_release_entries(module.root)
+            for entry_id, entry in module_released.items():
+                entry_map.setdefault(entry_id, entry)
+            # Merge release index from module
+            module_release_index = build_entry_release_index(module.root, project=None)
+            for entry_id, versions in module_release_index.items():
+                if entry_id in release_index_all:
+                    release_index_all[entry_id].extend(versions)
+                else:
+                    release_index_all[entry_id] = versions
+            # Merge release order from module
+            module_release_order = _build_release_sort_order(module.root)
+            for version, order in module_release_order.items():
+                release_order.setdefault(version, order)
+
     sorted_entries = _sort_entries_for_display(entry_map.values(), release_index_all, release_order)
     return entry_map, release_index_all, release_order, sorted_entries
 
@@ -1685,7 +1706,10 @@ def _show_entries_card(
 
     config = ctx.ensure_config()
     project_root = ctx.project_root
-    entry_map, release_index_all, _, sorted_entries = _gather_entry_context(project_root)
+    modules = ctx.get_modules()
+    entry_map, release_index_all, _, sorted_entries = _gather_entry_context(
+        project_root, modules
+    )
     components = _normalize_component_filters(component_filter, config)
     resolutions = _resolve_identifiers_sequence(
         identifiers,
@@ -1877,12 +1901,6 @@ def _show_entries_export(
     is_flag=True,
     help="Render @mentions and PR references as explicit Markdown links.",
 )
-@click.option(
-    "--include-modules/--no-modules",
-    "include_modules",
-    default=True,
-    help="Include entries from discovered modules (default: include).",
-)
 @click.pass_obj
 def show_entries(
     ctx: CLIContext,
@@ -1894,7 +1912,6 @@ def show_entries(
     compact: Optional[bool],
     no_emoji: bool,
     explicit_links: bool,
-    include_modules: bool,
 ) -> None:
     """Display changelog entries in tables, cards, or export formats."""
 
@@ -1911,7 +1928,6 @@ def show_entries(
         compact=compact,
         include_emoji=not no_emoji,
         explicit_links=explicit_links,
-        include_modules=include_modules,
     )
 
 

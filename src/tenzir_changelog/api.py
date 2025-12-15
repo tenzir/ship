@@ -55,7 +55,6 @@ class Changelog:
         banner: bool = False,
         compact: Optional[bool] = None,
         include_emoji: bool = True,
-        include_modules: bool = True,
         explicit_links: bool = False,
     ) -> None:
         """Render entries using the same layouts as ``tenzir-changelog show``."""
@@ -69,7 +68,6 @@ class Changelog:
             banner=banner,
             compact=compact,
             include_emoji=include_emoji,
-            include_modules=include_modules,
             explicit_links=explicit_links,
         )
 

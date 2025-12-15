@@ -266,29 +266,6 @@ def test_cli_show_includes_modules_by_default(tmp_path: Path) -> None:
     assert "Parent Feature" in result.output
 
 
-def test_cli_show_no_modules_excludes_modules(tmp_path: Path) -> None:
-    """show --no-modules excludes module entries."""
-    packages = tmp_path / "packages"
-    mod_root = create_module(packages, "mymod", "My Module")
-    create_entry(mod_root, "Module Feature")
-
-    project_dir = tmp_path / "changelog"
-    project_dir.mkdir()
-    write_yaml(
-        project_dir / "config.yaml",
-        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
-    )
-    (project_dir / "unreleased").mkdir()
-    create_entry(project_dir, "Parent Feature")
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--no-modules"])
-
-    assert result.exit_code == 0
-    assert "Parent Feature" in result.output
-    assert "Module Feature" not in result.output
-
-
 def test_cli_validate_with_modules(tmp_path: Path) -> None:
     """validate command checks parent and modules."""
     packages = tmp_path / "packages"
