@@ -53,7 +53,6 @@ from .releases import (
     collect_release_entries,
     iter_release_manifests,
     load_release_entry,
-    load_multi_project_release,
     release_directory,
     serialize_release_manifest,
     unused_entries,
@@ -531,24 +530,7 @@ class CLIContext:
     project_root: Path
     config_path: Path
     _config: Optional[Config] = None
-    project_roots: list[Path] | None = None
     _modules: list[Module] | None = None  # cached discovered modules
-
-    def is_multi_project(self) -> bool:
-        """Return True if this context is for multiple projects."""
-        return self.project_roots is not None and len(self.project_roots) > 1
-
-    def get_projects(self) -> list[tuple[Path, Config]]:
-        """Get all project roots and configs for multi-project operations."""
-        if self.project_roots is None or len(self.project_roots) <= 1:
-            # Single project mode
-            config = self.ensure_config()
-            return [(self.project_root, config)]
-        else:
-            # Multi-project mode
-            from .config import load_configs
-
-            return load_configs(self.project_roots)
 
     def ensure_config(self, *, create_if_missing: bool = False) -> Config:
         if self._config is None:
@@ -721,51 +703,32 @@ def _resolve_description_input(
 
 def create_cli_context(
     *,
-    roots: Sequence[Path] | None = None,
+    root: Path | None = None,
     config: Optional[Path] = None,
     debug: bool = False,
 ) -> CLIContext:
     """Return a CLIContext using the same resolution logic as the CLI entry point."""
 
     configure_logging(debug)
-    root_candidates = list(roots or [])
 
-    if len(root_candidates) == 0:
+    if root is None:
         # No explicit --root: bootstrap into changelog/ subdirectory if needed.
-        root = _resolve_project_root(Path("."), bootstrap_in_subdir=True)
-        config_path = config.resolve() if config else default_config_path(root)
-        log_debug(f"resolved project root: {root}")
-        log_debug(f"using config path: {config_path}")
-        return CLIContext(project_root=root, config_path=config_path)
-
-    if len(root_candidates) == 1:
+        resolved_root = _resolve_project_root(Path("."), bootstrap_in_subdir=True)
+    else:
         # Explicit --root: use that directory as-is for bootstrapping.
-        root = _resolve_project_root(root_candidates[0])
-        config_path = config.resolve() if config else default_config_path(root)
-        log_debug(f"resolved project root: {root}")
-        log_debug(f"using config path: {config_path}")
-        return CLIContext(project_root=root, config_path=config_path)
+        resolved_root = _resolve_project_root(root)
 
-    if config is not None:
-        log_warning("--config option is ignored in multi-project mode")
-    resolved_roots = [_resolve_project_root(root_candidate) for root_candidate in root_candidates]
-    log_debug(f"multi-project mode with roots: {resolved_roots}")
-    primary_root = resolved_roots[0]
-    primary_config_path = default_config_path(primary_root)
-    return CLIContext(
-        project_root=primary_root,
-        config_path=primary_config_path,
-        project_roots=resolved_roots,
-    )
+    config_path = config.resolve() if config else default_config_path(resolved_root)
+    log_debug(f"resolved project root: {resolved_root}")
+    log_debug(f"using config path: {config_path}")
+    return CLIContext(project_root=resolved_root, config_path=config_path)
 
 
 @click.group(invoke_without_command=True, context_settings={"help_option_names": ["-h", "--help"]})
 @click.option(
     "--root",
-    "roots",
     type=click.Path(path_type=Path, exists=True, file_okay=False),
-    multiple=True,
-    help="Project root containing config and changelog files. Can be specified multiple times for multi-project operations.",
+    help="Project root containing config and changelog files.",
 )
 @click.option(
     "--config",
@@ -779,10 +742,10 @@ def create_cli_context(
     help="Enable debug logging.",
 )
 @click.pass_context
-def cli(ctx: click.Context, roots: tuple[Path, ...], config: Optional[Path], debug: bool) -> None:
+def cli(ctx: click.Context, root: Path | None, config: Optional[Path], debug: bool) -> None:
     """Manage changelog entries and release manifests."""
 
-    ctx.obj = create_cli_context(roots=roots, config=config, debug=debug)
+    ctx.obj = create_cli_context(root=root, config=config, debug=debug)
 
     if ctx.invoked_subcommand is None:
         ctx.invoke(show_entries)
@@ -1387,78 +1350,6 @@ def _show_entries_table(
     # Build list of projects (including modules if configured)
     modules = ctx.get_modules() if include_modules else []
 
-    # Multi-project mode (explicit --root flags)
-    if ctx.is_multi_project():
-        all_projects = ctx.get_projects()
-        project_filters = {value.strip() for value in project_filter if value.strip()}
-        available_projects = {config.id for _, config in all_projects}
-        unknown_filters = sorted(project_filters - available_projects)
-        if unknown_filters:
-            available_display = ", ".join(sorted(available_projects))
-            raise click.ClickException(
-                f"Unknown project filter(s): {', '.join(unknown_filters)}. "
-                f"Available projects: {available_display or 'none'}."
-            )
-
-        normalized_components = {
-            value.strip().lower() for value in component_filter if value and value.strip()
-        }
-        identifier_tokens = [token.strip() for token in identifiers if token.strip()]
-        config_lookup = dict(all_projects)
-
-        def filtered(entries: Iterable[MultiProjectEntry]) -> list[MultiProjectEntry]:
-            return [
-                multi_entry
-                for multi_entry in entries
-                if (
-                    (not project_filters or multi_entry.project_id in project_filters)
-                    and _component_matches(multi_entry.entry, normalized_components)
-                )
-            ]
-
-        if identifier_tokens and identifier_tokens != ["unreleased"] and identifier_tokens != ["-"]:
-            if len(identifier_tokens) > 1:
-                raise click.ClickException(
-                    "Multi-project table view currently accepts a single release identifier."
-                )
-            version = identifier_tokens[0]
-            try:
-                multi_release = load_multi_project_release(all_projects, version, strict=True)
-            except ValueError as exc:
-                raise click.ClickException(str(exc))
-
-            release_entries: list[MultiProjectEntry] = []
-            for project_root, manifest, entries in multi_release.projects:
-                config = config_lookup.get(project_root)
-                if config is None:
-                    continue
-                if project_filters and config.id not in project_filters:
-                    continue
-                for entry in entries:
-                    if not _component_matches(entry, normalized_components):
-                        continue
-                    release_entries.append(
-                        MultiProjectEntry(
-                            entry=entry,
-                            project_root=project_root,
-                            project_id=config.id,
-                            project_name=config.name,
-                        )
-                    )
-
-            if not release_entries:
-                log_info(f"No entries found for release '{version}'.")
-            _render_entries_multi_project(
-                release_entries,
-                all_projects,
-                include_emoji=include_emoji,
-            )
-            return
-
-        multi_entries = filtered(iter_multi_project_entries(all_projects))
-        _render_entries_multi_project(multi_entries, all_projects, include_emoji=include_emoji)
-        return
-
     # Single-project with modules mode
     if modules:
         config = ctx.ensure_config()
@@ -1827,181 +1718,6 @@ def _show_entries_card(
         )
 
 
-def _export_multi_project_unreleased_markdown(
-    projects: list[tuple[Path, Config]],
-    *,
-    include_emoji: bool = True,
-) -> str:
-    """Export unreleased entries from multiple projects as markdown."""
-
-    lines = ["# Unreleased", ""]
-
-    for project_root, config in projects:
-        # Get unreleased entries for this project
-        entries = list(iter_entries(project_root))
-        released_ids = used_entry_ids(project_root)
-        unreleased = unused_entries(entries, released_ids)
-
-        if not unreleased:
-            continue
-
-        lines.append(f"## {config.name}")
-        lines.append("")
-
-        # Group by type
-        by_type: dict[str, list[Entry]] = {}
-        for entry in unreleased:
-            entry_type = entry.type
-            by_type.setdefault(entry_type, []).append(entry)
-
-        # Render each type section
-        for entry_type in ["breaking", "feature", "bugfix", "change"]:
-            if entry_type not in by_type:
-                continue
-
-            section_title = _format_section_title(entry_type, include_emoji)
-            lines.append(f"### {section_title}")
-            lines.append("")
-
-            for entry in by_type[entry_type]:
-                title = entry.title
-                lines.append(
-                    f"- **{title}**: {entry.body.strip()}" if entry.body else f"- **{title}**"
-                )
-
-            lines.append("")
-
-    return "\n".join(lines)
-
-
-def _export_multi_project_release_markdown(
-    multi_release: Any,
-    *,
-    include_emoji: bool = True,
-) -> str:
-    """Export a multi-project release as markdown following the format in PLAN-v1.md."""
-
-    lines = [f"# {multi_release.version}", ""]
-
-    for project_root, manifest, entries in multi_release.projects:
-        # Get project name from manifest or path
-        project_name = (
-            manifest.title if manifest.title and manifest.title != manifest.version else "Project"
-        )
-
-        # Try to get config for better name
-        try:
-            cfg = load_project_config(project_root)
-            project_name = cfg.name
-        except Exception:
-            pass
-
-        if not entries:
-            continue
-
-        lines.append(f"## {project_name}")
-        lines.append("")
-
-        # Group by type
-        by_type: dict[str, list[Entry]] = {}
-        for entry in entries:
-            entry_type = entry.type
-            by_type.setdefault(entry_type, []).append(entry)
-
-        # Render each type section
-        for entry_type in ["breaking", "feature", "bugfix", "change"]:
-            if entry_type not in by_type:
-                continue
-
-            section_title = _format_section_title(entry_type, include_emoji)
-            lines.append(f"### {section_title}")
-            lines.append("")
-
-            for entry in by_type[entry_type]:
-                title = entry.title
-                lines.append(
-                    f"- **{title}**: {entry.body.strip()}" if entry.body else f"- **{title}**"
-                )
-
-            lines.append("")
-
-    return "\n".join(lines)
-
-
-def _export_multi_project_unreleased_json(projects: list[tuple[Path, Config]]) -> dict[str, Any]:
-    """Export unreleased entries from multiple projects as JSON."""
-
-    result: dict[str, Any] = {"version": "unreleased", "projects": []}
-
-    for project_root, config in projects:
-        entries = list(iter_entries(project_root))
-        released_ids = used_entry_ids(project_root)
-        unreleased = unused_entries(entries, released_ids)
-
-        if not unreleased:
-            continue
-
-        project_data = {
-            "name": config.name,
-            "entries": [
-                {
-                    "id": entry.entry_id,
-                    "type": entry.type,
-                    "title": entry.title,
-                    "body": entry.body,
-                    "created": entry.created_at.isoformat() if entry.created_at else None,
-                    "prs": _build_prs_structured(entry.metadata, config.repository),
-                    "authors": _build_authors_structured(entry.metadata),
-                }
-                for entry in unreleased
-            ],
-        }
-        result["projects"].append(project_data)
-
-    return result
-
-
-def _export_multi_project_release_json(multi_release: Any) -> dict[str, Any]:
-    """Export a multi-project release as JSON."""
-
-    result: dict[str, Any] = {"version": multi_release.version, "projects": []}
-
-    for project_root, manifest, entries in multi_release.projects:
-        # Get project name and config
-        project_name = (
-            manifest.title if manifest.title and manifest.title != manifest.version else "Project"
-        )
-        repository: str | None = None
-        try:
-            cfg = load_project_config(project_root)
-            project_name = cfg.name
-            repository = cfg.repository
-        except Exception:
-            pass
-
-        if not entries:
-            continue
-
-        project_data = {
-            "name": project_name,
-            "entries": [
-                {
-                    "id": entry.entry_id,
-                    "type": entry.type,
-                    "title": entry.title,
-                    "body": entry.body,
-                    "created": entry.created_at.isoformat() if entry.created_at else None,
-                    "prs": _build_prs_structured(entry.metadata, repository),
-                    "authors": _build_authors_structured(entry.metadata),
-                }
-                for entry in entries
-            ],
-        }
-        result["projects"].append(project_data)
-
-    return result
-
-
 def _show_entries_export(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
@@ -2015,44 +1731,6 @@ def _show_entries_export(
     if not identifiers:
         raise click.ClickException("Provide at least one identifier for markdown or json output.")
 
-    # Multi-project mode
-    if ctx.is_multi_project():
-        from .releases import load_multi_project_release
-
-        # For multi-project, we expect a version identifier
-        if len(identifiers) != 1:
-            raise click.ClickException(
-                "Multi-project export requires exactly one version identifier (e.g., 'v5.0.0' or 'unreleased')."
-            )
-
-        identifier = identifiers[0]
-        projects = ctx.get_projects()
-
-        if identifier.lower() == "unreleased":
-            # Export unreleased entries from all projects
-            if view == "markdown":
-                content = _export_multi_project_unreleased_markdown(
-                    projects, include_emoji=include_emoji
-                )
-                emit_output(content, newline=False)
-            else:
-                payload = _export_multi_project_unreleased_json(projects)
-                emit_output(json.dumps(payload, indent=2))
-            return
-        else:
-            # Export a specific release version
-            multi_release = load_multi_project_release(projects, identifier, strict=True)
-            if view == "markdown":
-                content = _export_multi_project_release_markdown(
-                    multi_release, include_emoji=include_emoji
-                )
-                emit_output(content, newline=False)
-            else:
-                payload = _export_multi_project_release_json(multi_release)
-                emit_output(json.dumps(payload, indent=2))
-            return
-
-    # Single-project mode (existing logic)
     config = ctx.ensure_config()
     project_root = ctx.project_root
     components = _normalize_component_filters(component_filter, config)
@@ -2819,86 +2497,6 @@ def release_group(ctx: CLIContext) -> None:
     ctx.ensure_config()
 
 
-def _create_multi_project_release(
-    projects: list[tuple[Path, Config]],
-    version: str,
-    assume_yes: bool,
-) -> None:
-    """Create releases in multiple projects atomically."""
-    from .releases import write_release_manifest, ReleaseManifest
-
-    # Step 1: Validate all projects can create the release
-    log_info(f"Validating {len(projects)} projects for coordinated release {version}...")
-
-    project_data: list[tuple[Path, Config, list[Entry], list[Entry]]] = []
-
-    for project_root, config in projects:
-        # Check if release already exists
-        existing = _find_release_manifest(project_root, version)
-        if existing:
-            raise click.ClickException(
-                f"Release '{version}' already exists in project '{config.name}' at {project_root}. "
-                f"Remove existing release or choose a different version."
-            )
-
-        # Get unreleased entries
-        unreleased = _collect_unused_entries_for_release(project_root, config)
-        if not unreleased:
-            log_warning(
-                f"Project '{config.name}' at {project_root} has no unreleased entries, will create empty release."
-            )
-
-        project_data.append((project_root, config, unreleased, []))
-
-    # Step 2: Show preview
-    log_info(f"\nCreating release {format_bold(version)} in {len(projects)} projects:")
-    for project_root, config, unreleased, _ in project_data:
-        log_info(f"  • {config.name}: {len(unreleased)} entries")
-
-    if not assume_yes:
-        log_info(f"\nRe-run with {format_bold('--yes')} to create this coordinated release.")
-        raise SystemExit(1)
-
-    # Step 3: Create releases in all projects
-    log_info("\nCreating releases...")
-    for project_root, config, unreleased, _ in project_data:
-        # Create release directory and manifest
-        release_dir = release_directory(project_root) / version
-        release_dir.mkdir(parents=True, exist_ok=True)
-
-        entries_sorted = sorted(unreleased, key=_release_entry_sort_key)
-
-        # Build manifest
-        manifest = ReleaseManifest(
-            version=version,
-            created=date.today(),
-            entries=[entry.entry_id for entry in entries_sorted],
-            title=f"{config.name} {version}",
-            intro=None,
-        )
-
-        # Render release notes (use standard format for multi-project)
-        release_notes = _render_release_notes(entries_sorted, config, include_emoji=True)
-        readme_content = _compose_release_document(None, release_notes)
-
-        # Write manifest and notes
-        write_release_manifest(project_root, manifest, readme_content, overwrite=False)
-
-        # Move entries from unreleased to releases
-        release_entries_dir = release_dir / "entries"
-        release_entries_dir.mkdir(parents=True, exist_ok=True)
-
-        for entry in unreleased:
-            source_path = entry.path
-            destination_path = release_entries_dir / source_path.name
-            if source_path.exists() and not destination_path.exists():
-                source_path.rename(destination_path)
-
-        log_success(f"  ✓ {config.name}: created release with {len(unreleased)} entries")
-
-    log_success(f"\nCoordinated release {version} created successfully across all projects!")
-
-
 def create_release(
     ctx: CLIContext,
     *,
@@ -2915,24 +2513,6 @@ def create_release(
 ) -> None:
     """Python wrapper for release creation that mirrors CLI behavior."""
 
-    # Multi-project mode
-    if ctx.is_multi_project():
-        if not version:
-            raise click.ClickException(
-                "Version is required for multi-project releases. "
-                "Provide an explicit version (e.g., 'v5.0.0')."
-            )
-        if version_bump:
-            raise click.ClickException(
-                "Version bumping (--bump) is not supported in multi-project mode. "
-                "Provide an explicit version instead."
-            )
-
-        projects = ctx.get_projects()
-        _create_multi_project_release(projects, version, assume_yes)
-        return
-
-    # Single-project mode
     config = ctx.ensure_config()
     project_root = ctx.project_root
 

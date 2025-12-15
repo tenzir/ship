@@ -28,20 +28,13 @@ class Changelog:
         self,
         *,
         root: Path | str | None = None,
-        roots: Sequence[Path | str] | None = None,
         config: Path | str | None = None,
         debug: bool = False,
     ) -> None:
-        if root and roots:
-            raise ValueError("Provide either 'root' or 'roots', not both.")
-        root_candidates: list[Path] = []
-        if roots:
-            root_candidates = [Path(value) for value in roots]
-        elif root:
-            root_candidates = [Path(root)]
+        resolved_root = Path(root) if root is not None else None
         resolved_config = Path(config) if config is not None else None
         self._ctx = create_cli_context(
-            roots=tuple(root_candidates),
+            root=resolved_root,
             config=resolved_config,
             debug=debug,
         )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Iterable, Optional
 
 import yaml
 from yaml.nodes import Node
@@ -235,71 +235,3 @@ def build_entry_release_index(
     return index
 
 
-@dataclass
-class MultiProjectRelease:
-    """A release with entries from multiple projects."""
-
-    version: str
-    projects: list[tuple[Path, ReleaseManifest, list[Entry]]]
-
-
-def load_multi_project_release(
-    projects: list[tuple[Path, Any]], version: str, *, strict: bool = True
-) -> MultiProjectRelease:
-    """Load a release from multiple projects.
-
-    Args:
-        projects: List of (project_root, config) tuples
-        version: Version identifier to load
-        strict: If True, error if version missing in any project;
-                if False, skip projects without the version
-
-    Returns:
-        MultiProjectRelease with entries from all projects
-
-    Raises:
-        ValueError: If strict=True and version not found in all projects
-    """
-    result_projects: list[tuple[Path, ReleaseManifest, list[Entry]]] = []
-    missing_projects: list[str] = []
-
-    for project_root, config in projects:
-        project_name = config.name if hasattr(config, "name") else str(project_root.name)
-
-        # Find the manifest for this version
-        manifest = None
-        for m in iter_release_manifests(project_root):
-            if m.version == version:
-                manifest = m
-                break
-
-        if manifest is None:
-            if strict:
-                missing_projects.append(f"{project_name} at {project_root}")
-                continue
-            else:
-                from .utils import log_warning
-
-                log_warning(
-                    f"Version {version} not found in project '{project_name}' "
-                    f"at {project_root}, skipping"
-                )
-                continue
-
-        # Load entries for this manifest
-        entries: list[Entry] = []
-        for entry_id in manifest.entries:
-            entry = load_release_entry(project_root, manifest, entry_id)
-            if entry is not None:
-                entries.append(entry)
-
-        if entries or manifest:
-            result_projects.append((project_root, manifest, entries))
-
-    if strict and missing_projects:
-        raise ValueError(
-            f"Version {version} not found in the following projects:\n"
-            + "\n".join(f"  - {p}" for p in missing_projects)
-        )
-
-    return MultiProjectRelease(version=version, projects=result_projects)
