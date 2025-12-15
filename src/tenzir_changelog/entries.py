@@ -273,6 +273,14 @@ def _normalize_components_metadata(metadata: dict[str, Any]) -> None:
                 metadata.pop("components", None)
 
 
+class _IndentedDumper(yaml.SafeDumper):
+    """Custom YAML dumper that indents list items under their parent key."""
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        """Override to always indent sequences."""
+        return super().increase_indent(flow=flow, indentless=False)
+
+
 def format_frontmatter(metadata: dict[str, Any]) -> str:
     """Render metadata as YAML frontmatter for an entry file."""
     cleaned: dict[str, Any] = {}
@@ -280,7 +288,13 @@ def format_frontmatter(metadata: dict[str, Any]) -> str:
         if value is None:
             continue
         cleaned[key] = value
-    yaml_block = yaml.safe_dump(cleaned, sort_keys=False).strip()
+    yaml_block = yaml.dump(
+        cleaned,
+        Dumper=_IndentedDumper,
+        sort_keys=False,
+        default_flow_style=False,
+        indent=2,
+    ).strip()
     return f"---\n{yaml_block}\n---\n"
 
 
