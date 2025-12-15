@@ -361,10 +361,19 @@ def iter_multi_project_entries(projects: list[tuple[Path, Any]]) -> Iterable[Mul
     Yields:
         MultiProjectEntry instances with entry and project information
     """
+    from .releases import collect_release_entries
+
     for project_root, config in projects:
         project_id = getattr(config, "id", slugify(project_root.name))
         project_name = getattr(config, "name", str(project_root.name))
+        # Collect all entries (unreleased and released), avoiding duplicates
+        entry_map: dict[str, Entry] = {}
         for entry in iter_entries(project_root):
+            entry_map[entry.entry_id] = entry
+        for entry_id, entry in collect_release_entries(project_root).items():
+            if entry_id not in entry_map:
+                entry_map[entry_id] = entry
+        for entry in entry_map.values():
             yield MultiProjectEntry(
                 entry=entry,
                 project_root=project_root,

@@ -1249,6 +1249,11 @@ def _render_entries_multi_project(
 
     project_order = {config.id: index for index, (_, config) in enumerate(projects)}
 
+    # Build release index for each project
+    release_indices: dict[str, dict[str, list[str]]] = {}
+    for project_root, config in projects:
+        release_indices[config.id] = build_entry_release_index(project_root, project=config.id)
+
     # Use the unified layout with project column enabled
     include_component = any(multi.entry.components for multi in entries)
     visible_columns, column_specs = _entries_table_layout(
@@ -1328,7 +1333,10 @@ def _render_entries_multi_project(
         if "date" in visible_columns:
             row.append(created_display)
         if "version" in visible_columns:
-            row.append("—")  # Version not available in multi-project mode
+            project_release_index = release_indices.get(multi_entry.project_id, {})
+            versions = project_release_index.get(entry.entry_id, [])
+            version_display = versions[-1] if versions else "—"
+            row.append(version_display)
         if "title" in visible_columns:
             row.append(_ellipsis_cell(metadata.get("title", "Untitled"), "title", column_specs))
         if "type" in visible_columns:
