@@ -8,7 +8,7 @@ from typing import Any, Literal, MutableMapping, cast
 
 import yaml
 
-from .utils import normalize_string_choices, parse_components
+from .utils import parse_components
 
 ExportStyle = Literal["standard", "compact"]
 CONFIG_RELATIVE_PATH = Path("config.yaml")

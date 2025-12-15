@@ -1,0 +1,6 @@
+created: 2025-12-15
+title: Tenzir Changelog v0.12.0
+intro: >-
+  This release adds support for nested changelog projects through modules, improves
+  export formats with structured URL fields in JSON, and enhances the CLI with better
+  export options and configuration flexibility for components.
