@@ -3308,7 +3308,7 @@ def render_release_notes(
 
 
 @release_group.command("notes")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
 @click.option(
     "-m",
     "--markdown",
@@ -3342,20 +3342,31 @@ def render_release_notes(
 @click.pass_obj
 def release_notes_cmd(
     ctx: CLIContext,
-    identifier: str,
+    identifier: Optional[str],
     format_choice: str,
     compact: Optional[bool],
     no_emoji: bool,
     explicit_links: bool,
 ) -> None:
-    """Display release notes for a release or the unreleased bucket."""
+    """Display release notes for a release or the unreleased bucket.
+
+    If no identifier is provided, shows notes for the latest release.
+    """
+
+    resolved_identifier = identifier
+    if resolved_identifier is None:
+        latest = _latest_semver(ctx.project_root)
+        if latest is None:
+            raise click.ClickException("No releases found. Provide a version explicitly.")
+        version, prefix = latest
+        resolved_identifier = f"{prefix}{version}"
 
     click_ctx = click.get_current_context()
     compact_explicit = click_ctx.get_parameter_source("compact") != ParameterSource.DEFAULT
     view_choice = cast(Literal["markdown", "json"], format_choice or "markdown")
     render_release_notes(
         ctx,
-        identifier=identifier,
+        identifier=resolved_identifier,
         view=view_choice,
         compact=compact,
         include_emoji=not no_emoji,
