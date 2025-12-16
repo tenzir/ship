@@ -1,0 +1,9 @@
+created: 2025-12-16
+title: Tenzir Changelog v0.13.1
+intro: >-
+  This release streamlines module mode by removing the multi-project feature in favor
+  of the dedicated `modules` configuration. It removes the `--include-modules` flag
+  (modules are now always included when configured) and enhances module mode to show
+  released entries with version numbers. The release notes command now defaults to
+  the latest release when no identifier is provided. Additionally, YAML frontmatter
+  generation and error messages have been improved for better developer experience.
