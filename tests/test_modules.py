@@ -286,3 +286,175 @@ def test_cli_validate_with_modules(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "all changelog files look good" in result.output
+
+
+# --- Release Notes with Modules Tests ---
+
+
+def create_released_entry(
+    module_root: Path, title: str, version: str, entry_type: str = "feature"
+) -> Path:
+    """Create a changelog entry in a release directory."""
+    slug = title.lower().replace(" ", "-")
+    release_dir = module_root / "releases" / version / "entries"
+    release_dir.mkdir(parents=True, exist_ok=True)
+    entry_path = release_dir / f"{slug}.md"
+    entry_path.write_text(
+        f"---\ntitle: {title}\ntype: {entry_type}\ncreated: 2025-01-01T00:00:00Z\nauthors:\n  - testuser\n---\n\nEntry body text.\n",
+        encoding="utf-8",
+    )
+    # Also create the manifest
+    manifest_path = module_root / "releases" / version / "manifest.yaml"
+    if not manifest_path.exists():
+        write_yaml(
+            manifest_path,
+            {
+                "created": "2025-01-01",
+                "title": f"Release {version}",
+                "entries": [slug],
+            },
+        )
+    else:
+        # Append entry to existing manifest
+        manifest = yaml.safe_load(manifest_path.read_text())
+        if slug not in manifest["entries"]:
+            manifest["entries"].append(slug)
+            write_yaml(manifest_path, manifest)
+    return entry_path
+
+
+def test_release_notes_includes_module_sections(tmp_path: Path) -> None:
+    """release notes includes module sections with released entries."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Feature One", "v1.0.0", "feature")
+    create_released_entry(mod_root, "Module Bugfix", "v1.0.0", "bugfix")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+
+    assert result.exit_code == 0
+    # Main project entry with full body
+    assert "Parent Feature" in result.output
+    assert "Body." in result.output  # Full body for main project
+    # Module section appears
+    assert "## My Module" in result.output
+    # Module entries are compact (title only, no body)
+    assert "Module Feature One" in result.output
+    assert "Module Bugfix" in result.output
+    # Separator between main and modules
+    assert "---" in result.output
+
+
+def test_release_notes_module_entries_are_compact(tmp_path: Path) -> None:
+    """Module entries show title and attribution, not body."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Some Feature", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+
+    assert result.exit_code == 0
+    # Module entry appears as bullet with emoji prefix and title
+    assert "- 🚀 Some Feature" in result.output
+    # Attribution appears
+    assert "testuser" in result.output
+    # Body text should NOT appear in module section
+    # (The body "Entry body text." should not be in the module section)
+    lines = result.output.split("## My Module")[1] if "## My Module" in result.output else ""
+    assert "Entry body text" not in lines
+
+
+def test_release_notes_excludes_unreleased_module_entries(tmp_path: Path) -> None:
+    """Only released module entries are included, not unreleased."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_entry(mod_root, "Unreleased Module Feature")  # Unreleased
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+
+    assert result.exit_code == 0
+    # Parent entry is included
+    assert "Parent Feature" in result.output
+    # Module with no released entries should not have a section
+    assert "## My Module" not in result.output
+    # Unreleased module entry should not appear
+    assert "Unreleased Module Feature" not in result.output
+
+
+def test_release_notes_json_includes_modules(tmp_path: Path) -> None:
+    """JSON output includes modules array with released entries."""
+    import json
+
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Feature", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["--root", str(project_dir), "release", "notes", "unreleased", "--json"]
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "modules" in data
+    assert len(data["modules"]) == 1
+    assert data["modules"][0]["id"] == "mymod"
+    assert data["modules"][0]["name"] == "My Module"
+    assert len(data["modules"][0]["entries"]) == 1
+    assert data["modules"][0]["entries"][0]["title"] == "Module Feature"
+
+
+def test_release_notes_no_modules_no_separator(tmp_path: Path) -> None:
+    """When no modules exist, no separator is added."""
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(project_dir / "config.yaml", {"id": "test", "name": "Test"})
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Test Feature")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+
+    assert result.exit_code == 0
+    assert "Test Feature" in result.output
+    # No separator when no modules
+    assert "---" not in result.output

@@ -1710,6 +1710,116 @@ def _gather_entry_context(
     return entry_map, release_index_all, release_order, sorted_entries
 
 
+def _get_module_latest_version(module_root: Path) -> str | None:
+    """Get the latest release version for a module."""
+    versions: list[tuple[Version, str]] = []
+    for manifest in iter_release_manifests(module_root):
+        label = manifest.version
+        prefix = ""
+        if label.startswith("v"):
+            prefix = "v"
+            label = label[1:]
+        try:
+            versions.append((Version(label), prefix))
+        except InvalidVersion:
+            continue
+    if not versions:
+        return None
+    versions.sort(key=lambda x: x[0], reverse=True)
+    latest_version, prefix = versions[0]
+    return f"{prefix}{latest_version}"
+
+
+def _gather_module_released_entries(
+    modules: list[Module],
+    previous_module_versions: dict[str, str] | None = None,
+    target_module_versions: dict[str, str] | None = None,
+) -> tuple[dict[str, tuple[Config, list[Entry]]], dict[str, str]]:
+    """Gather released entries from all modules, keyed by module ID.
+
+    Args:
+        modules: List of discovered modules
+        previous_module_versions: Dict mapping module ID to version from previous
+            parent release. Acts as a lower bound (exclusive).
+        target_module_versions: Dict mapping module ID to version from target
+            parent release. Acts as an upper bound (inclusive). If None, uses
+            the latest module version.
+
+    Returns:
+        Tuple of:
+        - Dict mapping module ID to (config, list of released entries)
+        - Dict mapping module ID to current latest version (for recording)
+
+    Includes entries from releases in range (previous, target].
+    """
+    result: dict[str, tuple[Config, list[Entry]]] = {}
+    current_versions: dict[str, str] = {}
+    previous_versions = previous_module_versions or {}
+    target_versions = target_module_versions or {}
+
+    for module in modules:
+        module_id = module.config.id
+        previous_version_str = previous_versions.get(module_id)
+        target_version_str = target_versions.get(module_id)
+
+        # Get current latest version
+        latest_version = _get_module_latest_version(module.root)
+        if latest_version:
+            current_versions[module_id] = latest_version
+
+        # Parse previous version for comparison (lower bound, exclusive)
+        previous_version: Version | None = None
+        if previous_version_str:
+            version_str = previous_version_str.lstrip("v")
+            try:
+                previous_version = Version(version_str)
+            except InvalidVersion:
+                pass
+
+        # Parse target version for comparison (upper bound, inclusive)
+        target_version: Version | None = None
+        if target_version_str:
+            version_str = target_version_str.lstrip("v")
+            try:
+                target_version = Version(version_str)
+            except InvalidVersion:
+                pass
+
+        # Collect entries from releases in range (previous, target]
+        new_entries: list[Entry] = []
+        for manifest in iter_release_manifests(module.root):
+            # Parse this release's version
+            release_version_str = manifest.version.lstrip("v")
+            try:
+                release_version = Version(release_version_str)
+            except InvalidVersion:
+                continue
+
+            # Check lower bound: release > previous (or no previous)
+            if previous_version is not None and release_version <= previous_version:
+                continue
+
+            # Check upper bound: release <= target (or no target)
+            if target_version is not None and release_version > target_version:
+                continue
+
+            # Load entries from this release
+            for entry_id in manifest.entries:
+                entry = load_release_entry(module.root, manifest, entry_id)
+                if entry is not None:
+                    new_entries.append(entry)
+
+        if new_entries:
+            # Sort entries by title for consistent output
+            sorted_entries = sorted(
+                new_entries,
+                key=lambda e: (e.metadata.get("title", "").lower(), e.entry_id),
+            )
+            result[module_id] = (module.config, sorted_entries)
+
+    return result, current_versions
+
+
 def _show_entries_card(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
@@ -2417,6 +2527,59 @@ def _render_release_notes_compact(
     return normalize_markdown(raw)
 
 
+def _render_module_entries_compact(
+    entries: list[Entry],
+    config: Config,
+    *,
+    include_emoji: bool = True,
+    explicit_links: bool = False,
+) -> str:
+    """Render compact module entries: emoji + title + byline + PR (no body).
+
+    This format is used for module summaries in aggregated release notes,
+    showing only the entry title with attribution, prefixed by type emoji.
+    """
+    if not entries:
+        return ""
+
+    # Sort entries by type order, then by title
+    def sort_key(entry: Entry) -> tuple[int, str, str]:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        type_order = (
+            ENTRY_EXPORT_ORDER.index(entry_type)
+            if entry_type in ENTRY_EXPORT_ORDER
+            else len(ENTRY_EXPORT_ORDER)
+        )
+        title = entry.metadata.get("title", "").lower()
+        return (type_order, title, entry.entry_id)
+
+    sorted_entries = sorted(entries, key=sort_key)
+
+    lines: list[str] = []
+    for entry in sorted_entries:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        title = entry.metadata.get("title", "Untitled")
+        emoji = ENTRY_TYPE_EMOJIS.get(entry_type, "•") if include_emoji else ""
+        author_text, pr_text = _collect_author_pr_text(entry, config, explicit_links=explicit_links)
+        # Build attribution suffix
+        suffix_parts: list[str] = []
+        if author_text:
+            suffix_parts.append(f"*{author_text}*")
+        if pr_text:
+            suffix_parts.append(f"({pr_text})")
+        if suffix_parts:
+            attribution = " ".join(suffix_parts)
+            bullet = f"- {emoji} {title} — {attribution}" if emoji else f"- {title} — {attribution}"
+        else:
+            bullet = f"- {emoji} {title}" if emoji else f"- {title}"
+        lines.append(bullet)
+
+    if not lines:
+        return ""
+    raw = "\n".join(lines)
+    return normalize_markdown(raw)
+
+
 def _compose_release_document(
     heading: str,
     intro: Optional[str],
@@ -2483,6 +2646,47 @@ def _latest_semver(project_root: Path) -> tuple[Version, str] | None:
         return None
     versions.sort(key=lambda item: item[0])
     return versions[-1]
+
+
+def _get_latest_release_manifest(project_root: Path) -> ReleaseManifest | None:
+    """Get the latest release manifest by semver ordering."""
+    manifests = _get_sorted_release_manifests(project_root)
+    if not manifests:
+        return None
+    return manifests[-1][1]
+
+
+def _get_sorted_release_manifests(
+    project_root: Path,
+) -> list[tuple[Version, ReleaseManifest]]:
+    """Get all release manifests sorted by semver."""
+    manifests: list[tuple[Version, ReleaseManifest]] = []
+    for manifest in iter_release_manifests(project_root):
+        label = manifest.version
+        value = label.lstrip("vV")
+        try:
+            parsed = Version(value)
+        except InvalidVersion:
+            continue
+        manifests.append((parsed, manifest))
+    manifests.sort(key=lambda item: item[0])
+    return manifests
+
+
+def _get_release_manifest_before(project_root: Path, target_version: str) -> ReleaseManifest | None:
+    """Get the release manifest immediately before the target version."""
+    target_value = target_version.lstrip("vV")
+    try:
+        target_parsed = Version(target_value)
+    except InvalidVersion:
+        return None
+    manifests = _get_sorted_release_manifests(project_root)
+    previous: ReleaseManifest | None = None
+    for parsed, manifest in manifests:
+        if parsed >= target_parsed:
+            break
+        previous = manifest
+    return previous
 
 
 def _bump_version_value(base: Version, bump: str) -> Version:
@@ -2696,6 +2900,41 @@ def create_release(
         heading = default_title
     readme_content = _compose_release_document(heading, manifest.intro, release_notes)
 
+    # Append module summaries to static release notes
+    modules = ctx.get_modules()
+    if modules:
+        # Get previous release to determine which module entries are new
+        previous_release = _get_latest_release_manifest(project_root)
+        previous_module_versions = previous_release.modules if previous_release else None
+
+        module_entries, current_module_versions = _gather_module_released_entries(
+            modules, previous_module_versions
+        )
+
+        # Record current module versions in manifest
+        if current_module_versions:
+            manifest.modules = current_module_versions
+
+        if module_entries:
+            module_sections: list[str] = []
+            for module_id in sorted(module_entries.keys()):
+                module_config, entries = module_entries[module_id]
+                module_body = _render_module_entries_compact(
+                    entries,
+                    module_config,
+                    include_emoji=True,
+                )
+                if module_body:
+                    version = current_module_versions.get(module_id, "")
+                    header = (
+                        f"## {module_config.name} {version}"
+                        if version
+                        else f"## {module_config.name}"
+                    )
+                    module_sections.append(f"{header}\n\n{module_body}")
+            if module_sections:
+                readme_content = readme_content + "\n\n---\n\n" + "\n\n".join(module_sections)
+
     manifest_payload = serialize_release_manifest(manifest)
     manifest_exists = manifest_path.exists()
     existing_manifest_payload = (
@@ -2891,6 +3130,33 @@ def render_release_notes(
             fallback_heading=fallback_heading,
             fallback_created=fallback_created,
         )
+        # Add module summaries to JSON output
+        modules = ctx.get_modules()
+        if modules:
+            # Use the release before this one as baseline for filtering
+            if manifest:
+                previous_release = _get_release_manifest_before(project_root, manifest.version)
+                target_module_versions = manifest.modules or None
+            else:
+                previous_release = _get_latest_release_manifest(project_root)
+                target_module_versions = None
+            previous_module_versions = previous_release.modules if previous_release else None
+            module_entries, _ = _gather_module_released_entries(
+                modules, previous_module_versions, target_module_versions
+            )
+            if module_entries:
+                modules_data: list[dict[str, object]] = []
+                for module_id in sorted(module_entries.keys()):
+                    module_config, entries = module_entries[module_id]
+                    module_payload: dict[str, object] = {
+                        "id": module_id,
+                        "name": module_config.name,
+                        "entries": [
+                            _entry_to_dict(e, module_config, compact=True) for e in entries
+                        ],
+                    }
+                    modules_data.append(module_payload)
+                payload["modules"] = modules_data
         emit_output(json.dumps(payload, indent=2))
         return
 
@@ -2947,6 +3213,43 @@ def render_release_notes(
             )
         )
         output = release_body.rstrip("\n")
+
+    # Append module summaries if modules are configured
+    modules = ctx.get_modules()
+    if modules:
+        # Use the release before this one as baseline for filtering
+        if manifest:
+            previous_release = _get_release_manifest_before(project_root, manifest.version)
+            target_module_versions = manifest.modules or None
+        else:
+            previous_release = _get_latest_release_manifest(project_root)
+            target_module_versions = None
+        previous_module_versions = previous_release.modules if previous_release else None
+        module_entries, current_versions = _gather_module_released_entries(
+            modules, previous_module_versions, target_module_versions
+        )
+        # Use target versions if rendering a specific release, else current versions
+        version_map = target_module_versions or current_versions
+        if module_entries:
+            module_sections: list[str] = []
+            for module_id in sorted(module_entries.keys()):
+                module_config, entries = module_entries[module_id]
+                module_body = _render_module_entries_compact(
+                    entries,
+                    module_config,
+                    include_emoji=include_emoji,
+                    explicit_links=explicit_links,
+                )
+                if module_body:
+                    version = version_map.get(module_id, "")
+                    header = (
+                        f"## {module_config.name} {version}"
+                        if version
+                        else f"## {module_config.name}"
+                    )
+                    module_sections.append(f"{header}\n\n{module_body}")
+            if module_sections:
+                output = output + "\n\n---\n\n" + "\n\n".join(module_sections)
 
     emit_output(output)
 

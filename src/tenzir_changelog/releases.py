@@ -57,6 +57,9 @@ class ReleaseManifest:
     a one-line summary and additional introductory Markdown. Older manifests
     used a `description` field; we continue to read it for compatibility but
     only write `intro` going forward.
+
+    For projects with modules, `modules` tracks which version of each
+    module was current at release time, enabling incremental module summaries.
     """
 
     version: str
@@ -64,6 +67,7 @@ class ReleaseManifest:
     entries: list[str] = field(default_factory=list)
     title: str = ""
     intro: str | None = None
+    modules: dict[str, str] = field(default_factory=dict)
     path: Path | None = None
 
 
@@ -102,11 +106,17 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
             title_value = str(version_value)
 
         entry_values = data.get("entries")
+        raw_modules = data.get("modules")
+        modules: dict[str, str] = {}
+        if isinstance(raw_modules, dict):
+            modules = {str(k): str(v) for k, v in raw_modules.items()}
+
         manifest = ReleaseManifest(
             version=str(version_value),
             created=created_value,
             title=title_value,
             intro=raw_intro or None,
+            modules=modules,
             path=path,
         )
         if isinstance(entry_values, list) and entry_values:
@@ -141,6 +151,8 @@ def serialize_release_manifest(manifest: ReleaseManifest) -> str:
     if manifest.intro:
         # Emit `intro` using a folded block scalar for readability.
         payload["intro"] = _FoldedString(manifest.intro)
+    if manifest.modules:
+        payload["modules"] = manifest.modules
     # Use default wrapping width for readability; preserve key order.
     return yaml.safe_dump(payload, sort_keys=False)
 
