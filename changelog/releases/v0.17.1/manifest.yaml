@@ -1,0 +1,6 @@
+created: 2025-12-21
+title: Output Stream Fix
+intro: >-
+  This release fixes a critical bug where status messages were written to stdout instead
+  of stderr, breaking GitHub workflows and scripts that capture version output from
+  commands like `release create`.
