@@ -1278,16 +1278,12 @@ def _render_entries_multi_project(
     if "id" in visible_columns:
         _add_table_column(table, "ID", "id", column_specs, style="cyan", no_wrap_default=True)
 
-    # Reference date for computing reverse datetime (larger value = older date)
-    reference = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
-
-    def sort_key(item: MultiProjectEntry) -> tuple[int, float, str]:
+    def sort_key(item: MultiProjectEntry) -> tuple[float, int, str]:
         entry = item.entry
         project_idx = project_order.get(item.project_id, len(project_order))
         created = entry.created_at or datetime.min.replace(tzinfo=timezone.utc)
-        # Use seconds until reference date for descending datetime order
-        reverse_created = (reference - created).total_seconds()
-        return (project_idx, reverse_created, entry.entry_id)
+        # Sort by date first for global chronological order (oldest first, newest last)
+        return (created.timestamp(), project_idx, entry.entry_id)
 
     sorted_entries = sorted(entries, key=sort_key)
 
