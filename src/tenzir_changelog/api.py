@@ -141,9 +141,7 @@ class Changelog:
         """
         manifest = _get_latest_release_manifest(self._ctx.project_root)
         if manifest is None:
-            raise ValueError(
-                "No releases found. Create a release first with 'release create'."
-            )
+            raise ValueError("No releases found. Create a release first with 'release create'.")
 
         version = manifest.version
         if bare:
@@ -193,9 +191,7 @@ class Changelog:
         if resolved_version is None:
             manifest = _get_latest_release_manifest(self._ctx.project_root)
             if manifest is None:
-                raise ValueError(
-                    "No releases found. Create a release first with 'release create'."
-                )
+                raise ValueError("No releases found. Create a release first with 'release create'.")
             resolved_version = manifest.version
 
         publish_release(
