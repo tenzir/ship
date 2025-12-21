@@ -54,7 +54,7 @@ def configure_logging(debug: bool = False) -> logging.Logger:
     while _LOGGER.handlers:
         handler = _LOGGER.handlers.pop()
         handler.close()
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(message)s"))
     handler.setLevel(level)
     _LOGGER.addHandler(handler)
@@ -117,19 +117,8 @@ def render_to_text(renderable: RenderableType) -> str:
 
 
 def emit_output(content: str, *, newline: bool = True) -> None:
-    """Emit raw command output through the shared logger without prefixes."""
-    logger = logging.getLogger(_LOGGER_NAME)
-    handler_terminators: list[tuple[logging.Handler, str]] = []
-    if not newline:
-        for handler in logger.handlers:
-            if hasattr(handler, "terminator"):
-                handler_terminators.append((handler, getattr(handler, "terminator")))
-                setattr(handler, "terminator", "")
-    try:
-        logger.log(logging.INFO, content)
-    finally:
-        for handler, terminator in handler_terminators:
-            setattr(handler, "terminator", terminator)
+    """Emit raw command output to stdout for machine consumption."""
+    click.echo(content, nl=newline, err=False)
 
 
 def coerce_date(value: object) -> Optional[date]:

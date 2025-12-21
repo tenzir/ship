@@ -2118,6 +2118,7 @@ def test_add_description_file(tmp_path: Path) -> None:
             "--description-file",
             str(desc_file),
         ],
+        env={"TENZIR_CHANGELOG_AUTHOR": "test-user"},
     )
     assert result.exit_code == 0, result.output
 
@@ -2147,6 +2148,7 @@ def test_add_description_file_stdin(tmp_path: Path) -> None:
             "-",
         ],
         input="Description from stdin.",
+        env={"TENZIR_CHANGELOG_AUTHOR": "test-user"},
     )
     assert result.exit_code == 0, result.output
 
@@ -2231,6 +2233,7 @@ def test_add_description_file_empty(tmp_path: Path) -> None:
             "--description-file",
             str(desc_file),
         ],
+        env={"TENZIR_CHANGELOG_AUTHOR": "test-user"},
     )
     assert result.exit_code == 0, result.output
 
@@ -2626,3 +2629,58 @@ def test_explicit_links_without_repository(tmp_path: Path) -> None:
     # PR should NOT be linked (no repository to construct URL)
     assert "#42" in show_result.output
     assert "[#42](" not in show_result.output
+
+
+def test_release_create_emits_only_version_to_stdout(tmp_path: Path) -> None:
+    """Verify that release create emits only the version to stdout.
+
+    Status messages (checkmarks, info) must go to stderr so that scripts
+    can capture just the version via stdout without ANSI pollution.
+    """
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create an entry to release.
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    # Create a release and capture stdout/stderr separately.
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    # stdout must contain ONLY the version string (with trailing newline).
+    assert release_result.stdout.strip() == "v1.0.0"
+
+    # stderr must contain the status messages.
+    assert "release manifest written" in release_result.stderr
+
+    # stdout must NOT contain status messages or ANSI codes.
+    assert "manifest" not in release_result.stdout
+    assert "\033[" not in release_result.stdout
