@@ -1351,9 +1351,10 @@ def _render_entries_multi_project(
         return (created.timestamp(), project_idx, entry.entry_id)
 
     sorted_entries = sorted(entries, key=sort_key)
+    total_rows = len(sorted_entries)
 
     # Add rows
-    for index, multi_entry in enumerate(sorted_entries, 1):
+    for index, multi_entry in enumerate(sorted_entries):
         entry = multi_entry.entry
         metadata = entry.metadata
         project_name = multi_entry.project_name
@@ -1369,7 +1370,9 @@ def _render_entries_multi_project(
 
         row: list[RenderableType] = []
         if "num" in visible_columns:
-            row.append(str(index))
+            # Count backwards so newest entry (last in sorted order) is #1
+            display_row_num = total_rows - index
+            row.append(str(display_row_num))
         if "project" in visible_columns:
             row.append(_ellipsis_cell(project_name, "project", column_specs, style="cyan"))
         if "date" in visible_columns:
@@ -1898,6 +1901,28 @@ def _show_entries_card(
     modules = ctx.get_modules()
     entry_map, release_index_all, _, sorted_entries = _gather_entry_context(project_root, modules)
     components = _normalize_component_filters(component_filter, config)
+
+    # For multi-project mode, rebuild sorted_entries using the same logic as table view
+    # to ensure row numbers match what's displayed
+    if modules:
+        combined_projects: list[tuple[Path, Config]] = [(project_root, config)]
+        combined_projects.extend((m.root, m.config) for m in modules)
+        project_order = {cfg.id: idx for idx, (_, cfg) in enumerate(combined_projects)}
+
+        multi_entries = list(iter_multi_project_entries(combined_projects))
+
+        def sort_key(item: MultiProjectEntry) -> tuple[float, int, str]:
+            entry = item.entry
+            project_idx = project_order.get(item.project_id, len(project_order))
+            created = entry.created_at or datetime.min.replace(tzinfo=timezone.utc)
+            return (created.timestamp(), project_idx, entry.entry_id)
+
+        sorted_multi = sorted(multi_entries, key=sort_key)
+        sorted_entries = [m.entry for m in sorted_multi]
+        # Also update entry_map to include all entries without clobbering
+        for m in sorted_multi:
+            entry_map.setdefault(m.entry.entry_id, m.entry)
+
     resolutions = _resolve_identifiers_sequence(
         identifiers,
         project_root=project_root,
