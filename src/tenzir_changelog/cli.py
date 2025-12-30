@@ -2348,7 +2348,11 @@ def create_entry(
             component_values.append(candidate)
 
     author_values = tuple(authors or ())
-    if author_values:
+    if config.omit_author:
+        if author_values or co_authors:
+            log_warning("--author/--co-author ignored: config has 'omit_author: true'")
+        authors_list = []
+    elif author_values:
         authors_list = [author.strip() for author in author_values if author.strip()]
     else:
         inferred_author = detect_github_login(log_success=False)
@@ -2365,8 +2369,8 @@ def create_entry(
         else:
             authors_list = []
 
-    # Append co-authors (always additive)
-    if co_authors:
+    # Append co-authors (always additive, unless config.omit_author is set)
+    if co_authors and not config.omit_author:
         co_authors_cleaned = [a.strip() for a in co_authors if a.strip()]
         authors_list.extend(co_authors_cleaned)
         # Deduplicate while preserving order
@@ -2378,19 +2382,24 @@ def create_entry(
         body = _prompt_entry_body() if allow_interactive else ""
 
     pr_numbers: list[int] = []
-    for pr_value in tuple(prs or ()):  # normalize sequence for prompts
-        pr_value = pr_value.strip()
-        if not pr_value:
-            continue
-        try:
-            pr_numbers.append(int(pr_value))
-        except ValueError as exc:
-            raise click.ClickException(f"PR value '{pr_value}' must be numeric.") from exc
-    if not pr_numbers:
-        inferred_pr = detect_github_pr_number(project_root, log_success=False)
-        if inferred_pr is not None:
-            log_info(f"detected open pull request #{inferred_pr} for the current branch.")
-            pr_numbers.append(inferred_pr)
+    prs_provided = tuple(prs or ())
+    if config.omit_pr:
+        if prs_provided:
+            log_warning("--pr ignored: config has 'omit_pr: true'")
+    else:
+        for pr_value in prs_provided:
+            pr_value = pr_value.strip()
+            if not pr_value:
+                continue
+            try:
+                pr_numbers.append(int(pr_value))
+            except ValueError as exc:
+                raise click.ClickException(f"PR value '{pr_value}' must be numeric.") from exc
+        if not pr_numbers:
+            inferred_pr = detect_github_pr_number(project_root, log_success=False)
+            if inferred_pr is not None:
+                log_info(f"detected open pull request #{inferred_pr} for the current branch.")
+                pr_numbers.append(inferred_pr)
 
     metadata: dict[str, Any] = {
         "title": title,

@@ -51,6 +51,8 @@ class Config:
     repository: str | None = None
     export_style: ExportStyle = EXPORT_STYLE_STANDARD
     explicit_links: bool = False
+    omit_pr: bool = False
+    omit_author: bool = False
     components: dict[str, str] = field(default_factory=dict)
     modules: str | None = None  # glob pattern for nested changelog projects
     release: ReleaseConfig = field(default_factory=ReleaseConfig)
@@ -92,6 +94,20 @@ def load_config(path: Path) -> Config:
             raise ValueError("Config option 'explicit_links' must be a boolean.")
         explicit_links = explicit_links_raw
 
+    omit_pr_raw = raw.get("omit_pr")
+    omit_pr = False
+    if omit_pr_raw is not None:
+        if not isinstance(omit_pr_raw, bool):
+            raise ValueError("Config option 'omit_pr' must be a boolean.")
+        omit_pr = omit_pr_raw
+
+    omit_author_raw = raw.get("omit_author")
+    omit_author = False
+    if omit_author_raw is not None:
+        if not isinstance(omit_author_raw, bool):
+            raise ValueError("Config option 'omit_author' must be a boolean.")
+        omit_author = omit_author_raw
+
     components = parse_components(raw.get("components"))
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
@@ -113,6 +129,8 @@ def load_config(path: Path) -> Config:
         repository=(str(repository_raw) if repository_raw else None),
         export_style=export_style,
         explicit_links=explicit_links,
+        omit_pr=omit_pr,
+        omit_author=omit_author,
         components=components,
         modules=modules,
         release=release_config,
@@ -155,6 +173,20 @@ def load_package_config(path: Path) -> Config:
             raise ValueError("Package metadata option 'explicit_links' must be a boolean.")
         explicit_links = explicit_links_raw
 
+    omit_pr_raw = raw.get("omit_pr")
+    omit_pr = False
+    if omit_pr_raw is not None:
+        if not isinstance(omit_pr_raw, bool):
+            raise ValueError("Package metadata option 'omit_pr' must be a boolean.")
+        omit_pr = omit_pr_raw
+
+    omit_author_raw = raw.get("omit_author")
+    omit_author = False
+    if omit_author_raw is not None:
+        if not isinstance(omit_author_raw, bool):
+            raise ValueError("Package metadata option 'omit_author' must be a boolean.")
+        omit_author = omit_author_raw
+
     components = parse_components(raw.get("components"))
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
@@ -176,6 +208,8 @@ def load_package_config(path: Path) -> Config:
         repository=(str(repository_raw) if repository_raw else None),
         export_style=export_style,
         explicit_links=explicit_links,
+        omit_pr=omit_pr,
+        omit_author=omit_author,
         components=components,
         modules=modules,
         release=release_config,
@@ -212,6 +246,10 @@ def dump_config(config: Config) -> dict[str, Any]:
         data["export_style"] = config.export_style
     if config.explicit_links:
         data["explicit_links"] = config.explicit_links
+    if config.omit_pr:
+        data["omit_pr"] = config.omit_pr
+    if config.omit_author:
+        data["omit_author"] = config.omit_author
     if config.components:
         data["components"] = dict(config.components)
     if config.modules:

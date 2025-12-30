@@ -2946,3 +2946,217 @@ def test_release_publish_defaults_to_latest(
     # Verify that gh was called with v1.5.0 (the latest release).
     assert "v1.5.0" in recorded_args, f"Expected v1.5.0 in recorded args: {recorded_args}"
     assert recorded_args[:3] == ["/usr/bin/gh", "release", "create"]
+
+
+def test_add_omit_pr_config(tmp_path: Path) -> None:
+    """Test that omit_pr config prevents PR from being auto-detected or added."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create config with omit_pr: true
+    config = Config(id="test", name="Test Project", omit_pr=True)
+    save_config(config, project_dir / "config.yaml")
+
+    # Create a stub gh that would return PR 123 if called
+    gh_stub = project_dir / "gh"
+    gh_stub.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env python3",
+                "import sys",
+                "if 'pr' in sys.argv and 'view' in sys.argv:",
+                "    sys.stdout.write('123\\n')",
+                "    sys.exit(0)",
+                "sys.exit(1)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gh_stub.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{project_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--author",
+            "testuser",
+            "--description",
+            "Entry without PR.",
+        ],
+        env=env,
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    # Verify entry has no PR field
+    entries_dir = project_dir / "unreleased"
+    entry_files = list(entries_dir.glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert "pr" not in entry.metadata
+    assert "prs" not in entry.metadata
+
+
+def test_add_omit_pr_config_warns_on_explicit_pr(tmp_path: Path) -> None:
+    """Test that --pr emits warning when omit_pr is configured."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create config with omit_pr: true
+    config = Config(id="test", name="Test Project", omit_pr=True)
+    save_config(config, project_dir / "config.yaml")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--author",
+            "testuser",
+            "--pr",
+            "456",
+            "--description",
+            "Entry with ignored PR.",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+    assert "omit_pr: true" in add_result.output
+
+    # Verify entry has no PR field despite explicit --pr
+    entries_dir = project_dir / "unreleased"
+    entry_files = list(entries_dir.glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert "pr" not in entry.metadata
+    assert "prs" not in entry.metadata
+
+
+def test_add_omit_author_config(tmp_path: Path) -> None:
+    """Test that omit_author config prevents author from being auto-detected or added."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create config with omit_author: true
+    config = Config(id="test", name="Test Project", omit_author=True)
+    save_config(config, project_dir / "config.yaml")
+
+    # Set env var that would normally auto-detect author
+    env = os.environ.copy()
+    env["GITHUB_ACTOR"] = "autouser"
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--description",
+            "Entry without author.",
+        ],
+        env=env,
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    # Verify entry has no author field
+    entries_dir = project_dir / "unreleased"
+    entry_files = list(entries_dir.glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert "author" not in entry.metadata
+    assert "authors" not in entry.metadata
+
+
+def test_add_omit_author_config_warns_on_explicit_author(tmp_path: Path) -> None:
+    """Test that --author emits warning when omit_author is configured."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create config with omit_author: true
+    config = Config(id="test", name="Test Project", omit_author=True)
+    save_config(config, project_dir / "config.yaml")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--author",
+            "someuser",
+            "--description",
+            "Entry with ignored author.",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+    assert "omit_author: true" in add_result.output
+
+    # Verify entry has no author field despite explicit --author
+    entries_dir = project_dir / "unreleased"
+    entry_files = list(entries_dir.glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert "author" not in entry.metadata
+    assert "authors" not in entry.metadata
+
+
+def test_add_omit_author_config_warns_on_co_author(tmp_path: Path) -> None:
+    """Test that --co-author emits warning when omit_author is configured."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create config with omit_author: true
+    config = Config(id="test", name="Test Project", omit_author=True)
+    save_config(config, project_dir / "config.yaml")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--co-author",
+            "coauthor1",
+            "--description",
+            "Entry with ignored co-author.",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+    assert "omit_author: true" in add_result.output
+
+    # Verify entry has no author field despite explicit --co-author
+    entries_dir = project_dir / "unreleased"
+    entry_files = list(entries_dir.glob("*.md"))
+    assert len(entry_files) == 1
+    entry = read_entry(entry_files[0])
+    assert "author" not in entry.metadata
+    assert "authors" not in entry.metadata
