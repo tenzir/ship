@@ -1460,7 +1460,7 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
     assert major_release.exit_code == 0, major_release.output
     assert (project_dir / "releases" / "v2.0.0").exists()
 
-    # Guard when no baseline exists.
+    # Bump flags should work with implicit 0.0.0 base when no baseline exists.
     empty_dir = tmp_path / "another"
     empty_dir.mkdir()
     add_entry = runner.invoke(
@@ -1480,7 +1480,9 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
         ],
     )
     assert add_entry.exit_code == 0, add_entry.output
-    bump_without_seed = runner.invoke(
+
+    # --patch with no prior releases should create 0.0.1
+    patch_from_zero = runner.invoke(
         cli,
         [
             "--root",
@@ -1491,8 +1493,81 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
             "--yes",
         ],
     )
-    assert bump_without_seed.exit_code != 0
-    assert "No existing release" in bump_without_seed.output
+    assert patch_from_zero.exit_code == 0, patch_from_zero.output
+    assert (empty_dir / "releases" / "0.0.1").exists()
+
+
+def test_release_create_bump_from_implicit_zero(tmp_path: Path) -> None:
+    """Test that bump flags work with implicit 0.0.0 base when no releases exist."""
+    runner = CliRunner()
+
+    # Test --minor creates 0.1.0
+    minor_dir = tmp_path / "minor_project"
+    minor_dir.mkdir()
+    add_minor = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(minor_dir),
+            "add",
+            "--title",
+            "Minor Feature",
+            "--type",
+            "feature",
+            "--description",
+            "First feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_minor.exit_code == 0, add_minor.output
+    minor_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(minor_dir),
+            "release",
+            "create",
+            "--minor",
+            "--yes",
+        ],
+    )
+    assert minor_release.exit_code == 0, minor_release.output
+    assert (minor_dir / "releases" / "0.1.0").exists()
+
+    # Test --major creates 1.0.0
+    major_dir = tmp_path / "major_project"
+    major_dir.mkdir()
+    add_major = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(major_dir),
+            "add",
+            "--title",
+            "Major Feature",
+            "--type",
+            "feature",
+            "--description",
+            "First major feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_major.exit_code == 0, add_major.output
+    major_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(major_dir),
+            "release",
+            "create",
+            "--major",
+            "--yes",
+        ],
+    )
+    assert major_release.exit_code == 0, major_release.output
+    assert (major_dir / "releases" / "1.0.0").exists()
 
 
 def test_release_notes_command(tmp_path: Path) -> None:

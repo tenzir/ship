@@ -2829,13 +2829,12 @@ def _resolve_release_version(
         )
     latest = _latest_semver(project_root)
     if latest is None:
-        raise click.ClickException(
-            "No existing release found to bump from. Supply an explicit version instead."
-        )
-    base_version, prefix = latest
+        base_version = Version("0.0.0")
+        prefix = ""
+    else:
+        base_version, prefix = latest
     next_version = _bump_version_value(base_version, bump)
-    prefix_value = prefix or ""
-    return f"{prefix_value}{next_version}"
+    return f"{prefix}{next_version}"
 
 
 @cli.group("release")
