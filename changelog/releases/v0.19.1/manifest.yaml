@@ -1,0 +1,6 @@
+created: 2026-01-04
+title: Initial Release Version Bumping
+intro: >-
+  This release adds initial release support with implicit version bumping and
+
+  fixes row numbering in multi-project views.
