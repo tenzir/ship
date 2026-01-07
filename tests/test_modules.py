@@ -323,8 +323,8 @@ def create_released_entry(
     return entry_path
 
 
-def test_release_notes_includes_module_sections(tmp_path: Path) -> None:
-    """release notes includes module sections with released entries."""
+def test_show_release_includes_module_sections(tmp_path: Path) -> None:
+    """show --release includes module sections with released entries."""
     packages = tmp_path / "packages"
     mod_root = create_module(packages, "mymod", "My Module")
     create_released_entry(mod_root, "Module Feature One", "v1.0.0", "feature")
@@ -340,7 +340,7 @@ def test_release_notes_includes_module_sections(tmp_path: Path) -> None:
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
 
     assert result.exit_code == 0
     # Main project entry with full body
@@ -355,7 +355,7 @@ def test_release_notes_includes_module_sections(tmp_path: Path) -> None:
     assert "---" in result.output
 
 
-def test_release_notes_module_entries_are_compact(tmp_path: Path) -> None:
+def test_show_release_module_entries_are_compact(tmp_path: Path) -> None:
     """Module entries show title and attribution, not body."""
     packages = tmp_path / "packages"
     mod_root = create_module(packages, "mymod", "My Module")
@@ -371,7 +371,7 @@ def test_release_notes_module_entries_are_compact(tmp_path: Path) -> None:
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
 
     assert result.exit_code == 0
     # Module entry appears as bullet with emoji prefix and title
@@ -384,7 +384,7 @@ def test_release_notes_module_entries_are_compact(tmp_path: Path) -> None:
     assert "Entry body text" not in lines
 
 
-def test_release_notes_excludes_unreleased_module_entries(tmp_path: Path) -> None:
+def test_show_release_excludes_unreleased_module_entries(tmp_path: Path) -> None:
     """Only released module entries are included, not unreleased."""
     packages = tmp_path / "packages"
     mod_root = create_module(packages, "mymod", "My Module")
@@ -400,7 +400,7 @@ def test_release_notes_excludes_unreleased_module_entries(tmp_path: Path) -> Non
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
 
     assert result.exit_code == 0
     # Parent entry is included
@@ -411,7 +411,7 @@ def test_release_notes_excludes_unreleased_module_entries(tmp_path: Path) -> Non
     assert "Unreleased Module Feature" not in result.output
 
 
-def test_release_notes_json_includes_modules(tmp_path: Path) -> None:
+def test_show_release_json_includes_modules(tmp_path: Path) -> None:
     """JSON output includes modules array with released entries."""
     import json
 
@@ -429,21 +429,23 @@ def test_release_notes_json_includes_modules(tmp_path: Path) -> None:
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(
-        cli, ["--root", str(project_dir), "release", "notes", "unreleased", "--json"]
-    )
+    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-j"])
 
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert "modules" in data
-    assert len(data["modules"]) == 1
-    assert data["modules"][0]["id"] == "mymod"
-    assert data["modules"][0]["name"] == "My Module"
-    assert len(data["modules"][0]["entries"]) == 1
-    assert data["modules"][0]["entries"][0]["title"] == "Module Feature"
+    # With --release, output is array
+    assert isinstance(data, list)
+    assert len(data) == 1
+    release = data[0]
+    assert "modules" in release
+    assert len(release["modules"]) == 1
+    assert release["modules"][0]["id"] == "mymod"
+    assert release["modules"][0]["name"] == "My Module"
+    assert len(release["modules"][0]["entries"]) == 1
+    assert release["modules"][0]["entries"][0]["title"] == "Module Feature"
 
 
-def test_release_notes_no_modules_no_separator(tmp_path: Path) -> None:
+def test_show_release_no_modules_no_separator(tmp_path: Path) -> None:
     """When no modules exist, no separator is added."""
     project_dir = tmp_path / "changelog"
     project_dir.mkdir()
@@ -452,7 +454,7 @@ def test_release_notes_no_modules_no_separator(tmp_path: Path) -> None:
     create_entry(project_dir, "Test Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "release", "notes", "unreleased"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
 
     assert result.exit_code == 0
     assert "Test Feature" in result.output

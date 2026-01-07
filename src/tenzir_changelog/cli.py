@@ -252,7 +252,7 @@ def compact_option() -> Callable[[F], F]:
     the detailed section-based format (--no-compact) when rendering release
     notes and changelog entries.
 
-    Used by: release create, release notes
+    Used by: release create, show
 
     IMPORTANT: Keep this decorator in sync with all commands that render
     release notes to ensure consistent behavior.
@@ -281,7 +281,7 @@ def explicit_links_option() -> Callable[[F], F]:
 
     When neither flag is specified, uses the config.explicit_links setting.
 
-    Used by: release create, release notes, show
+    Used by: release create, show
 
     IMPORTANT: Keep this decorator in sync with all commands that render
     release notes to ensure consistent behavior.
@@ -1194,6 +1194,41 @@ def _render_release(
     _print_renderable(table)
 
 
+def _build_entry_title(entry: Entry, *, include_emoji: bool = True) -> Text:
+    """Build a Rich Text title for an entry."""
+    type_color = ENTRY_TYPE_STYLES.get(entry.type, "white")
+    title = Text()
+    if include_emoji:
+        type_emoji = ENTRY_TYPE_EMOJIS.get(entry.type, "•")
+        title.append(f"{type_emoji} ", style="bold")
+    title.append(entry.title, style=f"bold {type_color}")
+    return title
+
+
+def _build_entry_metadata_line(entry: Entry) -> Text:
+    """Build a compact metadata line for an entry (date · authors · PRs)."""
+    meta_parts: list[str] = []
+    if entry.created_at:
+        date_str = str(entry.created_at)[:10]
+        meta_parts.append(date_str)
+    authors = entry.metadata.get("authors")
+    if authors:
+        authors_str = ", ".join(_format_author(a) for a in authors)
+        meta_parts.append(authors_str)
+    pr_numbers = _parse_pr_numbers(entry.metadata)
+    if pr_numbers:
+        prs_str = ", ".join(f"#{pr}" for pr in pr_numbers)
+        meta_parts.append(prs_str)
+    return Text(" · ".join(meta_parts), style="dim") if meta_parts else Text()
+
+
+def _build_entry_body(entry: Entry) -> RenderableType:
+    """Build the body content for an entry."""
+    if entry.body.strip():
+        return Markdown(entry.body.strip(), code_theme="ansi_light")
+    return Text("No description provided.", style="dim")
+
+
 def _render_single_entry(
     entry: Entry,
     release_versions: list[str],
@@ -1201,16 +1236,10 @@ def _render_single_entry(
     include_emoji: bool = True,
 ) -> None:
     """Display a single changelog entry with formatted output."""
-    # Build title with emoji and type color
     type_color = ENTRY_TYPE_STYLES.get(entry.type, "white")
+    title = _build_entry_title(entry, include_emoji=include_emoji)
 
-    title = Text()
-    if include_emoji:
-        type_emoji = ENTRY_TYPE_EMOJIS.get(entry.type, "•")
-        title.append(f"{type_emoji} ", style="bold")
-    title.append(entry.title, style=f"bold {type_color}")
-
-    # Build metadata section
+    # Build metadata section (verbose format for standalone card)
     metadata_parts = []
     metadata_parts.append(f"Entry ID:  [cyan]{entry.entry_id}[/cyan]")
     metadata_parts.append(f"Type:      [{type_color}]{entry.type}[/{type_color}]")
@@ -1240,13 +1269,7 @@ def _render_single_entry(
         metadata_parts.append("Status:    [yellow]Unreleased[/yellow]")
 
     metadata_text = Text.from_markup("\n".join(metadata_parts))
-
-    # Build the markdown body
-    body_content: RenderableType
-    if entry.body.strip():
-        body_content = Markdown(entry.body.strip(), code_theme="ansi_light")
-    else:
-        body_content = Text("No description provided.", style="dim")
+    body_content = _build_entry_body(entry)
 
     # Create a divider that fits inside the panel
     # Panel has 2 characters for borders and 2 for padding (left/right)
@@ -1419,6 +1442,231 @@ def _component_matches(entry: Entry, normalized_components: set[str]) -> bool:
     )
 
 
+def _render_release_header(
+    manifest: ReleaseManifest | None,
+    *,
+    project_id: str,
+) -> None:
+    """Render a release header with title and intro."""
+    if manifest:
+        version = manifest.version
+        title = manifest.title or manifest.version
+        created = manifest.created.isoformat()
+        intro = manifest.intro
+    else:
+        version = "unreleased"
+        title = "Unreleased Changes"
+        created = date.today().isoformat()
+        intro = None
+
+    _print_renderable(Rule(f"Release {version}"))
+    header = Text.assemble(
+        ("Title: ", "bold"),
+        title or "—",
+        ("\nCreated: ", "bold"),
+        created,
+        ("\nProject: ", "bold"),
+        project_id or "—",
+    )
+    _print_renderable(header)
+
+    if intro:
+        _print_renderable(
+            Panel(
+                intro,
+                title="Introduction",
+                subtitle="Markdown",
+                expand=False,
+            )
+        )
+
+
+def _show_entries_table_all(
+    ctx: CLIContext,
+    *,
+    release_mode: bool,
+    released_only: bool,
+    components: set[str],
+    include_emoji: bool,
+    banner: bool,
+) -> None:
+    """Handle --all flag in table view: show all entries from all releases."""
+    config = ctx.ensure_config()
+    project_root = ctx.project_root
+    release_index = build_entry_release_index(project_root, project=config.id)
+
+    # Gather all releases (newest first)
+    manifests = list(iter_release_manifests(project_root))
+    manifests.sort(key=lambda m: m.created, reverse=True)
+
+    # Gather unreleased entries
+    unreleased_entries: list[Entry] = []
+    if not released_only:
+        unreleased = list(iter_entries(project_root))
+        unreleased_entries = _filter_entries_by_component(unreleased, components)
+        unreleased_entries = sort_entries_desc(unreleased_entries)
+
+    if release_mode:
+        # Show entries grouped by release with headers
+        if banner:
+            _render_project_header(config)
+
+        rendered = False
+
+        # Show unreleased first
+        if unreleased_entries:
+            _render_release_header(None, project_id=config.id)
+            _print_renderable(Text())  # blank line
+            _render_entries(
+                unreleased_entries,
+                release_index,
+                config,
+                show_banner=False,
+                release_order=None,
+                include_emoji=include_emoji,
+            )
+            rendered = True
+
+        # Show each release
+        for manifest in manifests:
+            release_entries: list[Entry] = []
+            for entry_id in manifest.entries:
+                entry = load_release_entry(project_root, manifest, entry_id)
+                if entry is not None:
+                    release_entries.append(entry)
+            filtered = _filter_entries_by_component(release_entries, components)
+            filtered = sort_entries_desc(filtered)
+
+            if rendered:
+                _print_renderable(Text())  # blank line between releases
+            _render_release_header(manifest, project_id=config.id)
+            _print_renderable(Text())  # blank line
+            if filtered:
+                _render_entries(
+                    filtered,
+                    release_index,
+                    config,
+                    show_banner=False,
+                    release_order=None,
+                    include_emoji=include_emoji,
+                )
+            else:
+                _print_renderable(Text("No entries in this release.", style="dim"))
+            rendered = True
+
+        if not rendered:
+            raise click.ClickException("No entries found.")
+    else:
+        # Show all entries in a flat table
+        all_entries: list[Entry] = list(unreleased_entries)
+
+        for manifest in manifests:
+            for entry_id in manifest.entries:
+                entry = load_release_entry(project_root, manifest, entry_id)
+                if entry is not None:
+                    all_entries.append(entry)
+
+        all_entries = _filter_entries_by_component(all_entries, components)
+        all_entries = sort_entries_desc(all_entries)
+
+        if not all_entries:
+            raise click.ClickException("No entries found.")
+
+        _render_entries(
+            all_entries,
+            release_index,
+            config,
+            show_banner=banner,
+            release_order=None,
+            include_emoji=include_emoji,
+        )
+
+
+def _show_entries_table_release_mode(
+    ctx: CLIContext,
+    identifiers: tuple[str, ...],
+    *,
+    components: set[str],
+    include_emoji: bool,
+    entry_map: dict[str, Entry],
+    sorted_entries: list[Entry],
+) -> None:
+    """Handle --release flag with identifiers: group entries by release with headers."""
+    config = ctx.ensure_config()
+    project_root = ctx.project_root
+    release_index = build_entry_release_index(project_root, project=config.id)
+
+    resolutions = _resolve_identifiers_sequence(
+        identifiers,
+        project_root=project_root,
+        config=config,
+        sorted_entries=sorted_entries,
+        entry_map=entry_map,
+    )
+
+    # Group entries by release
+    release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
+    for resolution in resolutions:
+        filtered = _filter_entries_by_component(resolution.entries, components)
+        filtered = sort_entries_desc(filtered)
+        if resolution.kind == "release" and resolution.manifest:
+            release_groups.append((resolution.manifest, filtered))
+        elif resolution.kind == "unreleased":
+            release_groups.append((None, filtered))
+        else:
+            # Row or entry identifiers: group by source release
+            for entry in filtered:
+                versions = release_index.get(entry.entry_id, [])
+                if versions:
+                    # Find manifest for first version
+                    for release_manifest in iter_release_manifests(project_root):
+                        if release_manifest.version == versions[0]:
+                            found = False
+                            for i, (m, entries) in enumerate(release_groups):
+                                if m and m.version == release_manifest.version:
+                                    if entry not in entries:
+                                        release_groups[i] = (m, entries + [entry])
+                                    found = True
+                                    break
+                            if not found:
+                                release_groups.append((release_manifest, [entry]))
+                            break
+                else:
+                    # Unreleased entry
+                    found = False
+                    for i, (m, entries) in enumerate(release_groups):
+                        if m is None:
+                            if entry not in entries:
+                                release_groups[i] = (None, entries + [entry])
+                            found = True
+                            break
+                    if not found:
+                        release_groups.append((None, [entry]))
+
+    if not release_groups:
+        raise click.ClickException("No entries found for the given identifiers.")
+
+    # Render each release group
+    rendered = False
+    for manifest, entries in release_groups:
+        if rendered:
+            _print_renderable(Text())  # blank line between releases
+        _render_release_header(manifest, project_id=config.id)
+        _print_renderable(Text())  # blank line
+        if entries:
+            _render_entries(
+                entries,
+                release_index,
+                config,
+                show_banner=False,
+                release_order=None,
+                include_emoji=include_emoji,
+            )
+        else:
+            _print_renderable(Text("No entries match the filters.", style="dim"))
+        rendered = True
+
+
 def _show_entries_table(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
@@ -1427,6 +1675,9 @@ def _show_entries_table(
     banner: bool,
     *,
     include_emoji: bool,
+    release_mode: bool = False,
+    select_all: bool = False,
+    released_only: bool = False,
 ) -> None:
     # Build list of projects (including modules if configured)
     modules = ctx.get_modules()
@@ -1488,6 +1739,30 @@ def _show_entries_table(
 
     # Sort entries to match display order
     sorted_entries = _sort_entries_for_display(entry_map.values(), release_index, release_order)
+
+    # Handle --all flag
+    if select_all:
+        _show_entries_table_all(
+            ctx,
+            release_mode=release_mode,
+            released_only=released_only,
+            components=components,
+            include_emoji=include_emoji,
+            banner=banner,
+        )
+        return
+
+    # Handle --release flag with identifiers
+    if release_mode:
+        _show_entries_table_release_mode(
+            ctx,
+            identifiers or ("-",),
+            components=components,
+            include_emoji=include_emoji,
+            entry_map=entry_map,
+            sorted_entries=sorted_entries,
+        )
+        return
 
     # Filter by identifiers if provided
     if identifiers:
@@ -1683,12 +1958,21 @@ def run_show_entries(
     compact: Optional[bool] = None,
     include_emoji: bool = True,
     explicit_links: bool = False,
+    release_mode: bool = False,
+    select_all: bool = False,
+    released_only: bool = False,
 ) -> None:
     """Python-friendly wrapper around the ``show`` command."""
 
     identifier_values = tuple(identifiers or ())
     project_filters = tuple(project_filter or ())
     component_filters = tuple(component_filter or ())
+
+    # Validate flag combinations
+    if released_only and not select_all:
+        raise click.ClickException("--released-only requires --all.")
+    if select_all and identifier_values:
+        raise click.ClickException("--all cannot be combined with explicit identifiers.")
 
     if view == "table":
         if compact is not None:
@@ -1702,6 +1986,9 @@ def run_show_entries(
             component_filters,
             banner,
             include_emoji=include_emoji,
+            release_mode=release_mode,
+            select_all=select_all,
+            released_only=released_only,
         )
         return
 
@@ -1709,15 +1996,22 @@ def run_show_entries(
         raise click.ClickException("--project/--banner are only available in table view.")
 
     if view == "card":
-        if compact is not None:
+        if compact is not None and not release_mode:
             raise click.ClickException(
-                "--compact/--no-compact only apply to markdown and json views."
+                "--compact/--no-compact only apply to markdown, json, and release card views."
             )
+        # Default for release card: non-compact (show full bodies)
+        # Default for entry card: not applicable (compact param ignored)
+        card_compact = compact if compact is not None else False
         _show_entries_card(
             ctx,
             identifier_values,
             component_filters,
             include_emoji=include_emoji,
+            release_mode=release_mode,
+            select_all=select_all,
+            released_only=released_only,
+            compact=card_compact,
         )
         return
 
@@ -1730,6 +2024,9 @@ def run_show_entries(
             include_emoji=include_emoji,
             explicit_links=explicit_links,
             component_filter=component_filters,
+            release_mode=release_mode,
+            select_all=select_all,
+            released_only=released_only,
         )
         return
 
@@ -1884,13 +2181,226 @@ def _gather_module_released_entries(
     return result, current_versions
 
 
+def _render_release_card(
+    manifest: ReleaseManifest | None,
+    entries: list[Entry],
+    config: Config,
+    release_index: dict[str, list[str]],
+    *,
+    include_emoji: bool,
+    compact: bool = True,
+) -> None:
+    """Render a release as a card with header and entries.
+
+    Args:
+        compact: If True, show only entry titles. If False, include entry bodies.
+    """
+    if manifest:
+        title = manifest.title or manifest.version
+        version = manifest.version
+        created = manifest.created.isoformat()
+        intro = manifest.intro
+    else:
+        title = "Unreleased Changes"
+        version = "unreleased"
+        created = date.today().isoformat()
+        intro = None
+
+    # Build card content using Rich renderables
+    renderables: list[RenderableType] = []
+
+    # Header metadata
+    header_lines = [
+        f"[bold]Version:[/bold] {version}",
+        f"[bold]Created:[/bold] {created}",
+        f"[bold]Project:[/bold] {config.id}",
+        f"[bold]Entries:[/bold] {len(entries)}",
+    ]
+    renderables.append(Text.from_markup("\n".join(header_lines)))
+
+    # Intro
+    if intro:
+        renderables.append(Text())  # blank line
+        if compact:
+            intro_preview = intro[:200] + "..." if len(intro) > 200 else intro
+            renderables.append(Text(intro_preview))
+        else:
+            renderables.append(Markdown(intro, code_theme="ansi_light"))
+
+    # Entries
+    if entries:
+        display_entries = entries[:10] if compact else entries
+        for entry in display_entries:
+            renderables.append(Text())  # blank line
+            entry_title = _build_entry_title(entry, include_emoji=include_emoji)
+            renderables.append(entry_title)
+
+            meta_line = _build_entry_metadata_line(entry)
+            if meta_line.plain:
+                renderables.append(meta_line)
+
+            if not compact:
+                renderables.append(Text())  # blank line before body
+                renderables.append(_build_entry_body(entry))
+
+        if compact and len(entries) > 10:
+            renderables.append(Text())
+            renderables.append(Text(f"... and {len(entries) - 10} more", style="dim"))
+
+    panel = Panel(
+        Group(*renderables),
+        title=title,
+        border_style="cyan",
+        expand=False,
+    )
+    _print_renderable(panel)
+
+
 def _show_entries_card(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
     component_filter: tuple[str, ...],
     *,
     include_emoji: bool,
+    release_mode: bool = False,
+    select_all: bool = False,
+    released_only: bool = False,
+    compact: bool = True,
 ) -> None:
+    config = ctx.ensure_config()
+    project_root = ctx.project_root
+    components = _normalize_component_filters(component_filter, config)
+    release_index = build_entry_release_index(project_root, project=config.id)
+
+    # Handle --all flag
+    if select_all:
+        manifests = list(iter_release_manifests(project_root))
+        manifests.sort(key=lambda m: m.created, reverse=True)
+
+        unreleased_entries: list[Entry] = []
+        if not released_only:
+            unreleased = list(iter_entries(project_root))
+            unreleased_entries = _filter_entries_by_component(unreleased, components)
+            unreleased_entries = sort_entries_desc(unreleased_entries)
+
+        if release_mode:
+            # One card per release
+            if unreleased_entries:
+                _render_release_card(
+                    None,
+                    unreleased_entries,
+                    config,
+                    release_index,
+                    include_emoji=include_emoji,
+                    compact=compact,
+                )
+
+            for manifest in manifests:
+                release_entries: list[Entry] = []
+                for entry_id in manifest.entries:
+                    entry = load_release_entry(project_root, manifest, entry_id)
+                    if entry is not None:
+                        release_entries.append(entry)
+                filtered = _filter_entries_by_component(release_entries, components)
+                filtered = sort_entries_desc(filtered)
+                _render_release_card(
+                    manifest,
+                    filtered,
+                    config,
+                    release_index,
+                    include_emoji=include_emoji,
+                    compact=compact,
+                )
+        else:
+            # One card per entry
+            all_entries: list[Entry] = list(unreleased_entries)
+            for manifest in manifests:
+                for entry_id in manifest.entries:
+                    entry = load_release_entry(project_root, manifest, entry_id)
+                    if entry is not None:
+                        all_entries.append(entry)
+
+            all_entries = _filter_entries_by_component(all_entries, components)
+            all_entries = sort_entries_desc(all_entries)
+
+            if not all_entries:
+                raise click.ClickException("No entries found.")
+
+            for entry in all_entries:
+                versions = release_index.get(entry.entry_id, [])
+                _render_single_entry(entry, versions, include_emoji=include_emoji)
+        return
+
+    # Handle --release flag with identifiers
+    if release_mode:
+        modules = ctx.get_modules()
+        entry_map, release_index_all, _, sorted_entries = _gather_entry_context(
+            project_root, modules
+        )
+
+        resolutions = _resolve_identifiers_sequence(
+            identifiers or ("-",),
+            project_root=project_root,
+            config=config,
+            sorted_entries=sorted_entries,
+            entry_map=entry_map,
+        )
+
+        # Group by release and render cards
+        release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
+        for resolution in resolutions:
+            filtered = _filter_entries_by_component(resolution.entries, components)
+            filtered = sort_entries_desc(filtered)
+            if resolution.kind == "release" and resolution.manifest:
+                release_groups.append((resolution.manifest, filtered))
+            elif resolution.kind == "unreleased":
+                release_groups.append((None, filtered))
+            else:
+                # Group individual entries by their source release
+                for entry in filtered:
+                    versions = release_index_all.get(entry.entry_id, [])
+                    if versions:
+                        for release_manifest in iter_release_manifests(project_root):
+                            if release_manifest.version == versions[0]:
+                                found = False
+                                for i, (grp_manifest, entries) in enumerate(release_groups):
+                                    if (
+                                        grp_manifest
+                                        and grp_manifest.version == release_manifest.version
+                                    ):
+                                        if entry not in entries:
+                                            release_groups[i] = (grp_manifest, entries + [entry])
+                                        found = True
+                                        break
+                                if not found:
+                                    release_groups.append((release_manifest, [entry]))
+                                break
+                    else:
+                        found = False
+                        for i, (grp_manifest, entries) in enumerate(release_groups):
+                            if grp_manifest is None:
+                                if entry not in entries:
+                                    release_groups[i] = (None, entries + [entry])
+                                found = True
+                                break
+                        if not found:
+                            release_groups.append((None, [entry]))
+
+        if not release_groups:
+            raise click.ClickException("No entries found for the given identifiers.")
+
+        for grp_manifest, entries in release_groups:
+            _render_release_card(
+                grp_manifest,
+                entries,
+                config,
+                release_index_all,
+                include_emoji=include_emoji,
+                compact=compact,
+            )
+        return
+
+    # Original behavior: card view for specific entries
     if not identifiers:
         raise click.ClickException(
             "Provide at least one identifier such as a row number, entry ID, release version, or the 'unreleased' token."
@@ -1918,10 +2428,10 @@ def _show_entries_card(
             return (created.timestamp(), project_idx, entry.entry_id)
 
         sorted_multi = sorted(multi_entries, key=sort_key)
-        sorted_entries = [m.entry for m in sorted_multi]
+        sorted_entries = [item.entry for item in sorted_multi]
         # Also update entry_map to include all entries without clobbering
-        for m in sorted_multi:
-            entry_map.setdefault(m.entry.entry_id, m.entry)
+        for item in sorted_multi:
+            entry_map.setdefault(item.entry.entry_id, item.entry)
 
     resolutions = _resolve_identifiers_sequence(
         identifiers,
@@ -1954,6 +2464,535 @@ def _show_entries_card(
         )
 
 
+def _build_release_payload(
+    manifest: ReleaseManifest | None,
+    entries: list[Entry],
+    config: Config,
+    *,
+    compact: bool = False,
+) -> dict[str, object]:
+    """Build a JSON payload for a single release with entries."""
+    entries_by_type: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        entries_by_type.setdefault(entry_type, []).append(entry)
+    ordered_entries: list[Entry] = []
+    for type_key in ENTRY_EXPORT_ORDER:
+        ordered_entries.extend(entries_by_type.pop(type_key, []))
+    for remaining in entries_by_type.values():
+        ordered_entries.extend(remaining)
+
+    if manifest:
+        data: dict[str, object] = {
+            "version": manifest.version,
+            "title": manifest.title or manifest.version,
+            "intro": manifest.intro or None,
+            "project": config.id,
+            "created": manifest.created.isoformat(),
+        }
+    else:
+        data = {
+            "version": None,
+            "title": "Unreleased Changes",
+            "intro": None,
+            "project": config.id,
+            "created": date.today().isoformat(),
+        }
+
+    payload_entries = [_entry_to_dict(entry, config, compact=compact) for entry in ordered_entries]
+    data["entries"] = payload_entries
+    if compact:
+        data["compact"] = True
+    return data
+
+
+def _render_markdown_release_block(
+    manifest: ReleaseManifest | None,
+    entries: list[Entry],
+    config: Config,
+    release_index: dict[str, list[str]],
+    *,
+    include_emoji: bool = True,
+    explicit_links: bool = False,
+    compact: bool = False,
+) -> str:
+    """Render a single release as Markdown with H1 title, intro, and grouped entries."""
+    lines: list[str] = []
+
+    # H1 title
+    if manifest:
+        title = manifest.title or manifest.version
+    else:
+        title = "Unreleased Changes"
+    lines.append(f"# {title}")
+    lines.append("")
+
+    # Intro paragraph
+    if manifest and manifest.intro:
+        lines.append(manifest.intro)
+        lines.append("")
+
+    if not entries:
+        lines.append("No changes found.")
+        return "\n".join(lines).strip() + "\n"
+
+    # Group entries by type
+    entries_by_type: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_type = entry.metadata.get("type", DEFAULT_ENTRY_TYPE)
+        entries_by_type.setdefault(entry_type, []).append(entry)
+
+    # Render entries grouped by type
+    for type_key in ENTRY_EXPORT_ORDER:
+        type_entries = entries_by_type.get(type_key) or []
+        if not type_entries:
+            continue
+        section_title = _format_section_title(type_key, include_emoji)
+        lines.append(f"## {section_title}")
+        lines.append("")
+
+        if compact:
+            for entry in type_entries:
+                metadata = entry.metadata
+                excerpt = extract_excerpt(entry.body)
+                bullet_text = excerpt or metadata.get("title", "Untitled")
+                component_labels = entry.components
+                if component_labels:
+                    components_display = ", ".join(component_labels)
+                    bullet = f"- **{components_display}**: {bullet_text}"
+                else:
+                    bullet = f"- {bullet_text}"
+                author_text, pr_text = _collect_author_pr_text(
+                    entry, config, explicit_links=explicit_links
+                )
+                suffix_parts: list[str] = []
+                if author_text:
+                    suffix_parts.append(f"by {author_text}")
+                if pr_text:
+                    suffix_parts.append(f"in {pr_text}")
+                if suffix_parts:
+                    bullet = f"{bullet} ({' '.join(suffix_parts)})"
+                lines.append(bullet)
+            lines.append("")
+        else:
+            for entry in type_entries:
+                metadata = entry.metadata
+                entry_title = metadata.get("title", "Untitled")
+                lines.append(f"### {entry_title}")
+                lines.append("")
+                body = entry.body.strip()
+                if body:
+                    lines.append(body)
+                    lines.append("")
+                author_line = _format_author_line(entry, config, explicit_links=explicit_links)
+                if author_line:
+                    lines.append(author_line)
+                    lines.append("")
+
+    raw = "\n".join(lines).strip()
+    normalized = normalize_markdown(raw)
+    return f"{normalized}\n"
+
+
+def _show_entries_export_all(
+    ctx: CLIContext,
+    *,
+    view: ShowView,
+    compact: bool,
+    include_emoji: bool,
+    explicit_links: bool,
+    components: set[str],
+    release_mode: bool,
+    released_only: bool,
+) -> None:
+    """Handle --all flag: export all releases and optionally unreleased entries."""
+    config = ctx.ensure_config()
+    project_root = ctx.project_root
+    release_index = build_entry_release_index(project_root, project=config.id)
+
+    # Gather all releases (newest first)
+    manifests = list(iter_release_manifests(project_root))
+    manifests.sort(key=lambda m: m.created, reverse=True)
+
+    # Gather unreleased entries
+    unreleased_entries: list[Entry] = []
+    if not released_only:
+        unreleased = list(iter_entries(project_root))
+        unreleased_entries = _filter_entries_by_component(unreleased, components)
+        unreleased_entries = sort_entries_desc(unreleased_entries)
+
+    if release_mode:
+        # Release-centric output: array of release objects
+        releases_data: list[dict[str, object]] = []
+
+        # Add unreleased first (if not excluded)
+        if unreleased_entries:
+            releases_data.append(
+                _build_release_payload(None, unreleased_entries, config, compact=compact)
+            )
+
+        # Add each release
+        for manifest in manifests:
+            release_entries: list[Entry] = []
+            for entry_id in manifest.entries:
+                entry = load_release_entry(project_root, manifest, entry_id)
+                if entry is not None:
+                    release_entries.append(entry)
+            filtered = _filter_entries_by_component(release_entries, components)
+            filtered = sort_entries_desc(filtered)
+            releases_data.append(
+                _build_release_payload(manifest, filtered, config, compact=compact)
+            )
+
+        if view == "json":
+            emit_output(json.dumps(releases_data, indent=2))
+        else:
+            # Markdown: concatenate release blocks with ---
+            blocks: list[str] = []
+            if unreleased_entries:
+                blocks.append(
+                    _render_markdown_release_block(
+                        None,
+                        unreleased_entries,
+                        config,
+                        release_index,
+                        include_emoji=include_emoji,
+                        explicit_links=explicit_links,
+                        compact=compact,
+                    )
+                )
+            for manifest in manifests:
+                release_entries = []
+                for entry_id in manifest.entries:
+                    entry = load_release_entry(project_root, manifest, entry_id)
+                    if entry is not None:
+                        release_entries.append(entry)
+                filtered = _filter_entries_by_component(release_entries, components)
+                filtered = sort_entries_desc(filtered)
+                blocks.append(
+                    _render_markdown_release_block(
+                        manifest,
+                        filtered,
+                        config,
+                        release_index,
+                        include_emoji=include_emoji,
+                        explicit_links=explicit_links,
+                        compact=compact,
+                    )
+                )
+            emit_output("\n---\n\n".join(blocks), newline=False)
+    else:
+        # Entry-centric output: flat list of all entries
+        all_entries: list[Entry] = list(unreleased_entries)
+
+        for manifest in manifests:
+            for entry_id in manifest.entries:
+                entry = load_release_entry(project_root, manifest, entry_id)
+                if entry is not None:
+                    all_entries.append(entry)
+
+        all_entries = _filter_entries_by_component(all_entries, components)
+        all_entries = sort_entries_desc(all_entries)
+
+        if not all_entries:
+            raise click.ClickException("No entries found.")
+
+        if view == "json":
+            payload = _export_json_payload(
+                None,
+                all_entries,
+                config,
+                compact=compact,
+                fallback_heading="All Entries",
+                fallback_created=None,
+            )
+            emit_output(json.dumps(payload, indent=2))
+        else:
+            # Markdown: render as flat entry list
+            if compact:
+                content = _export_markdown_compact(
+                    None,
+                    all_entries,
+                    config,
+                    release_index,
+                    include_emoji=include_emoji,
+                    explicit_links=explicit_links,
+                )
+            else:
+                content = _export_markdown_release(
+                    None,
+                    all_entries,
+                    config,
+                    release_index,
+                    include_emoji=include_emoji,
+                    explicit_links=explicit_links,
+                )
+            emit_output(content, newline=False)
+
+
+def _show_entries_export_release_mode(
+    ctx: CLIContext,
+    identifiers: tuple[str, ...],
+    *,
+    view: ShowView,
+    compact: bool,
+    include_emoji: bool,
+    explicit_links: bool,
+    components: set[str],
+    entry_map: dict[str, Entry],
+    sorted_entries: list[Entry],
+) -> None:
+    """Handle --release flag with explicit identifiers: group entries by release."""
+    config = ctx.ensure_config()
+    project_root = ctx.project_root
+
+    effective_identifiers = identifiers or ("-",)
+
+    # For single release/unreleased, delegate to render_release_notes for module support
+    if len(effective_identifiers) == 1 and not components:
+        identifier = effective_identifiers[0]
+        # Check if it's a release or unreleased
+        resolutions = _resolve_identifiers_sequence(
+            [identifier],
+            project_root=project_root,
+            config=config,
+            sorted_entries=sorted_entries,
+            entry_map=entry_map,
+        )
+        if len(resolutions) == 1 and resolutions[0].kind in {"release", "unreleased"}:
+            if view == "json":
+                # Build JSON payload with module support
+                release_index = build_entry_release_index(project_root, project=config.id)
+                resolution = resolutions[0]
+                manifest = resolution.manifest if resolution.kind == "release" else None
+                entries_for_output = sorted(resolution.entries, key=_release_entry_sort_key)
+
+                fallback_heading = (
+                    manifest.title
+                    if manifest and manifest.title
+                    else ("Unreleased Changes" if resolution.kind == "unreleased" else identifier)
+                )
+                fallback_created = manifest.created if manifest else None
+                payload = _export_json_payload(
+                    manifest,
+                    entries_for_output,
+                    config,
+                    compact=compact,
+                    fallback_heading=fallback_heading,
+                    fallback_created=fallback_created,
+                )
+
+                # Add module summaries
+                modules = ctx.get_modules()
+                if modules:
+                    if manifest:
+                        previous_release = _get_release_manifest_before(
+                            project_root, manifest.version
+                        )
+                        target_module_versions = manifest.modules or None
+                    else:
+                        previous_release = _get_latest_release_manifest(project_root)
+                        target_module_versions = None
+                    previous_module_versions = (
+                        previous_release.modules if previous_release else None
+                    )
+                    module_entries, _ = _gather_module_released_entries(
+                        modules, previous_module_versions, target_module_versions
+                    )
+                    if module_entries:
+                        modules_data: list[dict[str, object]] = []
+                        for module_id in sorted(module_entries.keys()):
+                            module_config, entries = module_entries[module_id]
+                            module_payload: dict[str, object] = {
+                                "id": module_id,
+                                "name": module_config.name,
+                                "entries": [
+                                    _entry_to_dict(e, module_config, compact=True) for e in entries
+                                ],
+                            }
+                            modules_data.append(module_payload)
+                        payload["modules"] = modules_data
+
+                # Wrap in array for --release consistency
+                emit_output(json.dumps([payload], indent=2))
+                return
+            else:
+                # Markdown - call render_release_notes and prepend title
+                release_index = build_entry_release_index(project_root, project=config.id)
+                resolution = resolutions[0]
+                manifest = resolution.manifest if resolution.kind == "release" else None
+                entries_for_output = sorted(resolution.entries, key=_release_entry_sort_key)
+
+                # Build title
+                if manifest:
+                    title = manifest.title or manifest.version
+                else:
+                    title = "Unreleased Changes"
+
+                if resolution.kind == "release":
+                    release_body = (
+                        _render_release_notes_compact(
+                            entries_for_output,
+                            config,
+                            include_emoji=include_emoji,
+                            explicit_links=explicit_links,
+                        )
+                        if compact
+                        else _render_release_notes(
+                            entries_for_output,
+                            config,
+                            include_emoji=include_emoji,
+                            explicit_links=explicit_links,
+                        )
+                    )
+                    output = _compose_release_document(
+                        manifest.intro if manifest else None,
+                        release_body,
+                    )
+                else:
+                    release_body = (
+                        _export_markdown_compact(
+                            None,
+                            entries_for_output,
+                            config,
+                            release_index,
+                            include_emoji=include_emoji,
+                            explicit_links=explicit_links,
+                        )
+                        if compact
+                        else _export_markdown_release(
+                            None,
+                            entries_for_output,
+                            config,
+                            release_index,
+                            explicit_links=explicit_links,
+                            include_emoji=include_emoji,
+                        )
+                    )
+                    output = release_body.rstrip("\n")
+
+                # Prepend H1 title
+                output = f"# {title}\n\n{output}"
+
+                # Append module summaries
+                modules = ctx.get_modules()
+                if modules:
+                    if manifest:
+                        previous_release = _get_release_manifest_before(
+                            project_root, manifest.version
+                        )
+                        target_module_versions = manifest.modules or None
+                    else:
+                        previous_release = _get_latest_release_manifest(project_root)
+                        target_module_versions = None
+                    previous_module_versions = (
+                        previous_release.modules if previous_release else None
+                    )
+                    module_entries, current_versions = _gather_module_released_entries(
+                        modules, previous_module_versions, target_module_versions
+                    )
+                    version_map = target_module_versions or current_versions
+                    if module_entries:
+                        module_sections: list[str] = []
+                        for module_id in sorted(module_entries.keys()):
+                            module_config, entries = module_entries[module_id]
+                            module_body = _render_module_entries_compact(
+                                entries,
+                                module_config,
+                                include_emoji=include_emoji,
+                                explicit_links=explicit_links,
+                            )
+                            if module_body:
+                                version = version_map.get(module_id, "")
+                                header = (
+                                    f"## {module_config.name} {version}"
+                                    if version
+                                    else f"## {module_config.name}"
+                                )
+                                module_sections.append(f"{header}\n\n{module_body}")
+                        if module_sections:
+                            output = output + "\n\n---\n\n" + "\n\n".join(module_sections)
+
+                emit_output(output)
+                return
+
+    # Multiple identifiers or with component filters - use simpler grouping
+    release_index = build_entry_release_index(project_root, project=config.id)
+
+    resolutions = _resolve_identifiers_sequence(
+        effective_identifiers,
+        project_root=project_root,
+        config=config,
+        sorted_entries=sorted_entries,
+        entry_map=entry_map,
+    )
+
+    # Group resolutions by their source release
+    release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
+    for resolution in resolutions:
+        filtered = _filter_entries_by_component(resolution.entries, components)
+        filtered = sort_entries_desc(filtered)
+        if resolution.kind == "release" and resolution.manifest:
+            release_groups.append((resolution.manifest, filtered))
+        elif resolution.kind == "unreleased":
+            release_groups.append((None, filtered))
+        else:
+            # Row or entry identifiers: group by their source release
+            for entry in filtered:
+                versions = release_index.get(entry.entry_id, [])
+                if versions:
+                    # Find the manifest for the first version
+                    for manifest in iter_release_manifests(project_root):
+                        if manifest.version == versions[0]:
+                            # Check if we already have this release in groups
+                            found = False
+                            for i, (m, entries) in enumerate(release_groups):
+                                if m and m.version == manifest.version:
+                                    if entry not in entries:
+                                        release_groups[i] = (m, entries + [entry])
+                                    found = True
+                                    break
+                            if not found:
+                                release_groups.append((manifest, [entry]))
+                            break
+                else:
+                    # Unreleased entry
+                    found = False
+                    for i, (m, entries) in enumerate(release_groups):
+                        if m is None:
+                            if entry not in entries:
+                                release_groups[i] = (None, entries + [entry])
+                            found = True
+                            break
+                    if not found:
+                        release_groups.append((None, [entry]))
+
+    if not release_groups:
+        raise click.ClickException("No entries found for the given identifiers.")
+
+    if view == "json":
+        releases_data = [
+            _build_release_payload(manifest, entries, config, compact=compact)
+            for manifest, entries in release_groups
+        ]
+        emit_output(json.dumps(releases_data, indent=2))
+    else:
+        # Markdown: concatenate release blocks with ---
+        blocks = [
+            _render_markdown_release_block(
+                manifest,
+                entries,
+                config,
+                release_index,
+                include_emoji=include_emoji,
+                explicit_links=explicit_links,
+                compact=compact,
+            )
+            for manifest, entries in release_groups
+        ]
+        emit_output("\n---\n\n".join(blocks), newline=False)
+
+
 def _show_entries_export(
     ctx: CLIContext,
     identifiers: tuple[str, ...],
@@ -1963,6 +3002,9 @@ def _show_entries_export(
     include_emoji: bool,
     explicit_links: bool,
     component_filter: tuple[str, ...],
+    release_mode: bool = False,
+    select_all: bool = False,
+    released_only: bool = False,
 ) -> None:
     config = ctx.ensure_config()
     project_root = ctx.project_root
@@ -1971,6 +3013,37 @@ def _show_entries_export(
 
     compact_flag = config.export_style == EXPORT_STYLE_COMPACT if compact is None else compact
     release_index_export = build_entry_release_index(project_root, project=config.id)
+
+    # Handle --all flag: gather all releases
+    if select_all:
+        _show_entries_export_all(
+            ctx,
+            view=view,
+            compact=compact_flag,
+            include_emoji=include_emoji,
+            explicit_links=explicit_links,
+            components=components,
+            release_mode=release_mode,
+            released_only=released_only,
+        )
+        return
+
+    # Handle release mode with explicit identifiers
+    if release_mode:
+        _show_entries_export_release_mode(
+            ctx,
+            identifiers,
+            view=view,
+            compact=compact_flag,
+            include_emoji=include_emoji,
+            explicit_links=explicit_links,
+            components=components,
+            entry_map=entry_map,
+            sorted_entries=sorted_entries,
+        )
+        return
+
+    # Original entry-centric export logic
     manifest_for_export: ReleaseManifest | None = None
 
     if identifiers:
@@ -2012,12 +3085,12 @@ def _show_entries_export(
             dates = [entry.created_at for entry in export_entries if entry.created_at]
             fallback_created = min(dates) if dates else None
     else:
-        # No identifiers: export all entries
-        filtered_entries = _filter_entries_by_component(sorted_entries, components)
+        # No identifiers: export unreleased entries (default)
+        unreleased = list(iter_entries(project_root))
+        filtered_entries = _filter_entries_by_component(unreleased, components)
         export_entries = sort_entries_desc(filtered_entries)
-        fallback_heading = "All Entries"
-        dates = [entry.created_at for entry in export_entries if entry.created_at]
-        fallback_created = min(dates) if dates else None
+        fallback_heading = "Unreleased Changes"
+        fallback_created = None
 
     if not export_entries:
         raise click.ClickException(
@@ -2116,6 +3189,22 @@ def _show_entries_export(
     default=None,
     help="Render @mentions and PR references as explicit Markdown links.",
 )
+@click.option(
+    "--release",
+    is_flag=True,
+    help="Display entries grouped by release with release metadata.",
+)
+@click.option(
+    "--all",
+    "select_all",
+    is_flag=True,
+    help="Select entries from all releases plus unreleased.",
+)
+@click.option(
+    "--released-only",
+    is_flag=True,
+    help="Exclude unreleased entries (use with --all).",
+)
 @click.pass_obj
 def show_entries(
     ctx: CLIContext,
@@ -2127,6 +3216,9 @@ def show_entries(
     compact: Optional[bool],
     no_emoji: bool,
     explicit_links: Optional[bool],
+    release: bool,
+    select_all: bool,
+    released_only: bool,
 ) -> None:
     """Display changelog entries in tables, cards, or export formats."""
 
@@ -2146,6 +3238,9 @@ def show_entries(
         compact=compact,
         include_emoji=not no_emoji,
         explicit_links=resolved_explicit_links,
+        release_mode=release,
+        select_all=select_all,
+        released_only=released_only,
     )
 
 
@@ -3369,70 +4464,6 @@ def render_release_notes(
                 output = output + "\n\n---\n\n" + "\n\n".join(module_sections)
 
     emit_output(output)
-
-
-@release_group.command("notes")
-@click.argument("identifier", required=False)
-@click.option(
-    "-m",
-    "--markdown",
-    "format_choice",
-    flag_value="markdown",
-    default="markdown",
-    help="Render notes as Markdown (default).",
-)
-@click.option(
-    "-j",
-    "--json",
-    "format_choice",
-    flag_value="json",
-    help="Render notes as JSON.",
-)
-# Options shared with `release create`
-@compact_option()
-@click.option(
-    "--no-emoji",
-    is_flag=True,
-    help="Disable type emoji in Markdown output.",
-)
-@explicit_links_option()
-@click.pass_obj
-def release_notes_cmd(
-    ctx: CLIContext,
-    identifier: Optional[str],
-    format_choice: str,
-    compact: Optional[bool],
-    no_emoji: bool,
-    explicit_links: Optional[bool],
-) -> None:
-    """Display release notes for a release or the unreleased bucket.
-
-    If no identifier is provided, shows notes for the latest release.
-    """
-
-    config = ctx.ensure_config()
-    resolved_identifier = identifier
-    if resolved_identifier is None:
-        latest = _latest_semver(ctx.project_root)
-        if latest is None:
-            raise click.ClickException("No releases found. Provide a version explicitly.")
-        version, prefix = latest
-        resolved_identifier = f"{prefix}{version}"
-
-    click_ctx = click.get_current_context()
-    compact_explicit = click_ctx.get_parameter_source("compact") != ParameterSource.DEFAULT
-    # Resolve explicit_links: CLI flag overrides config default
-    resolved_explicit_links = config.explicit_links if explicit_links is None else explicit_links
-    view_choice = cast(Literal["markdown", "json"], format_choice or "markdown")
-    render_release_notes(
-        ctx,
-        identifier=resolved_identifier,
-        view=view_choice,
-        compact=compact,
-        include_emoji=not no_emoji,
-        explicit_links=resolved_explicit_links,
-        compact_explicit=compact_explicit,
-    )
 
 
 def publish_release(

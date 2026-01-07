@@ -1570,7 +1570,8 @@ def test_release_create_bump_from_implicit_zero(tmp_path: Path) -> None:
     assert (major_dir / "releases" / "1.0.0").exists()
 
 
-def test_release_notes_command(tmp_path: Path) -> None:
+def test_show_release_mode(tmp_path: Path) -> None:
+    """Test show --release flag as replacement for release notes command."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -1626,44 +1627,51 @@ def test_release_notes_command(tmp_path: Path) -> None:
     )
     assert add_unreleased_entry.exit_code == 0, add_unreleased_entry.output
 
+    # Test show v2.0.0 --release -m (replaces: release notes v2.0.0)
     notes_markdown = runner.invoke(
         cli,
         [
             "--root",
             str(project_dir),
-            "release",
-            "notes",
+            "show",
             "v2.0.0",
+            "--release",
+            "-m",
         ],
     )
     assert notes_markdown.exit_code == 0, notes_markdown.output
     assert "Second major release." in notes_markdown.output
     assert "Delta Feature" in notes_markdown.output
 
+    # Test show v2.0.0 --release -j (replaces: release notes -j v2.0.0)
     notes_json = runner.invoke(
         cli,
         [
             "--root",
             str(project_dir),
-            "release",
-            "notes",
-            "-j",
+            "show",
             "v2.0.0",
+            "--release",
+            "-j",
         ],
     )
     assert notes_json.exit_code == 0, notes_json.output
     payload = json.loads(notes_json.output)
-    assert payload["version"] == "v2.0.0"
-    assert payload["entries"][0]["title"] == "Delta Feature"
+    # With --release, output is always an array
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert payload[0]["version"] == "v2.0.0"
+    assert payload[0]["entries"][0]["title"] == "Delta Feature"
 
+    # Test show --release -m (replaces: release notes -)
     notes_unreleased = runner.invoke(
         cli,
         [
             "--root",
             str(project_dir),
-            "release",
-            "notes",
-            "-",
+            "show",
+            "--release",
+            "-m",
         ],
     )
     assert notes_unreleased.exit_code == 0, notes_unreleased.output
@@ -2521,8 +2529,8 @@ def test_explicit_links_flag_in_show_command(tmp_path: Path) -> None:
     assert "[#42](https://github.com/octocat/test-repo/pull/42)" in show_linked_result.output
 
 
-def test_explicit_links_flag_in_release_notes_command(tmp_path: Path) -> None:
-    """Test that --explicit-links works in release notes command."""
+def test_explicit_links_flag_in_show_release_command(tmp_path: Path) -> None:
+    """Test that --explicit-links works in show --release command."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -2575,9 +2583,10 @@ def test_explicit_links_flag_in_release_notes_command(tmp_path: Path) -> None:
         [
             "--root",
             str(project_dir),
-            "release",
-            "notes",
+            "show",
             "v1.0.0",
+            "--release",
+            "-m",
         ],
     )
     assert notes_result.exit_code == 0, notes_result.output
@@ -2592,10 +2601,11 @@ def test_explicit_links_flag_in_release_notes_command(tmp_path: Path) -> None:
         [
             "--root",
             str(project_dir),
-            "release",
-            "notes",
-            "--explicit-links",
+            "show",
             "v1.0.0",
+            "--release",
+            "-m",
+            "--explicit-links",
         ],
     )
     assert notes_linked_result.exit_code == 0, notes_linked_result.output

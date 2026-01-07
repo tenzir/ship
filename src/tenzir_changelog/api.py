@@ -14,7 +14,6 @@ from .cli import (
     create_entry,
     create_release,
     publish_release,
-    render_release_notes,
     run_show_entries,
     run_validate,
 )
@@ -57,8 +56,25 @@ class Changelog:
         compact: Optional[bool] = None,
         include_emoji: bool = True,
         explicit_links: bool = False,
+        release_mode: bool = False,
+        select_all: bool = False,
+        released_only: bool = False,
     ) -> None:
-        """Render entries using the same layouts as ``tenzir-changelog show``."""
+        """Render entries using the same layouts as ``tenzir-changelog show``.
+
+        Args:
+            identifiers: Row numbers, entry IDs, release versions, or "-".
+            view: Output format ("table", "card", "markdown", "json").
+            project_filter: Filter to specific project IDs.
+            component_filter: Filter to specific component labels.
+            banner: Display project banner above table output.
+            compact: Use compact bullet-list layout.
+            include_emoji: Include type emoji in output.
+            explicit_links: Render @mentions and PRs as explicit Markdown links.
+            release_mode: Display entries grouped by release with full metadata.
+            select_all: Show all entries from all releases.
+            released_only: Exclude unreleased entries (use with select_all).
+        """
 
         run_show_entries(
             self._ctx,
@@ -70,6 +86,9 @@ class Changelog:
             compact=compact,
             include_emoji=include_emoji,
             explicit_links=explicit_links,
+            release_mode=release_mode,
+            select_all=select_all,
+            released_only=released_only,
         )
 
     def add(
@@ -160,16 +179,29 @@ class Changelog:
         include_emoji: bool = True,
         explicit_links: bool = False,
     ) -> None:
-        """Render release notes for a specific release or ``-`` for unreleased."""
+        """Render release notes for a specific release or ``-`` for unreleased.
 
-        render_release_notes(
-            self._ctx,
-            identifier=identifier,
+        .. deprecated::
+            Use ``show(identifiers=[identifier], release_mode=True, view=view)``
+            instead. This method will be removed in a future version.
+        """
+        import warnings
+
+        warnings.warn(
+            "release_notes() is deprecated. Use show(identifiers=[identifier], "
+            "release_mode=True, view=view) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        # Delegate to show with release_mode
+        self.show(
+            identifiers=[identifier] if identifier != "-" else None,
             view=view,
             compact=compact,
             include_emoji=include_emoji,
             explicit_links=explicit_links,
-            compact_explicit=compact is not None,
+            release_mode=True,
         )
 
     def release_publish(
