@@ -4,6 +4,8 @@ This package contains the modular CLI implementation:
 - _core.py: CLIContext, decorators, shared utilities, main entry point
 - _rendering.py: Rich rendering functions
 - _show.py: show command and related functions
+- _export.py: markdown and JSON export formatting
+- _manifests.py: release manifest operations
 - _add.py: add command for creating entries
 - _validate.py: validate and modules commands
 - _release.py: release command group
@@ -70,7 +72,25 @@ from ._show import (
     ShowView,
     show_entries,
     run_show_entries,
+)
+
+# Re-export export functions
+from ._export import (
+    _entry_to_dict,
+    _build_release_payload,
+    _render_markdown_release_block,
+    _export_markdown_release,
+    _export_markdown_compact,
+    _export_json_payload,
+)
+
+# Re-export manifest operations
+from ._manifests import (
+    _get_module_latest_version,
+    _get_sorted_release_manifests,
+    _get_release_manifest_before,
     _get_latest_release_manifest,
+    _gather_module_released_entries,
 )
 
 # Re-export add command
@@ -129,7 +149,19 @@ __all__ = [
     "ShowView",
     "show_entries",
     "run_show_entries",
+    # Export
+    "_entry_to_dict",
+    "_build_release_payload",
+    "_render_markdown_release_block",
+    "_export_markdown_release",
+    "_export_markdown_compact",
+    "_export_json_payload",
+    # Manifests
+    "_get_module_latest_version",
+    "_get_sorted_release_manifests",
+    "_get_release_manifest_before",
     "_get_latest_release_manifest",
+    "_gather_module_released_entries",
     # Add command
     "ENTRY_TYPE_CHOICES",
     "ENTRY_TYPE_SHORTCUTS",
