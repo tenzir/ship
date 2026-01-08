@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
     Iterable,
@@ -355,19 +356,22 @@ def _sort_entries_for_display(
     release_index: dict[str, list[str]],
     release_order: dict[str, int],
 ) -> list[Entry]:
-    """Sort entries for table display: unreleased first (by date), then by release."""
+    """Sort entries so the newest entry ends up last in the table view."""
+    entries_list = list(entries)
+    unreleased_rank = len(release_order) + 1
 
-    def sort_key(entry: Entry) -> tuple[int, int, str]:
-        versions = release_index.get(entry.entry_id, [])
-        if not versions:
-            # Unreleased: group 0, sort by creation date descending
-            created_ts = entry.created_at.timestamp() if entry.created_at else 0
-            return (0, -int(created_ts * 1000), entry.entry_id)
-        # Released: group 1, sort by release order descending
-        max_order = max(release_order.get(v, 0) for v in versions)
-        return (1, -max_order, entry.entry_id)
+    def sort_key(entry: Entry) -> tuple[int, datetime, str]:
+        versions = release_index.get(entry.entry_id) or []
+        if versions:
+            ranks = [release_order.get(version, unreleased_rank) for version in versions]
+            release_rank = min(ranks)
+        else:
+            release_rank = unreleased_rank  # unreleased entries last
+        created = entry.created_at or datetime.min.replace(tzinfo=timezone.utc)
+        return (release_rank, created, entry.entry_id)
 
-    return sorted(entries, key=sort_key)
+    # Sort ascending by (release_rank, created, entry_id): oldest entries first
+    return sorted(entries_list, key=sort_key)
 
 
 def _entry_release_group(

@@ -1,12 +1,12 @@
 """CLI package for tenzir-changelog.
 
 This package contains the modular CLI implementation:
-- _core.py: CLIContext, decorators, shared utilities
+- _core.py: CLIContext, decorators, shared utilities, main entry point
 - _rendering.py: Rich rendering functions
 - _show.py: show command and related functions
 - _add.py: add command for creating entries
-
-Functions not yet extracted are imported from _cli_legacy.py.
+- _validate.py: validate and modules commands
+- _release.py: release command group
 """
 
 from __future__ import annotations
@@ -36,6 +36,8 @@ from ._core import (
     _join_with_conjunction,
     _collect_author_pr_text,
     _format_author_line,
+    _create_cli_group,
+    main,
 )
 
 # Re-export rendering utilities
@@ -94,17 +96,14 @@ from ._release import (
     release_group,
 )
 
-# Import remaining commands and functions from legacy CLI module
-from .._cli_legacy import (
-    cli,
-    main,
-)
-
 # Re-export detect_github_login from utils for backwards compatibility
 from ..utils import detect_github_login
 
-# Register commands from modular modules
-# Commands are registered here after cli is available
+# Create the main CLI group
+cli = _create_cli_group()
+
+# Register all commands with the cli group
+cli.add_command(show_entries)
 cli.add_command(add)
 cli.add_command(validate_cmd)
 cli.add_command(modules_cmd)

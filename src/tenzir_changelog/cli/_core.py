@@ -31,6 +31,7 @@ from ..entries import Entry, entry_directory
 from ..modules import Module, discover_modules_from_config
 from ..utils import (
     INFO_PREFIX,
+    abort_on_user_interrupt,
     configure_logging,
     log_debug,
     log_info,
@@ -66,6 +67,8 @@ __all__ = [
     "_join_with_conjunction",
     "_collect_author_pr_text",
     "_format_author_line",
+    "_create_cli_group",
+    "main",
 ]
 
 VERSION_FLAGS = {"--version", "-V"}
@@ -494,16 +497,17 @@ def _build_prs_structured(
 
 
 def _build_authors_structured(metadata: Mapping[str, Any]) -> list[dict[str, str]]:
-    """Build structured author metadata for JSON export."""
-    authors: list[dict[str, str]] = []
-    for author in metadata.get("authors") or []:
-        entry: dict[str, str] = {"name": author}
-        if author.startswith("@"):
-            handle = author[1:]
-            entry["github"] = handle
-            entry["url"] = f"https://github.com/{handle}"
-        authors.append(entry)
-    return authors
+    """Build structured author objects with URLs for JSON export."""
+    raw_authors = metadata.get("authors") or []
+    result: list[dict[str, str]] = []
+    for author in raw_authors:
+        if " " in author:
+            # Full name, not a GitHub handle
+            result.append({"name": author})
+        else:
+            # GitHub handle
+            result.append({"handle": author, "url": f"https://github.com/{author}"})
+    return result
 
 
 def _filter_entries_by_project(
@@ -520,25 +524,27 @@ def _filter_entries_by_project(
 
 
 def _normalize_component_filters(values: Iterable[str], config: Config) -> set[str]:
-    """Normalize component filter values to lowercase, expanding aliases."""
-    # Build alias map from config
-    alias_map: dict[str, str] = {}
-    for comp in config.components or []:
-        comp_lower = comp.lower()
-        alias_map[comp_lower] = comp_lower
-        aliases = (getattr(config, "component_aliases", None) or {}).get(comp, [])
-        for alias in aliases:
-            alias_map[alias.lower()] = comp_lower
-
-    result: set[str] = set()
-    for v in values:
-        v_stripped = v.strip()
-        if not v_stripped:
+    """Validate and normalize component filters using config defaults."""
+    normalized: set[str] = set()
+    if not values:
+        return normalized
+    allowed_lookup = {component.lower(): component for component in config.components}
+    unknown: list[str] = []
+    for raw_value in values:
+        stripped = raw_value.strip()
+        if not stripped:
             continue
-        v_lower = v_stripped.lower()
-        canonical = alias_map.get(v_lower, v_lower)
-        result.add(canonical)
-    return result
+        lowered = stripped.lower()
+        if config.components and lowered not in allowed_lookup:
+            unknown.append(stripped)
+            continue
+        normalized.add(allowed_lookup.get(lowered, stripped))
+    if unknown:
+        allowed = ", ".join(config.components)
+        raise click.ClickException(
+            f"Unknown component filter(s): {', '.join(sorted(unknown))}. Allowed components: {allowed}"
+        )
+    return normalized
 
 
 def _filter_entries_by_component(entries: Iterable[Entry], components: set[str]) -> list[Entry]:
@@ -599,13 +605,50 @@ def _collect_author_pr_text(
 
 
 def _format_author_line(entry: Entry, config: Config, *, explicit_links: bool = False) -> str:
-    """Format the attribution line for an entry."""
+    """Format the attribution line for an entry as italic markdown."""
     author_text, pr_text = _collect_author_pr_text(entry, config, explicit_links=explicit_links)
-    parts: list[str] = []
+
+    if not author_text and not pr_text:
+        return ""
+
+    parts = []
     if author_text:
-        parts.append(f"by {author_text}")
+        parts.append(f"By {author_text}")
     if pr_text:
         parts.append(f"in {pr_text}")
-    if parts:
-        return f"— {' '.join(parts)}"
-    return ""
+    return "*" + " ".join(parts) + ".*"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for console_scripts."""
+    # Import cli here to avoid circular import at module load time
+    from . import cli
+
+    args = list(argv) if argv is not None else list(sys.argv[1:])
+
+    if any(flag in args for flag in VERSION_FLAGS):
+        click.echo(_resolve_cli_version())
+        return 0
+
+    # If no command is specified, default to 'show'
+    # Check if any arg is a known command
+    has_command = any(arg in cli.commands for arg in args)
+    if not has_command:
+        # No command found, inject 'show' at the end (after options like --root)
+        args.append("show")
+
+    try:
+        cli.main(args=args, prog_name="tenzir-changelog", standalone_mode=False)
+    except click.ClickException as exc:
+        exc.show(file=sys.stderr)
+        exit_code = getattr(exc, "exit_code", 1)
+        return exit_code if isinstance(exit_code, int) else 1
+    except KeyboardInterrupt as exc:
+        try:
+            abort_on_user_interrupt(exc)
+        except click.exceptions.Exit as exit_exc:
+            exit_code = getattr(exit_exc, "exit_code", 130)
+            return exit_code if isinstance(exit_code, int) else 130
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 0
+    return 0
