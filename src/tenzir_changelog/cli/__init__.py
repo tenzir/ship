@@ -79,6 +79,13 @@ from ._add import (
     add,
 )
 
+# Re-export validate and modules commands
+from ._validate import (
+    run_validate,
+    validate_cmd,
+    modules_cmd,
+)
+
 # Import remaining commands and functions from legacy CLI module
 # These will be extracted into separate modules in the future
 from .._cli_legacy import (
@@ -87,15 +94,16 @@ from .._cli_legacy import (
     create_release,
     render_release_notes,
     publish_release,
-    run_validate,
 )
 
 # Re-export detect_github_login from utils for backwards compatibility
 from ..utils import detect_github_login
 
 # Register commands from modular modules
-# The add command is registered here after cli is available
+# Commands are registered here after cli is available
 cli.add_command(add)
+cli.add_command(validate_cmd)
+cli.add_command(modules_cmd)
 
 
 __all__ = [
@@ -123,11 +131,14 @@ __all__ = [
     "ENTRY_TYPE_SHORTCUTS",
     "create_entry",
     "add",
-    # Release/Validate (from legacy)
+    # Release (from legacy)
     "create_release",
     "render_release_notes",
     "publish_release",
+    # Validate/Modules
     "run_validate",
+    "validate_cmd",
+    "modules_cmd",
     # Rendering
     "IdentifierResolution",
     "ColumnSpec",
