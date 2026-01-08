@@ -99,7 +99,9 @@ def test_python_api_add_handles_missing_authors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     project_dir = _bootstrap_project(tmp_path)
-    monkeypatch.setattr("tenzir_changelog.cli.detect_github_login", lambda log_success=False: None)
+    monkeypatch.setattr(
+        "tenzir_changelog._cli_legacy.detect_github_login", lambda log_success=False: None
+    )
     client = Changelog(root=project_dir)
 
     path = client.add(

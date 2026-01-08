@@ -42,7 +42,6 @@ from .config import (
     EXPORT_STYLE_COMPACT,
     PACKAGE_METADATA_FILENAME,
     default_config_path,
-    load_project_config,
     package_metadata_path,
     save_config,
 )
@@ -56,7 +55,7 @@ from .entries import (
     sort_entries_desc,
     write_entry,
 )
-from .modules import Module, discover_modules_from_config
+from .modules import Module
 from .releases import (
     ReleaseManifest,
     NOTES_FILENAME,
@@ -97,6 +96,7 @@ from .utils import (
     push_git_tag,
     slugify,
 )
+from .cli._core import CLIContext
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -588,54 +588,6 @@ def _add_table_column(
         max_width=max_width,
         no_wrap=no_wrap,
     )
-
-
-@dataclass
-class CLIContext:
-    """Shared command context."""
-
-    project_root: Path
-    config_path: Path
-    _config: Optional[Config] = None
-    _modules: list[Module] | None = None  # cached discovered modules
-
-    def ensure_config(self, *, create_if_missing: bool = False) -> Config:
-        if self._config is None:
-            config_path = self.config_path
-            project_root = config_path.parent
-            self.project_root = project_root
-            try:
-                self._config = load_project_config(project_root)
-            except FileNotFoundError:
-                if not create_if_missing:
-                    log_info(f"no tenzir-changelog project detected at {project_root}.")
-                    log_info("run 'tenzir-changelog add' from your project root or provide --root.")
-                    raise click.exceptions.Exit(1)
-                config = _initialize_project_scaffold(
-                    project_root=project_root,
-                    config_path=config_path,
-                )
-                self._config = config
-            except ValueError as error:
-                raise click.ClickException(str(error)) from error
-        return self._config
-
-    def reset_config(self, config: Config) -> None:
-        self._config = config
-
-    def has_modules(self) -> bool:
-        """Return True if modules are configured."""
-        return self.ensure_config().modules is not None
-
-    def get_modules(self) -> list[Module]:
-        """Discover and return cached modules.
-
-        Returns an empty list if no modules are configured.
-        """
-        if self._modules is None:
-            config = self.ensure_config()
-            self._modules = discover_modules_from_config(self.project_root, config)
-        return self._modules
 
 
 def _default_project_id(project_root: Path) -> str:
