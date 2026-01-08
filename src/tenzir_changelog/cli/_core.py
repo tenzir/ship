@@ -70,7 +70,7 @@ __all__ = [
 
 VERSION_FLAGS = {"--version", "-V"}
 
-DEFAULT_ENTRY_TYPE = "change"
+DEFAULT_ENTRY_TYPE = "feature"
 DEFAULT_PROJECT_ID = "project"
 
 # Style mappings for entry types

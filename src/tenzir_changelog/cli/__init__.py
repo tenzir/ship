@@ -4,6 +4,7 @@ This package contains the modular CLI implementation:
 - _core.py: CLIContext, decorators, shared utilities
 - _rendering.py: Rich rendering functions
 - _show.py: show command and related functions
+- _add.py: add command for creating entries
 
 Functions not yet extracted are imported from _cli_legacy.py.
 """
@@ -70,22 +71,31 @@ from ._show import (
     _get_latest_release_manifest,
 )
 
+# Re-export add command
+from ._add import (
+    ENTRY_TYPE_CHOICES,
+    ENTRY_TYPE_SHORTCUTS,
+    create_entry,
+    add,
+)
+
 # Import remaining commands and functions from legacy CLI module
 # These will be extracted into separate modules in the future
 from .._cli_legacy import (
     cli,
     main,
-    create_entry,
     create_release,
     render_release_notes,
     publish_release,
     run_validate,
-    detect_github_login,
 )
 
-# Register the show command from new modular implementation
-# Note: The legacy cli already has show_entries registered, but we can override it
-# For now, we use the legacy cli which has all commands registered
+# Re-export detect_github_login from utils for backwards compatibility
+from ..utils import detect_github_login
+
+# Register commands from modular modules
+# The add command is registered here after cli is available
+cli.add_command(add)
 
 
 __all__ = [
@@ -108,8 +118,12 @@ __all__ = [
     "show_entries",
     "run_show_entries",
     "_get_latest_release_manifest",
-    # Add/Release/Validate (from legacy)
+    # Add command
+    "ENTRY_TYPE_CHOICES",
+    "ENTRY_TYPE_SHORTCUTS",
     "create_entry",
+    "add",
+    # Release/Validate (from legacy)
     "create_release",
     "render_release_notes",
     "publish_release",

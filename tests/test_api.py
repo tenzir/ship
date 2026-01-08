@@ -100,7 +100,7 @@ def test_python_api_add_handles_missing_authors(
 ) -> None:
     project_dir = _bootstrap_project(tmp_path)
     monkeypatch.setattr(
-        "tenzir_changelog._cli_legacy.detect_github_login", lambda log_success=False: None
+        "tenzir_changelog.cli._add.detect_github_login", lambda log_success=False: None
     )
     client = Changelog(root=project_dir)
 
