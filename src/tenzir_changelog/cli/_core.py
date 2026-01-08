@@ -81,14 +81,21 @@ ENTRY_TYPE_STYLES: dict[str, str] = {
     "change": "blue",
 }
 
-ENTRY_TYPE_EMOJIS: dict[str, str] = {
-    "feature": "\u2728",  # sparkles
-    "bugfix": "\U0001f41b",  # bug
-    "breaking": "\U0001f4a5",  # collision
-    "change": "\U0001f504",  # arrows counterclockwise
+ENTRY_TYPE_EMOJIS = {
+    "breaking": "💥",
+    "feature": "🚀",
+    "bugfix": "🐞",
+    "change": "🔧",
 }
 
-ENTRY_EXPORT_ORDER = ("breaking", "feature", "bugfix", "change")
+ENTRY_EXPORT_ORDER = ("breaking", "feature", "change", "bugfix")
+
+TYPE_SECTION_TITLES = {
+    "breaking": "Breaking changes",
+    "feature": "Features",
+    "change": "Changes",
+    "bugfix": "Bug fixes",
+}
 
 
 def _resolve_cli_version() -> str:
@@ -411,23 +418,29 @@ def _create_cli_group() -> click.Group:
 
 
 def _format_section_title(entry_type: str, include_emoji: bool) -> str:
-    """Format a section title with optional emoji prefix."""
-    emoji = ENTRY_TYPE_EMOJIS.get(entry_type, "")
-    label = entry_type.replace("_", " ").title()
-    plural = f"{label}s" if label.lower() not in ("breaking",) else f"{label} changes"
-    if include_emoji and emoji:
-        return f"{emoji} {plural}"
-    return plural
+    """Return the section title with an optional type emoji prefix."""
+    section_title = TYPE_SECTION_TITLES.get(entry_type, entry_type.title())
+    if not include_emoji:
+        return section_title
+    emoji = ENTRY_TYPE_EMOJIS.get(entry_type)
+    if not emoji:
+        return section_title
+    return f"{emoji} {section_title}"
 
 
 def _format_author(author: str, *, explicit_links: bool = False) -> str:
-    """Format an author name, potentially as a GitHub link."""
-    if author.startswith("@"):
-        handle = author[1:]
-        if explicit_links:
-            return f"[@{handle}](https://github.com/{handle})"
-        return f"@{handle}"
-    return author
+    """Format an author for display, adding @ prefix only for GitHub-style handles.
+
+    Args:
+        author: The author name or GitHub handle.
+        explicit_links: If True, wrap GitHub handles in markdown links.
+    """
+    if " " in author:
+        return author
+    handle = f"@{author}"
+    if explicit_links:
+        return f"[{handle}](https://github.com/{author})"
+    return handle
 
 
 def _type_emoji(entry_type: str, *, include_emoji: bool = True) -> str:
@@ -557,21 +570,30 @@ def _collect_author_pr_text(
     entry: Entry, config: Config, *, explicit_links: bool = False
 ) -> tuple[str, str]:
     """Collect author and PR text for attribution lines."""
-    authors = entry.metadata.get("authors") or []
-    formatted_authors = [_format_author(a, explicit_links=explicit_links) for a in authors]
-    author_text = _join_with_conjunction(formatted_authors)
+    metadata = entry.metadata
+    # Support both plural `authors` and singular `author` keys
+    authors = metadata.get("authors")
+    if authors is None:
+        authors = metadata.get("author")
+    authors = authors or []
+    if isinstance(authors, str):
+        authors = [authors]
+    authors = [author.strip() for author in authors if author and author.strip()]
 
-    pr_numbers = _parse_pr_numbers(entry.metadata)
-    if pr_numbers and config.repository:
-        if explicit_links:
-            pr_links = [
-                f"[#{num}](https://github.com/{config.repository}/pull/{num})" for num in pr_numbers
-            ]
+    author_handles = [_format_author(author, explicit_links=explicit_links) for author in authors]
+    author_text = _join_with_conjunction(author_handles)
+
+    prs = _parse_pr_numbers(metadata)
+
+    repo = config.repository
+    pr_refs: list[str] = []
+    for pr in prs:
+        label = f"#{pr}"
+        if explicit_links and repo:
+            pr_refs.append(f"[{label}](https://github.com/{repo}/pull/{pr})")
         else:
-            pr_links = [f"#{num}" for num in pr_numbers]
-        pr_text = _join_with_conjunction(pr_links)
-    else:
-        pr_text = ""
+            pr_refs.append(label)
+    pr_text = _join_with_conjunction(pr_refs)
 
     return author_text, pr_text
 
