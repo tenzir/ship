@@ -170,40 +170,6 @@ class Changelog:
 
         return version
 
-    def release_notes(
-        self,
-        identifier: str,
-        *,
-        view: LiteralMarkdownJson = "markdown",
-        compact: Optional[bool] = None,
-        include_emoji: bool = True,
-        explicit_links: bool = False,
-    ) -> None:
-        """Render release notes for a specific release or ``-`` for unreleased.
-
-        .. deprecated::
-            Use ``show(identifiers=[identifier], release_mode=True, view=view)``
-            instead. This method will be removed in a future version.
-        """
-        import warnings
-
-        warnings.warn(
-            "release_notes() is deprecated. Use show(identifiers=[identifier], "
-            "release_mode=True, view=view) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        # Delegate to show with release_mode
-        self.show(
-            identifiers=[identifier] if identifier != "-" else None,
-            view=view,
-            compact=compact,
-            include_emoji=include_emoji,
-            explicit_links=explicit_links,
-            release_mode=True,
-        )
-
     def release_publish(
         self,
         *,

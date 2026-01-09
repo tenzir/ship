@@ -399,7 +399,7 @@ def normalize_markdown(text: str) -> str:
     """Return Markdown with paragraphs normalized to single lines."""
     if not text.strip():
         return ""
-    formatted = mdformat.text(text, options={"wrap": "no"})
+    formatted = mdformat.text(text, options={"wrap": "no"}, extensions=["gfm"])
     return formatted.rstrip("\n")
 
 

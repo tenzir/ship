@@ -110,7 +110,6 @@ from ._validate import (
 # Re-export release commands
 from ._release import (
     create_release,
-    render_release_notes,
     publish_release,
     release_group,
 )
@@ -171,7 +170,6 @@ __all__ = [
     "add",
     # Release
     "create_release",
-    "render_release_notes",
     "publish_release",
     "release_group",
     # Validate

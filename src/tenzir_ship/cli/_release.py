@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from datetime import date, datetime
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 import click
 from click.core import ParameterSource
@@ -55,23 +54,16 @@ from ._rendering import (
 )
 from ._show import (
     _collect_unused_entries_for_release,
-    _entry_to_dict,
-    _export_json_payload,
-    _gather_entry_context,
     _gather_module_released_entries,
     _get_latest_release_manifest,
-    _get_release_manifest_before,
-    _resolve_identifiers_sequence,
 )
 
 __all__ = [
     "create_release",
-    "render_release_notes",
     "publish_release",
     "release_group",
     "release_create_cmd",
     "release_version_cmd",
-    "release_notes_cmd",
     "release_publish_cmd",
     # Helper functions
     "_find_release_manifest",
@@ -444,140 +436,6 @@ def create_release(
     click.echo(version)
 
 
-def render_release_notes(
-    ctx: CLIContext,
-    *,
-    identifier: str,
-    view: Literal["markdown", "json"],
-    compact: Optional[bool],
-    include_emoji: bool,
-    compact_explicit: bool,
-    explicit_links: bool = False,
-) -> None:
-    """Python wrapper to display release notes in code contexts."""
-
-    config = ctx.ensure_config()
-    project_root = ctx.project_root
-
-    if not identifier.strip():
-        raise click.ClickException("Provide a release version (e.g., v1.0.0).")
-
-    entry_map, _, _, sorted_entries = _gather_entry_context(project_root)
-    resolutions = _resolve_identifiers_sequence(
-        [identifier],
-        project_root=project_root,
-        config=config,
-        sorted_entries=sorted_entries,
-        entry_map=entry_map,
-        allowed_kinds={"release"},
-    )
-    resolution = resolutions[0]
-    manifest = resolution.manifest
-
-    compact_flag = (
-        bool(compact) if compact_explicit else config.export_style == EXPORT_STYLE_COMPACT
-    )
-    if view not in {"markdown", "json"}:
-        raise click.ClickException(f"Unsupported notes format '{view}'.")
-
-    entries_for_output = sorted(resolution.entries, key=_release_entry_sort_key)
-
-    if manifest is None:
-        raise click.ClickException(f"Release '{identifier}' not found.")
-
-    if view == "json":
-        fallback_heading = manifest.title if manifest.title else resolution.identifier
-        fallback_created = manifest.created
-        payload = _export_json_payload(
-            manifest,
-            entries_for_output,
-            config,
-            compact=compact_flag,
-            fallback_heading=fallback_heading,
-            fallback_created=fallback_created,
-        )
-        # Add module summaries to JSON output
-        modules = ctx.get_modules()
-        if modules:
-            # Use the release before this one as baseline for filtering
-            previous_release = _get_release_manifest_before(project_root, manifest.version)
-            target_module_versions = manifest.modules or None
-            previous_module_versions = previous_release.modules if previous_release else None
-            module_entries, _ = _gather_module_released_entries(
-                modules, previous_module_versions, target_module_versions
-            )
-            if module_entries:
-                modules_data: list[dict[str, object]] = []
-                for module_id in sorted(module_entries.keys()):
-                    module_config, entries = module_entries[module_id]
-                    module_payload: dict[str, object] = {
-                        "id": module_id,
-                        "name": module_config.name,
-                        "entries": [
-                            _entry_to_dict(e, module_config, compact=True) for e in entries
-                        ],
-                    }
-                    modules_data.append(module_payload)
-                payload["modules"] = modules_data
-        emit_output(json.dumps(payload, indent=2))
-        return
-
-    release_body = (
-        _render_release_notes_compact(
-            entries_for_output,
-            config,
-            include_emoji=include_emoji,
-            explicit_links=explicit_links,
-        )
-        if compact_flag
-        else _render_release_notes(
-            entries_for_output,
-            config,
-            include_emoji=include_emoji,
-            explicit_links=explicit_links,
-        )
-    )
-    output = _compose_release_document(
-        manifest.intro,
-        release_body,
-    )
-
-    # Append module summaries if modules are configured
-    modules = ctx.get_modules()
-    if modules:
-        # Use the release before this one as baseline for filtering
-        previous_release = _get_release_manifest_before(project_root, manifest.version)
-        target_module_versions = manifest.modules or None
-        previous_module_versions = previous_release.modules if previous_release else None
-        module_entries, current_versions = _gather_module_released_entries(
-            modules, previous_module_versions, target_module_versions
-        )
-        # Use target versions if rendering a specific release, else current versions
-        version_map = target_module_versions or current_versions
-        if module_entries:
-            module_sections: list[str] = []
-            for module_id in sorted(module_entries.keys()):
-                module_config, entries = module_entries[module_id]
-                module_body = _render_module_entries_compact(
-                    entries,
-                    module_config,
-                    include_emoji=include_emoji,
-                    explicit_links=explicit_links,
-                )
-                if module_body:
-                    version_str = version_map.get(module_id, "")
-                    header = (
-                        f"## {module_config.name} {version_str}"
-                        if version_str
-                        else f"## {module_config.name}"
-                    )
-                    module_sections.append(f"{header}\n\n{module_body}")
-            if module_sections:
-                output = output + "\n\n---\n\n" + "\n\n".join(module_sections)
-
-    emit_output(output)
-
-
 def publish_release(
     ctx: CLIContext,
     *,
@@ -835,58 +693,6 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
         version = version.lstrip("vV")
 
     emit_output(version)
-
-
-@release_group.command("notes")
-@click.argument("version", required=False, default=None)
-@click.option(
-    "--format",
-    "view",
-    type=click.Choice(["markdown", "json"]),
-    default="markdown",
-    help="Output format for release notes.",
-)
-@compact_option()
-@click.option("--emoji/--no-emoji", default=True, help="Include/exclude type emoji in output.")
-@explicit_links_option()
-@click.pass_obj
-def release_notes_cmd(
-    ctx: CLIContext,
-    version: Optional[str],
-    view: str,
-    compact: Optional[bool],
-    emoji: bool,
-    explicit_links: Optional[bool],
-) -> None:
-    """Render release notes for a specific release version.
-
-    If no VERSION is provided, shows notes for the latest release.
-    """
-
-    config = ctx.ensure_config()
-    project_root = ctx.project_root
-
-    # If no version specified, find the latest release
-    if version is None:
-        manifests = list(iter_release_manifests(project_root))
-        if not manifests:
-            raise click.ClickException("No releases found. Create a release first.")
-        manifests.sort(key=lambda m: m.created, reverse=True)
-        version = manifests[0].version
-
-    click_ctx = click.get_current_context()
-    compact_explicit = click_ctx.get_parameter_source("compact") != ParameterSource.DEFAULT
-    # Resolve explicit_links: CLI flag overrides config default
-    resolved_explicit_links = config.explicit_links if explicit_links is None else explicit_links
-    render_release_notes(
-        ctx,
-        identifier=version,
-        view=view,  # type: ignore[arg-type]
-        compact=compact,
-        include_emoji=emoji,
-        compact_explicit=compact_explicit,
-        explicit_links=resolved_explicit_links,
-    )
 
 
 @release_group.command("publish")
