@@ -905,7 +905,8 @@ def test_compact_export_style_from_config(tmp_path: Path) -> None:
     assert "- Adds compact defaults." in get_result.output
 
 
-def test_get_unreleased_token(tmp_path: Path) -> None:
+def test_get_unreleased_flag(tmp_path: Path) -> None:
+    """Test the --unreleased flag for filtering to unreleased entries."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -930,23 +931,22 @@ def test_get_unreleased_token(tmp_path: Path) -> None:
             "--type",
             "feature",
             "--description",
-            "Get unreleased entries via token.",
+            "Get unreleased entries via flag.",
             "--author",
             "",
         ],
     )
     assert add_result.exit_code == 0, add_result.output
 
-    terminal_result = runner.invoke(cli, ["--root", str(project_dir), "show", "-c", "unreleased"])
+    # Test --unreleased flag with card view
+    terminal_result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "-c", "--unreleased"]
+    )
     assert terminal_result.exit_code == 0, terminal_result.output
     plain_output = click.utils.strip_ansi(terminal_result.output)
     assert "Pending Feature" in plain_output
 
-    dash_terminal = runner.invoke(cli, ["--root", str(project_dir), "show", "-c", "--", "-"])
-    assert dash_terminal.exit_code == 0, dash_terminal.output
-    dash_output = click.utils.strip_ansi(dash_terminal.output)
-    assert "Pending Feature" in dash_output
-
+    # Test --unreleased flag with markdown view
     markdown_result = runner.invoke(
         cli,
         [
@@ -954,12 +954,13 @@ def test_get_unreleased_token(tmp_path: Path) -> None:
             str(project_dir),
             "show",
             "-m",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert markdown_result.exit_code == 0, markdown_result.output
     assert "### Pending Feature" in markdown_result.output
 
+    # Test --unreleased with --no-emoji
     markdown_plain = runner.invoke(
         cli,
         [
@@ -968,26 +969,14 @@ def test_get_unreleased_token(tmp_path: Path) -> None:
             "show",
             "-m",
             "--no-emoji",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert markdown_plain.exit_code == 0, markdown_plain.output
     assert "### Pending Feature" in markdown_plain.output
     assert "🚀 Pending Feature" not in markdown_plain.output
 
-    markdown_dash = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "show",
-            "-m",
-            "--",
-            "-",
-        ],
-    )
-    assert markdown_dash.exit_code == 0, markdown_dash.output
-
+    # Test --unreleased flag with JSON view
     json_result = runner.invoke(
         cli,
         [
@@ -995,7 +984,7 @@ def test_get_unreleased_token(tmp_path: Path) -> None:
             str(project_dir),
             "show",
             "-j",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert json_result.exit_code == 0, json_result.output
@@ -1006,47 +995,23 @@ def test_get_unreleased_token(tmp_path: Path) -> None:
     assert pending_entry["title"] == "Pending Feature"
     assert pending_entry["project"] == "sample"
 
-    json_plain = runner.invoke(
+    # Test --unreleased with table view (default)
+    table_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "show",
-            "-j",
-            "--no-emoji",
-            "unreleased",
-        ],
+        ["--root", str(project_dir), "show", "--unreleased"],
     )
-    assert json_plain.exit_code == 0, json_plain.output
-    payload_no_emoji = json.loads(json_plain.output)
-    assert payload_no_emoji["entries"][0]["title"] == "Pending Feature"
+    assert table_result.exit_code == 0, table_result.output
 
-    json_dash = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "show",
-            "-j",
-            "--",
-            "-",
-        ],
+    # Test that 'unreleased' as identifier is rejected
+    invalid_result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "unreleased"]
     )
-    assert json_dash.exit_code == 0, json_dash.output
-    dash_payload = json.loads(json_dash.output)
-    assert dash_payload["entries"][0]["title"] == "Pending Feature"
+    assert invalid_result.exit_code != 0
+    assert "not a valid identifier" in invalid_result.output
 
-    list_unreleased = runner.invoke(
-        cli,
-        ["--root", str(project_dir), "show", "unreleased"],
-    )
-    assert list_unreleased.exit_code == 0, list_unreleased.output
-
-    list_dash = runner.invoke(
-        cli,
-        ["--root", str(project_dir), "show", "--", "-"],
-    )
-    assert list_dash.exit_code == 0, list_dash.output
+    # Test that '-' as identifier is rejected
+    dash_result = runner.invoke(cli, ["--root", str(project_dir), "show", "--", "-"])
+    assert dash_result.exit_code != 0
 
 
 def test_component_filtering(tmp_path: Path) -> None:
@@ -1130,7 +1095,7 @@ def test_component_filtering(tmp_path: Path) -> None:
             "-m",
             "--component",
             "docs",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert markdown_docs.exit_code == 0, markdown_docs.output
@@ -1145,7 +1110,7 @@ def test_component_filtering(tmp_path: Path) -> None:
             "-j",
             "--component",
             "docs",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert json_docs.exit_code == 0, json_docs.output
@@ -1663,19 +1628,19 @@ def test_show_release_mode(tmp_path: Path) -> None:
     assert payload[0]["version"] == "v2.0.0"
     assert payload[0]["entries"][0]["title"] == "Delta Feature"
 
-    # Test show --release -m (replaces: release notes -)
-    notes_unreleased = runner.invoke(
+    # Test show --unreleased -m (shows unreleased entries in markdown)
+    show_unreleased = runner.invoke(
         cli,
         [
             "--root",
             str(project_dir),
             "show",
-            "--release",
+            "--unreleased",
             "-m",
         ],
     )
-    assert notes_unreleased.exit_code == 0, notes_unreleased.output
-    assert "Epsilon Fix" in notes_unreleased.output
+    assert show_unreleased.exit_code == 0, show_unreleased.output
+    assert "Epsilon Fix" in show_unreleased.output
 
 
 def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -2501,7 +2466,7 @@ def test_explicit_links_flag_in_show_command(tmp_path: Path) -> None:
             str(project_dir),
             "show",
             "-m",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert show_result.exit_code == 0, show_result.output
@@ -2520,7 +2485,7 @@ def test_explicit_links_flag_in_show_command(tmp_path: Path) -> None:
             "show",
             "-m",
             "--explicit-links",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert show_linked_result.exit_code == 0, show_linked_result.output
@@ -2648,7 +2613,7 @@ def test_explicit_links_preserves_full_names(tmp_path: Path) -> None:
             "show",
             "-m",
             "--explicit-links",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert show_result.exit_code == 0, show_result.output
@@ -2700,7 +2665,7 @@ def test_explicit_links_without_repository(tmp_path: Path) -> None:
             "show",
             "-m",
             "--explicit-links",
-            "unreleased",
+            "--unreleased",
         ],
     )
     assert show_result.exit_code == 0, show_result.output

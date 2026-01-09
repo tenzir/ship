@@ -113,7 +113,7 @@ def _command_help_text(
     summary: str,
     command_name: str,
     verb: str,
-    row_hint: str = "Row numbers (e.g., 1, 2, 3), 'unreleased', or '-'",
+    row_hint: str = "Row numbers (e.g., 1, 2, 3)",
     version_hint: str = "to show release details",
 ) -> str:
     """Build consistent help text for entry-addressing commands."""

@@ -340,7 +340,9 @@ def test_show_release_includes_module_sections(tmp_path: Path) -> None:
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
+    result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+    )
 
     assert result.exit_code == 0
     # Main project entry with full body
@@ -371,7 +373,9 @@ def test_show_release_module_entries_are_compact(tmp_path: Path) -> None:
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
+    result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+    )
 
     assert result.exit_code == 0
     # Module entry appears as bullet with emoji prefix and title
@@ -400,7 +404,9 @@ def test_show_release_excludes_unreleased_module_entries(tmp_path: Path) -> None
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
+    result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+    )
 
     assert result.exit_code == 0
     # Parent entry is included
@@ -429,7 +435,9 @@ def test_show_release_json_includes_modules(tmp_path: Path) -> None:
     create_entry(project_dir, "Parent Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-j"])
+    result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "--release", "-j", "--unreleased"]
+    )
 
     assert result.exit_code == 0
     data = json.loads(result.output)
@@ -454,7 +462,9 @@ def test_show_release_no_modules_no_separator(tmp_path: Path) -> None:
     create_entry(project_dir, "Test Feature")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--release", "-m"])
+    result = runner.invoke(
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+    )
 
     assert result.exit_code == 0
     assert "Test Feature" in result.output
