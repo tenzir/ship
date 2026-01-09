@@ -10,10 +10,8 @@ management, release coordination, and shipping workflows across repositories.
   pulls metadata from Git and GitHub, pre-filling authors and PR references.
 - 📦 **Release assembly**: Create release manifests with narrative introductions
   and structured entry lists, ready for documentation pipelines.
-- ✅ **Validation**: Ensure entry metadata and release manifests stay consistent
-  and complete across your project.
-- 🔧 **Extensible**: YAML configuration and a Python API for integration into
-  custom release workflows.
+- 🔧 **CLI and Python API**: Use the command line for interactive workflows or
+  the Python API for automation.
 
 ## 📦 Installation
 
