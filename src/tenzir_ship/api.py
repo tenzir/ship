@@ -57,13 +57,13 @@ class Changelog:
         include_emoji: bool = True,
         explicit_links: bool = False,
         release_mode: bool = False,
-        select_all: bool = False,
-        released_only: bool = False,
     ) -> None:
         """Render entries using the same layouts as ``tenzir-ship show``.
 
         Args:
-            identifiers: Row numbers, entry IDs, release versions, or "-".
+            identifiers: Row numbers, entry IDs, release versions, scope tokens,
+                or "-". Scope tokens control which entries to display:
+                "all" (default), "unreleased", "released", or "latest".
             view: Output format ("table", "card", "markdown", "json").
             project_filter: Filter to specific project IDs.
             component_filter: Filter to specific component labels.
@@ -72,8 +72,6 @@ class Changelog:
             include_emoji: Include type emoji in output.
             explicit_links: Render @mentions and PRs as explicit Markdown links.
             release_mode: Display entries grouped by release with full metadata.
-            select_all: Show all entries from all releases.
-            released_only: Exclude unreleased entries (use with select_all).
         """
 
         run_show_entries(
@@ -87,8 +85,6 @@ class Changelog:
             include_emoji=include_emoji,
             explicit_links=explicit_links,
             release_mode=release_mode,
-            select_all=select_all,
-            released_only=released_only,
         )
 
     def add(
