@@ -55,6 +55,7 @@ __all__ = [
     "IdentifierResolution",
     "OverflowMethod",
     "JustifyMethod",
+    "create_table",
     "_print_renderable",
     "_entries_table_layout",
     "_ellipsis_cell",
@@ -77,6 +78,22 @@ __all__ = [
     "_release_entry_sort_key",
     "_build_release_sort_order",
 ]
+
+
+def create_table(expand: bool = False, **kwargs) -> Table:
+    """Create a borderless table with consistent styling.
+
+    This is the standard table style used across the CLI. It has no borders,
+    relying on spacing and optional manual divider columns for visual separation.
+
+    Args:
+        expand: Whether the table should expand to fill available width.
+        **kwargs: Additional arguments passed to rich.table.Table
+
+    Returns:
+        A configured Table instance
+    """
+    return Table(box=None, show_lines=False, expand=expand, pad_edge=False, **kwargs)
 
 
 IdentifierKind = Literal["row", "entry", "release", "unreleased"]
@@ -103,6 +120,7 @@ class ColumnSpec(TypedDict, total=False):
     overflow: OverflowMethod
     no_wrap: bool
     min_width: int
+    ratio: int
 
 
 def _print_renderable(renderable: RenderableType) -> None:
@@ -111,131 +129,68 @@ def _print_renderable(renderable: RenderableType) -> None:
 
 
 def _entries_table_layout(
-    console_width: int, include_component: bool, include_project: bool = False
+    console_width: int, include_project: bool = False
 ) -> tuple[list[str], dict[str, ColumnSpec]]:
     """Return the visible columns and their specs for the current terminal width."""
 
     width = max(console_width, 60)
     if width < 70:
-        columns = ["num", "date", "title", "type"]
+        columns = ["num", "date", "type", "title"]
         specs: dict[str, ColumnSpec] = {
             "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
             "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
-            "title": {"min_width": 20, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
+            "title": {"min_width": 20, "overflow": "ellipsis", "no_wrap": True, "ratio": 1},
         }
-        if include_component:
-            columns.append("component")
-            specs["component"] = {
-                "min_width": 4,
-                "max_width": 8,
-                "no_wrap": True,
-                "overflow": "ellipsis",
-            }
     elif width < 78:
-        columns = ["num", "date", "version", "title", "type"]
+        columns = ["num", "date", "version", "type", "title"]
         specs = {
             "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
             "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 8, "no_wrap": True},
-            "title": {"min_width": 18, "max_width": 30, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
+            "title": {"min_width": 18, "overflow": "ellipsis", "no_wrap": True, "ratio": 1},
         }
-        if include_component:
-            columns.append("component")
-            specs["component"] = {
-                "min_width": 4,
-                "max_width": 8,
-                "no_wrap": True,
-                "overflow": "ellipsis",
-            }
     elif width < 88:
-        columns = ["num", "date", "version", "title", "type", "prs"]
+        columns = ["num", "date", "version", "prs", "type", "title"]
         specs = {
             "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
             "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
-            "title": {"min_width": 18, "max_width": 28, "overflow": "ellipsis", "no_wrap": True},
             "prs": {"max_width": 12, "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
+            "title": {"min_width": 18, "overflow": "ellipsis", "no_wrap": True, "ratio": 1},
         }
-        if include_component:
-            columns.insert(5, "component")
-            specs["component"] = {
-                "min_width": 4,
-                "max_width": 10,
-                "no_wrap": True,
-                "overflow": "ellipsis",
-            }
     elif width < 110:
-        columns = ["num", "date", "version", "title", "type", "prs", "authors"]
+        columns = ["num", "date", "version", "prs", "type", "title"]
         specs = {
             "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
             "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 9, "no_wrap": True},
-            "title": {"min_width": 18, "max_width": 26, "overflow": "ellipsis", "no_wrap": True},
             "prs": {"max_width": 12, "no_wrap": True},
-            "authors": {
-                "min_width": 10,
-                "max_width": 14,
-                "overflow": "ellipsis",
-                "no_wrap": True,
-            },
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
+            "title": {"min_width": 18, "overflow": "ellipsis", "no_wrap": True, "ratio": 1},
         }
-        if include_component:
-            columns.insert(5, "component")
-            specs["component"] = {
-                "min_width": 4,
-                "max_width": 10,
-                "no_wrap": True,
-                "overflow": "ellipsis",
-            }
     elif width < 140:
-        columns = ["num", "date", "version", "title", "type", "prs", "authors", "id"]
+        columns = ["num", "date", "version", "prs", "type", "title"]
         specs = {
             "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
             "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 10, "no_wrap": True},
-            "title": {"min_width": 18, "max_width": 32, "overflow": "ellipsis", "no_wrap": True},
             "prs": {"max_width": 12, "no_wrap": True},
-            "authors": {
-                "min_width": 10,
-                "max_width": 16,
-                "overflow": "ellipsis",
-                "no_wrap": True,
-            },
-            "id": {"min_width": 16, "max_width": 22, "overflow": "ellipsis", "no_wrap": True},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
+            "title": {"min_width": 18, "overflow": "ellipsis", "no_wrap": True, "ratio": 1},
         }
-        if include_component:
-            columns.insert(5, "component")
-            specs["component"] = {
-                "min_width": 4,
-                "max_width": 10,
-                "no_wrap": True,
-                "overflow": "ellipsis",
-            }
     else:
-        columns = ["num", "date", "version", "title", "type", "prs", "authors", "id"]
+        columns = ["num", "date", "version", "prs", "type", "title"]
         specs = {
             "num": {"min_width": 3, "max_width": 5, "no_wrap": True},
             "date": {"min_width": 10, "max_width": 10, "no_wrap": True},
             "version": {"max_width": 12, "no_wrap": True},
-            "title": {"min_width": 20, "max_width": 40, "overflow": "fold"},
             "prs": {"max_width": 14, "no_wrap": True},
-            "authors": {"min_width": 14, "max_width": 20, "overflow": "fold"},
-            "id": {"min_width": 18, "max_width": 28, "overflow": "fold"},
             "type": {"min_width": 3, "max_width": 4, "no_wrap": True},
+            "title": {"min_width": 20, "overflow": "fold", "ratio": 1},
         }
-        if include_component:
-            columns.insert(5, "component")
-            specs["component"] = {
-                "min_width": 6,
-                "max_width": 12,
-                "no_wrap": True,
-                "overflow": "fold",
-            }
     # Inject project column after num when in module mode
     if include_project:
         columns.insert(1, "project")
@@ -304,6 +259,7 @@ def _add_table_column(
     spec = specs.get(column_key)
     min_width = spec.get("min_width") if spec and "min_width" in spec else None
     max_width = spec.get("max_width") if spec and "max_width" in spec else None
+    ratio = spec.get("ratio") if spec and "ratio" in spec else None
     overflow = overflow_default
     if spec and "overflow" in spec:
         overflow = spec["overflow"]
@@ -318,6 +274,7 @@ def _add_table_column(
         min_width=min_width,
         max_width=max_width,
         no_wrap=no_wrap,
+        ratio=ratio,
     )
 
 
@@ -399,10 +356,9 @@ def _render_entries(
         _render_project_header(config)
 
     entries_list = list(entries)
-    include_component = any(entry.components for entry in entries_list)
-    visible_columns, column_specs = _entries_table_layout(console.size.width, include_component)
+    visible_columns, column_specs = _entries_table_layout(console.size.width)
     table_width = max(console.size.width, 40)
-    table = Table(show_lines=False, expand=False, width=table_width, pad_edge=False)
+    table = create_table(width=table_width, expand=True)
     if "num" in visible_columns:
         _add_table_column(
             table,
@@ -435,14 +391,15 @@ def _render_entries(
             overflow_default="fold",
             no_wrap_default=True,
         )
-    if "title" in visible_columns:
+    if "prs" in visible_columns:
         _add_table_column(
             table,
-            "Title",
-            "title",
+            "PR",
+            "prs",
             column_specs,
-            style="bold",
+            style="yellow",
             overflow_default="fold",
+            no_wrap_default=True,
         )
     if "type" in visible_columns:
         _add_table_column(
@@ -455,34 +412,13 @@ def _render_entries(
             overflow_default="ellipsis",
             no_wrap_default=True,
         )
-    if "component" in visible_columns:
+    if "title" in visible_columns:
         _add_table_column(
             table,
-            "Component",
-            "component",
+            "Title",
+            "title",
             column_specs,
-            style="green",
-            justify="center",
-            overflow_default="ellipsis",
-            no_wrap_default=True,
-        )
-    if "prs" in visible_columns:
-        _add_table_column(
-            table,
-            "PRs",
-            "prs",
-            column_specs,
-            style="yellow",
-            overflow_default="fold",
-            no_wrap_default=True,
-        )
-    if "authors" in visible_columns:
-        _add_table_column(
-            table,
-            "Authors",
-            "authors",
-            column_specs,
-            style="blue",
+            style="bold",
             overflow_default="fold",
         )
     if "id" in visible_columns:
@@ -531,25 +467,24 @@ def _render_entries(
             row.append(created_display)
         if "version" in visible_columns:
             row.append(version_display)
-        if "title" in visible_columns:
-            row.append(_ellipsis_cell(metadata.get("title", "Untitled"), "title", column_specs))
-        if "type" in visible_columns:
-            row.append(type_display)
-        if "component" in visible_columns:
-            component_value = ", ".join(entry.components) if entry.components else "—"
-            row.append(_ellipsis_cell(component_value, "component", column_specs))
         if "prs" in visible_columns:
             pr_numbers = _parse_pr_numbers(metadata)
-            pr_display = ", ".join(f"#{pr}" for pr in pr_numbers) if pr_numbers else "—"
-            row.append(_ellipsis_cell(pr_display, "prs", column_specs))
-        if "authors" in visible_columns:
-            row.append(
-                _ellipsis_cell(
-                    ", ".join(metadata.get("authors") or []) or "—",
-                    "authors",
-                    column_specs,
-                )
-            )
+            if pr_numbers:
+                pr_display = ", ".join(f"#{pr}" for pr in pr_numbers)
+                row.append(_ellipsis_cell(pr_display, "prs", column_specs))
+            else:
+                row.append(Text("—", style="dim"))
+        if "type" in visible_columns:
+            row.append(type_display)
+        if "title" in visible_columns:
+            title_text = Text(metadata.get("title", "Untitled"), style="bold")
+            if entry.components:
+                title_text.append(" ")
+                for i, comp in enumerate(entry.components):
+                    if i > 0:
+                        title_text.append(", ", style="dim")
+                    title_text.append(comp, style="dim green")
+            row.append(title_text)
         if "id" in visible_columns:
             row.append(_ellipsis_cell(entry.entry_id, "id", column_specs, style="cyan"))
         end_section = False
@@ -751,13 +686,12 @@ def _render_entries_multi_project(
         release_indices[config.id] = build_entry_release_index(project_root, project=config.id)
 
     # Use the unified layout with project column enabled
-    include_component = any(multi.entry.components for multi in entries)
     visible_columns, column_specs = _entries_table_layout(
-        console.size.width, include_component, include_project=True
+        console.size.width, include_project=True
     )
 
     table_width = max(console.size.width, 40)
-    table = Table(show_lines=False, expand=False, width=table_width, pad_edge=False)
+    table = create_table(width=table_width, expand=True)
 
     # Add columns using the same logic as _render_entries
     if "num" in visible_columns:
@@ -770,8 +704,8 @@ def _render_entries_multi_project(
         _add_table_column(table, "Date", "date", column_specs, style="yellow", no_wrap_default=True)
     if "version" in visible_columns:
         _add_table_column(table, "Version", "version", column_specs, style="cyan", justify="center")
-    if "title" in visible_columns:
-        _add_table_column(table, "Title", "title", column_specs, style="bold")
+    if "prs" in visible_columns:
+        _add_table_column(table, "PR", "prs", column_specs, style="yellow", no_wrap_default=True)
     if "type" in visible_columns:
         _add_table_column(
             table,
@@ -782,14 +716,8 @@ def _render_entries_multi_project(
             justify="center",
             no_wrap_default=True,
         )
-    if "component" in visible_columns:
-        _add_table_column(
-            table, "Component", "component", column_specs, style="green", justify="center"
-        )
-    if "prs" in visible_columns:
-        _add_table_column(table, "PRs", "prs", column_specs, style="yellow", no_wrap_default=True)
-    if "authors" in visible_columns:
-        _add_table_column(table, "Authors", "authors", column_specs, style="blue")
+    if "title" in visible_columns:
+        _add_table_column(table, "Title", "title", column_specs, style="bold")
     if "id" in visible_columns:
         _add_table_column(table, "ID", "id", column_specs, style="cyan", no_wrap_default=True)
 
@@ -826,23 +754,24 @@ def _render_entries_multi_project(
             row.append(created_display)
         if "version" in visible_columns:
             row.append(version_display)
-        if "title" in visible_columns:
-            row.append(_ellipsis_cell(metadata.get("title", "Untitled"), "title", column_specs))
-        if "type" in visible_columns:
-            row.append(type_display)
-        if "component" in visible_columns:
-            component_value = ", ".join(entry.components) if entry.components else "—"
-            row.append(_ellipsis_cell(component_value, "component", column_specs))
         if "prs" in visible_columns:
             pr_numbers = _parse_pr_numbers(metadata)
-            pr_display = ", ".join(f"#{pr}" for pr in pr_numbers) if pr_numbers else "—"
-            row.append(_ellipsis_cell(pr_display, "prs", column_specs))
-        if "authors" in visible_columns:
-            row.append(
-                _ellipsis_cell(
-                    ", ".join(metadata.get("authors") or []) or "—", "authors", column_specs
-                )
-            )
+            if pr_numbers:
+                pr_display = ", ".join(f"#{pr}" for pr in pr_numbers)
+                row.append(_ellipsis_cell(pr_display, "prs", column_specs))
+            else:
+                row.append(Text("—", style="dim"))
+        if "type" in visible_columns:
+            row.append(type_display)
+        if "title" in visible_columns:
+            title_text = Text(metadata.get("title", "Untitled"), style="bold")
+            if entry.components:
+                title_text.append(" ")
+                for i, comp in enumerate(entry.components):
+                    if i > 0:
+                        title_text.append(", ", style="dim")
+                    title_text.append(comp, style="dim green")
+            row.append(title_text)
         if "id" in visible_columns:
             row.append(_ellipsis_cell(entry.entry_id, "id", column_specs, style="cyan"))
 
