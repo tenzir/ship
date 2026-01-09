@@ -406,7 +406,7 @@ def _show_entries_table_all(
     release_index = build_entry_release_index(project_root, project=config.id)
 
     manifests = list(iter_release_manifests(project_root))
-    manifests.sort(key=lambda m: m.created, reverse=True)
+    manifests.sort(key=lambda m: m.created)
 
     # Determine what to include based on flags
     # --all: both released and unreleased (select_released=False, select_unreleased=False)
@@ -724,7 +724,7 @@ def _show_entries_card(
 
     if select_all or select_released or select_unreleased:
         manifests = list(iter_release_manifests(project_root))
-        manifests.sort(key=lambda m: m.created, reverse=True)
+        manifests.sort(key=lambda m: m.created)
 
         # Determine what to include based on flags
         include_unreleased = not select_released
@@ -930,7 +930,7 @@ def _show_entries_export_all(
     release_index = build_entry_release_index(project_root, project=config.id)
 
     manifests = list(iter_release_manifests(project_root))
-    manifests.sort(key=lambda m: m.created, reverse=True)
+    manifests.sort(key=lambda m: m.created)
 
     # Determine what to include based on flags
     include_unreleased = not select_released
