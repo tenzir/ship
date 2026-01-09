@@ -443,7 +443,7 @@ def create_release(
     else:
         log_success(f"updated release metadata for {version}.")
 
-    # Output version to stdout for scripting (e.g., VERSION=$(tenzir-changelog release create ...))
+    # Output version to stdout for scripting (e.g., VERSION=$(tenzir-ship release create ...))
     click.echo(version)
 
 
@@ -647,7 +647,7 @@ def publish_release(
     if not notes_path.exists():
         relative_notes = notes_path.relative_to(project_root)
         raise click.ClickException(
-            f"Release notes missing at {relative_notes}. Run 'tenzir-changelog release create {manifest.version} --yes' first."
+            f"Release notes missing at {relative_notes}. Run 'tenzir-ship release create {manifest.version} --yes' first."
         )
 
     notes_content = notes_path.read_text(encoding="utf-8").strip()

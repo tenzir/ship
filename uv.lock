@@ -385,7 +385,7 @@ wheels = [
 ]
 
 [[package]]
-name = "tenzir-changelog"
+name = "tenzir-ship"
 version = "0.19.1"
 source = { editable = "." }
 dependencies = [

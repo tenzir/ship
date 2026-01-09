@@ -1,4 +1,4 @@
-"""Integration-style tests for the tenzir-changelog CLI."""
+"""Integration-style tests for the tenzir-ship CLI."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from tenzir_changelog import __version__
-from tenzir_changelog.cli import INFO_PREFIX, cli, main
-from tenzir_changelog.config import Config, save_config
-from tenzir_changelog.entries import read_entry, write_entry
+from tenzir_ship import __version__
+from tenzir_ship.cli import INFO_PREFIX, cli, main
+from tenzir_ship.config import Config, save_config
+from tenzir_ship.entries import read_entry, write_entry
 
 
 def test_cli_version_option(capsys: pytest.CaptureFixture[str]) -> None:
@@ -603,8 +603,8 @@ def test_missing_project_reports_info_message(tmp_path: Path) -> None:
     expected_root = tmp_path.resolve()
     plain_prefix = click.utils.strip_ansi(INFO_PREFIX)
     expected_plain_output = (
-        f"{plain_prefix}no tenzir-changelog project detected at {expected_root}.\n"
-        f"{plain_prefix}run 'tenzir-changelog add' from your project root or provide --root.\n"
+        f"{plain_prefix}no tenzir-ship project detected at {expected_root}.\n"
+        f"{plain_prefix}run 'tenzir-ship add' from your project root or provide --root.\n"
     )
     assert click.utils.strip_ansi(result.output) == expected_plain_output
     assert "Error:" not in result.output
@@ -753,7 +753,7 @@ def test_add_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch, tmp_pat
     def raise_interrupt(*_: object, **__: object) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("tenzir_changelog.cli._add.click.edit", raise_interrupt)
+    monkeypatch.setattr("tenzir_ship.cli._add.click.edit", raise_interrupt)
 
     result = runner.invoke(
         cli,
@@ -1296,7 +1296,7 @@ def test_release_notes_collapse_soft_breaks(tmp_path: Path) -> None:
         "authors": ["codex"],
     }
     body = (
-        "`tenzir-changelog show` now renders the primary changelog table with\n"
+        "`tenzir-ship show` now renders the primary changelog table with\n"
         "backward-counting row numbers, so `#1` consistently targets the newest change\n"
         "while older entries climb toward the top.\n"
     )
@@ -1737,8 +1737,8 @@ def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
         recorded_args = args
         recorded_check = check
 
-    monkeypatch.setattr("tenzir_changelog.cli._release.shutil.which", fake_which)
-    monkeypatch.setattr("tenzir_changelog.cli._release.subprocess.run", fake_run)
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
 
     publish_result = runner.invoke(
         cli,
@@ -1820,8 +1820,8 @@ def test_release_publish_updates_existing_release(
             return  # release exists
         raise AssertionError(f"Unexpected command: {args}")
 
-    monkeypatch.setattr("tenzir_changelog.cli._release.shutil.which", fake_which)
-    monkeypatch.setattr("tenzir_changelog.cli._release.subprocess.run", fake_run)
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
 
     publish_result = runner.invoke(
         cli,
@@ -1894,9 +1894,9 @@ def test_release_publish_handles_abort(monkeypatch: pytest.MonkeyPatch, tmp_path
     def fake_confirm(*args: object, **kwargs: object) -> bool:
         raise click.Abort()
 
-    monkeypatch.setattr("tenzir_changelog.cli._release.shutil.which", fake_which)
-    monkeypatch.setattr("tenzir_changelog.cli._release.subprocess.run", fake_run)
-    monkeypatch.setattr("tenzir_changelog.cli._release.click.confirm", fake_confirm)
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+    monkeypatch.setattr("tenzir_ship.cli._release.click.confirm", fake_confirm)
 
     publish_result = runner.invoke(
         cli,
@@ -3012,8 +3012,8 @@ def test_release_publish_defaults_to_latest(
             raise subprocess.CalledProcessError(returncode=1, cmd=args)
         recorded_args = args
 
-    monkeypatch.setattr("tenzir_changelog.cli._release.shutil.which", fake_which)
-    monkeypatch.setattr("tenzir_changelog.cli._release.subprocess.run", fake_run)
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
 
     # Publish without specifying version.
     publish_result = runner.invoke(

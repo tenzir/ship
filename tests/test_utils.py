@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tenzir_changelog.utils import extract_excerpt
+from tenzir_ship.utils import extract_excerpt
 
 
 def test_extract_excerpt_collapses_first_paragraph() -> None:

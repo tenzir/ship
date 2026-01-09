@@ -6,7 +6,7 @@ Load the `python:following-conventions` skill when working with code, tooling, o
 
 ## CLI
 
-`src/tenzir_changelog/` contains the Click-based CLI:
+`src/tenzir_ship/` contains the Click-based CLI:
 
 - `cli.py`: command registration and entry points
 - `config.py`: project configuration handling

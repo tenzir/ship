@@ -103,7 +103,7 @@ TYPE_SECTION_TITLES = {
 
 def _resolve_cli_version() -> str:
     try:
-        return metadata_version("tenzir-changelog")
+        return metadata_version("tenzir-ship")
     except PackageNotFoundError:
         return package_version
 
@@ -130,10 +130,10 @@ def _command_help_text(
         "",
         "Examples:",
         "",
-        f"  tenzir-changelog {command_name} 1           # {verb.capitalize()} entry #1",
-        f"  tenzir-changelog {command_name} 1 2 3       # {verb.capitalize()} entries #1, #2, and #3",
-        f"  tenzir-changelog {command_name} configure   # {verb.capitalize()} entry matching 'configure'",
-        f"  tenzir-changelog {command_name} v0.2.0      # {verb.capitalize()} all entries in v0.2.0",
+        f"  tenzir-ship {command_name} 1           # {verb.capitalize()} entry #1",
+        f"  tenzir-ship {command_name} 1 2 3       # {verb.capitalize()} entries #1, #2, and #3",
+        f"  tenzir-ship {command_name} configure   # {verb.capitalize()} entry matching 'configure'",
+        f"  tenzir-ship {command_name} v0.2.0      # {verb.capitalize()} all entries in v0.2.0",
     ]
     return "\n".join(lines)
 
@@ -208,8 +208,8 @@ class CLIContext:
                 self._config = load_project_config(project_root)
             except FileNotFoundError:
                 if not create_if_missing:
-                    log_info(f"no tenzir-changelog project detected at {project_root}.")
-                    log_info("run 'tenzir-changelog add' from your project root or provide --root.")
+                    log_info(f"no tenzir-ship project detected at {project_root}.")
+                    log_info("run 'tenzir-ship add' from your project root or provide --root.")
                     raise click.exceptions.Exit(1)
                 config = _initialize_project_scaffold(
                     project_root=project_root,
@@ -689,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
         args.append("show")
 
     try:
-        cli.main(args=args, prog_name="tenzir-changelog", standalone_mode=False)
+        cli.main(args=args, prog_name="tenzir-ship", standalone_mode=False)
     except click.ClickException as exc:
         exc.show(file=sys.stderr)
         exit_code = getattr(exc, "exit_code", 1)

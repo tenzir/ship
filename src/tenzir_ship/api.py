@@ -1,4 +1,4 @@
-"""Python-friendly facade for invoking tenzir-changelog functionality."""
+"""Python-friendly facade for invoking tenzir-ship functionality."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class Changelog:
         select_all: bool = False,
         released_only: bool = False,
     ) -> None:
-        """Render entries using the same layouts as ``tenzir-changelog show``.
+        """Render entries using the same layouts as ``tenzir-ship show``.
 
         Args:
             identifiers: Row numbers, entry IDs, release versions, or "-".

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tenzir_changelog.entries import iter_entries, read_entry, sort_entries_desc, write_entry
+from tenzir_ship.entries import iter_entries, read_entry, sort_entries_desc, write_entry
 
 
 def test_sort_entries_desc_orders_by_created_datetime(tmp_path: Path) -> None:

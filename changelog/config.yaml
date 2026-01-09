@@ -1,9 +1,9 @@
-id: changelog
-name: Tenzir Changelog
+id: ship
+name: Tenzir Ship
 description: >-
   A changelog management framework that curates entries, ships release notes,
   and assembles public changelogs.
-repository: tenzir/changelog
+repository: tenzir/ship
 components:
-  cli: The command-line interface accessible via `tenzir-changelog`.
+  cli: The command-line interface accessible via `tenzir-ship`.
   python: User-facing Python API (not the project-internal Python code).

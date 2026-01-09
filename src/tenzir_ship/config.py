@@ -1,4 +1,4 @@
-"""Configuration helpers for tenzir-changelog."""
+"""Configuration helpers for tenzir-ship."""
 
 from __future__ import annotations
 

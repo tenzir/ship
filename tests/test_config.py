@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tenzir_changelog.config import (
+from tenzir_ship.config import (
     Config,
     dump_config,
     load_config,

@@ -6,10 +6,10 @@ import pytest
 
 from typing import Sequence
 
-from tenzir_changelog import Changelog
-from tenzir_changelog.config import Config, save_config
-from tenzir_changelog import cli as cli_module
-from tenzir_changelog.entries import read_entry
+from tenzir_ship import Changelog
+from tenzir_ship.config import Config, save_config
+from tenzir_ship import cli as cli_module
+from tenzir_ship.entries import read_entry
 
 
 def _bootstrap_project(tmp_path: Path) -> Path:
@@ -74,7 +74,7 @@ def test_python_api_show_delegates(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         captured["select_all"] = select_all
         captured["released_only"] = released_only
 
-    monkeypatch.setattr("tenzir_changelog.api.run_show_entries", fake_run_show_entries)
+    monkeypatch.setattr("tenzir_ship.api.run_show_entries", fake_run_show_entries)
 
     client.show(
         identifiers=["latest"],
@@ -100,7 +100,7 @@ def test_python_api_add_handles_missing_authors(
 ) -> None:
     project_dir = _bootstrap_project(tmp_path)
     monkeypatch.setattr(
-        "tenzir_changelog.cli._add.detect_github_login", lambda log_success=False: None
+        "tenzir_ship.cli._add.detect_github_login", lambda log_success=False: None
     )
     client = Changelog(root=project_dir)
 

@@ -33,7 +33,7 @@ DEBUG_PREFIX_WITH_SPACE = f"{DEBUG_PREFIX} "
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-_LOGGER_NAME = "tenzir_changelog"
+_LOGGER_NAME = "tenzir_ship"
 _LOGGER = logging.getLogger(_LOGGER_NAME)
 
 console = Console(

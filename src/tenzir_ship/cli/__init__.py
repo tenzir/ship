@@ -1,4 +1,4 @@
-"""CLI package for tenzir-changelog.
+"""CLI package for tenzir-ship.
 
 This package contains the modular CLI implementation:
 - _core.py: CLIContext, decorators, shared utilities, main entry point

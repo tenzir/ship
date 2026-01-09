@@ -1,4 +1,4 @@
-"""Core package exports for tenzir-changelog."""
+"""Core package exports for tenzir-ship."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 __all__ = ["__version__", "Changelog", "create_cli_context"]
 
 try:
-    __version__ = metadata_version("tenzir-changelog")
+    __version__ = metadata_version("tenzir-ship")
 except PackageNotFoundError:  # pragma: no cover - fallback for editable installs
     __version__ = "0.0.0"
 
@@ -26,4 +26,4 @@ def __getattr__(name: str) -> Any:  # pragma: no cover - simple delegation
         from .cli import create_cli_context as _create_cli_context
 
         return _create_cli_context
-    raise AttributeError(f"module 'tenzir_changelog' has no attribute {name!r}")
+    raise AttributeError(f"module 'tenzir_ship' has no attribute {name!r}")

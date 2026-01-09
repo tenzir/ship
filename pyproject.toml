@@ -1,5 +1,5 @@
 [project]
-name = "tenzir-changelog"
+name = "tenzir-ship"
 version = "0.19.1"
 description = "Reusable changelog management toolkit for Tenzir repositories."
 readme = "README.md"
@@ -29,13 +29,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tenzir/changelog"
-Repository = "https://github.com/tenzir/changelog"
-"Bug Tracker" = "https://github.com/tenzir/changelog/issues"
-Documentation = "https://docs.tenzir.com"
+Homepage = "https://github.com/tenzir/ship"
+Repository = "https://github.com/tenzir/ship"
+"Bug Tracker" = "https://github.com/tenzir/ship/issues"
+Documentation = "https://docs.tenzir.com/reference/ship-framework"
 
 [project.scripts]
-tenzir-changelog = "tenzir_changelog.cli:main"
+tenzir-ship = "tenzir_ship.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
@@ -45,7 +45,7 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tenzir_changelog"]
+packages = ["src/tenzir_ship"]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -106,7 +106,7 @@ warn_unreachable = true
 strict_equality = true
 
 [tool.coverage.run]
-source = ["src/tenzir_changelog"]
+source = ["src/tenzir_ship"]
 branch = true
 omit = [
   "*/tests/*",

@@ -7,10 +7,10 @@ from pathlib import Path
 import yaml
 from click.testing import CliRunner
 
-from tenzir_changelog.cli import cli
-from tenzir_changelog.config import Config
-from tenzir_changelog.modules import discover_modules, discover_modules_from_config
-from tenzir_changelog.validate import validate_modules, run_validation_with_modules
+from tenzir_ship.cli import cli
+from tenzir_ship.config import Config
+from tenzir_ship.modules import discover_modules, discover_modules_from_config
+from tenzir_ship.validate import validate_modules, run_validation_with_modules
 
 
 def write_yaml(path: Path, content: dict[str, object]) -> None:

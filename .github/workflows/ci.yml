@@ -105,4 +105,4 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Smoke test wheel
-        run: uvx --from dist/*.whl tenzir-changelog --help
+        run: uvx --from dist/*.whl tenzir-ship --help

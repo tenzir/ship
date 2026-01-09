@@ -258,7 +258,7 @@ def _resolve_identifier(
     matches = [(entry_id, entry) for entry_id, entry in entry_map.items() if token in entry_id]
     if not matches:
         raise click.ClickException(
-            f"No entry found matching '{token}'. Use 'tenzir-changelog show' to see all entries."
+            f"No entry found matching '{token}'. Use 'tenzir-ship show' to see all entries."
         )
     if len(matches) > 1:
         match_ids = [entry_id for entry_id, _ in matches]
