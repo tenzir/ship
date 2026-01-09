@@ -413,7 +413,7 @@ wheels = [
 
 [[package]]
 name = "tenzir-ship"
-version = "0.19.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
