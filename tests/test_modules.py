@@ -397,7 +397,7 @@ def test_show_release_includes_module_sections(tmp_path: Path) -> None:
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "unreleased"]
     )
 
     assert result.exit_code == 0
@@ -430,7 +430,7 @@ def test_show_release_module_entries_are_compact(tmp_path: Path) -> None:
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "unreleased"]
     )
 
     assert result.exit_code == 0
@@ -461,7 +461,7 @@ def test_show_release_excludes_unreleased_module_entries(tmp_path: Path) -> None
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "unreleased"]
     )
 
     assert result.exit_code == 0
@@ -492,7 +492,7 @@ def test_show_release_json_includes_modules(tmp_path: Path) -> None:
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["--root", str(project_dir), "show", "--release", "-j", "--unreleased"]
+        cli, ["--root", str(project_dir), "show", "--release", "-j", "unreleased"]
     )
 
     assert result.exit_code == 0
@@ -519,7 +519,7 @@ def test_show_release_no_modules_no_separator(tmp_path: Path) -> None:
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["--root", str(project_dir), "show", "--release", "-m", "--unreleased"]
+        cli, ["--root", str(project_dir), "show", "--release", "-m", "unreleased"]
     )
 
     assert result.exit_code == 0

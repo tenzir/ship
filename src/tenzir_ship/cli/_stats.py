@@ -291,7 +291,9 @@ def _show_stats_json(ctx: CLIContext) -> None:
 
     config = ctx.ensure_config()
 
-    def build_project_json(project_id: str, project_name: str, project_root: Path, relative_path: str) -> dict:
+    def build_project_json(
+        project_id: str, project_name: str, project_root: Path, relative_path: str
+    ) -> dict:
         s = _collect_project_stats(project_root)
         return {
             "id": project_id,

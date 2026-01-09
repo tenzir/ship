@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
+    Any,
     Iterable,
     Literal,
     Optional,
@@ -77,10 +78,20 @@ __all__ = [
     "_render_project_banner",
     "_release_entry_sort_key",
     "_build_release_sort_order",
+    "UNRELEASED_LABEL",
+    "SORT_OLDEST_FIRST",
 ]
 
+# Label used for unreleased entries in table displays
+UNRELEASED_LABEL = "—"
 
-def create_table(expand: bool = False, **kwargs) -> Table:
+# Global sort order constant: when True, entries are sorted with oldest first (ascending).
+# This applies to both release ordering (oldest release first) and entry ordering within
+# each release (oldest entries first). Row numbers are then calculated to show newest=1.
+SORT_OLDEST_FIRST = True
+
+
+def create_table(expand: bool = False, **kwargs: Any) -> Table:
     """Create a borderless table with consistent styling.
 
     This is the standard table style used across the CLI. It has no borders,
@@ -129,7 +140,7 @@ def _print_renderable(renderable: RenderableType) -> None:
 
 
 def _entries_table_layout(
-    console_width: int, include_project: bool = False
+    console_width: int, include_project: bool = False, include_release: bool = False
 ) -> tuple[list[str], dict[str, ColumnSpec]]:
     """Return the visible columns and their specs for the current terminal width."""
 
@@ -216,6 +227,15 @@ def _entries_table_layout(
                 "overflow": "ellipsis",
                 "no_wrap": True,
             }
+    # Replace version column with release column in release mode
+    if include_release and "version" in columns:
+        idx = columns.index("version")
+        columns[idx] = "release"
+        # Use slightly wider column to fit "unreleased" (10 chars)
+        if "version" in specs:
+            version_spec = specs.pop("version")
+            version_spec["max_width"] = max(version_spec.get("max_width", 10), 10)
+            specs["release"] = version_spec
     return columns, specs
 
 
@@ -351,12 +371,16 @@ def _render_entries(
     release_order: dict[str, int] | None = None,
     *,
     include_emoji: bool = True,
+    release_versions: dict[str, str] | None = None,
 ) -> None:
     if show_banner:
         _render_project_header(config)
 
     entries_list = list(entries)
-    visible_columns, column_specs = _entries_table_layout(console.size.width)
+    include_release = release_versions is not None
+    visible_columns, column_specs = _entries_table_layout(
+        console.size.width, include_release=include_release
+    )
     table_width = max(console.size.width, 40)
     table = create_table(width=table_width, expand=True)
     if "num" in visible_columns:
@@ -385,6 +409,17 @@ def _render_entries(
             table,
             "Version",
             "version",
+            column_specs,
+            style="cyan",
+            justify="center",
+            overflow_default="fold",
+            no_wrap_default=True,
+        )
+    if "release" in visible_columns:
+        _add_table_column(
+            table,
+            "Release",
+            "release",
             column_specs,
             style="cyan",
             justify="center",
@@ -434,7 +469,11 @@ def _render_entries(
 
     has_rows = False
     release_groups: list[int | None]
-    if release_order is not None:
+    if release_versions is not None:
+        # When release_versions is provided, entries are already in release group order
+        sorted_entries = entries_list
+        release_groups = [None] * len(sorted_entries)
+    elif release_order is not None:
         sorted_entries = _sort_entries_for_display(entries_list, release_index, release_order)
         release_groups = [
             _entry_release_group(entry, release_index, release_order) for entry in sorted_entries
@@ -467,6 +506,9 @@ def _render_entries(
             row.append(created_display)
         if "version" in visible_columns:
             row.append(version_display)
+        if "release" in visible_columns:
+            release_display = release_versions.get(entry.entry_id, "—") if release_versions else "—"
+            row.append(release_display)
         if "prs" in visible_columns:
             pr_numbers = _parse_pr_numbers(metadata)
             if pr_numbers:
@@ -488,7 +530,14 @@ def _render_entries(
         if "id" in visible_columns:
             row.append(_ellipsis_cell(entry.entry_id, "id", column_specs, style="cyan"))
         end_section = False
-        if release_order is not None and index < len(sorted_entries) - 1:
+        if release_versions is not None and index < len(sorted_entries) - 1:
+            # Section dividers based on release_versions mapping
+            current_release = release_versions.get(entry.entry_id)
+            next_entry = sorted_entries[index + 1]
+            next_release = release_versions.get(next_entry.entry_id)
+            if current_release != next_release:
+                end_section = True
+        elif release_order is not None and index < len(sorted_entries) - 1:
             current_group = release_groups[index]
             next_group = release_groups[index + 1]
             if current_group != next_group:
@@ -686,9 +735,7 @@ def _render_entries_multi_project(
         release_indices[config.id] = build_entry_release_index(project_root, project=config.id)
 
     # Use the unified layout with project column enabled
-    visible_columns, column_specs = _entries_table_layout(
-        console.size.width, include_project=True
-    )
+    visible_columns, column_specs = _entries_table_layout(console.size.width, include_project=True)
 
     table_width = max(console.size.width, 40)
     table = create_table(width=table_width, expand=True)

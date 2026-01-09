@@ -115,27 +115,39 @@ def _command_help_text(
     verb: str,
     row_hint: str = "Row numbers (e.g., 1, 2, 3)",
     version_hint: str = "to show release details",
+    include_scope: bool = False,
 ) -> str:
     """Build consistent help text for entry-addressing commands."""
 
-    lines = [
-        summary,
-        "",
-        "IDENTIFIERS can be:",
-        "",
+    # Use \b (backspace) to tell Click to preserve formatting - no blank lines
+    # within the block or Click will treat what follows as a new paragraph
+    identifier_items = [
         f"- {row_hint}",
         "- Entry IDs, partial or full (e.g., configure,",
         "  configure-export-style-defaults)",
         f"- Version numbers (e.g., v0.2.0) {version_hint}",
-        "",
-        "Examples:",
-        "",
+    ]
+    if include_scope:
+        identifier_items.append("- Scope: all, unreleased, released, latest")
+
+    identifiers_block = "\n".join(["\b", "IDENTIFIERS can be:"] + identifier_items)
+
+    example_lines = [
         f"  tenzir-ship {command_name} 1           # {verb.capitalize()} entry #1",
         f"  tenzir-ship {command_name} 1 2 3       # {verb.capitalize()} entries #1, #2, and #3",
         f"  tenzir-ship {command_name} configure   # {verb.capitalize()} entry matching 'configure'",
         f"  tenzir-ship {command_name} v0.2.0      # {verb.capitalize()} all entries in v0.2.0",
     ]
-    return "\n".join(lines)
+    if include_scope:
+        example_lines.extend(
+            [
+                f"  tenzir-ship {command_name} unreleased  # {verb.capitalize()} unreleased entries",
+                f"  tenzir-ship {command_name} latest      # {verb.capitalize()} entries from latest release",
+            ]
+        )
+
+    examples_block = "\n".join(["\b", "Examples:"] + example_lines)
+    return f"{summary}\n\n{identifiers_block}\n\n{examples_block}"
 
 
 def compact_option() -> Callable[[F], F]:

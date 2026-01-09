@@ -50,8 +50,8 @@ from ._core import (
 )
 from ._rendering import (
     IdentifierResolution,
+    UNRELEASED_LABEL,
     _print_renderable,
-    _render_project_header,
     _render_entries,
     _render_release,
     _render_single_entry,
@@ -90,6 +90,63 @@ __all__ = [
 # Type aliases
 IdentifierKind = Literal["row", "entry", "release", "unreleased"]
 ShowView = Literal["table", "card", "markdown", "json"]
+Scope = Literal["all", "unreleased", "released", "latest"]
+
+# Scope tokens that can be used as positional identifiers
+SCOPE_TOKENS: set[Scope] = {"all", "unreleased", "released", "latest"}
+
+
+def _parse_scope_from_identifiers(
+    identifiers: tuple[str, ...],
+) -> tuple[Scope, tuple[str, ...]]:
+    """Extract scope token from identifiers, returning (scope, remaining_identifiers).
+
+    Scope tokens: "all", "unreleased", "released", "latest"
+
+    Rules:
+    - At most one scope token is allowed
+    - Scope tokens cannot be mixed with each other
+    - "all" cannot be combined with other identifiers (it means everything)
+    - "unreleased" cannot be combined with version identifiers
+    - "released" and "latest" can be combined with version identifiers for filtering
+    """
+    if not identifiers:
+        return "all", ()
+
+    scope: Scope = "all"
+    remaining: list[str] = []
+    scope_token_found: str | None = None
+
+    for ident in identifiers:
+        lowered = ident.lower().strip()
+        if lowered in SCOPE_TOKENS:
+            if scope_token_found is not None:
+                raise click.ClickException(
+                    f"Cannot combine scope tokens '{scope_token_found}' and '{ident}'. "
+                    "Use only one scope token."
+                )
+            scope_token_found = ident
+            scope = cast(Scope, lowered)
+        else:
+            remaining.append(ident)
+
+    # Validate scope + identifier combinations
+    # Only error if "all" was explicitly provided (scope_token_found is set)
+    if scope == "all" and remaining and scope_token_found is not None:
+        raise click.ClickException(
+            "'all' scope cannot be combined with other identifiers. "
+            "Use 'all' alone to show everything."
+        )
+    if scope == "unreleased" and remaining:
+        # Check if any remaining identifiers look like versions
+        version_like = [r for r in remaining if r.lower().startswith("v")]
+        if version_like:
+            raise click.ClickException(
+                f"'unreleased' scope cannot be combined with version identifiers: "
+                f"{', '.join(version_like)}"
+            )
+
+    return scope, tuple(remaining)
 
 
 def _collect_unused_entries_for_release(project_root: Path, config: Config) -> list[Entry]:
@@ -204,10 +261,15 @@ def _resolve_identifier(
         raise click.ClickException("Identifier cannot be empty.")
 
     lowered = token.lower()
-    # "unreleased" and "-" are no longer valid identifiers - use --unreleased flag instead
-    if lowered == "unreleased" or token == "-":
+    # Scope tokens are handled by _parse_scope_from_identifiers, not here
+    if lowered in SCOPE_TOKENS:
         raise click.ClickException(
-            f"'{token}' is not a valid identifier. Use --unreleased flag instead."
+            f"'{token}' is a scope token and should be handled before identifier resolution."
+        )
+    # The "-" shorthand for unreleased is deprecated - use the "unreleased" scope token
+    if token == "-":
+        raise click.ClickException(
+            "'-' is not a valid identifier. Use 'unreleased' scope token instead."
         )
 
     try:
@@ -394,26 +456,33 @@ def _show_entries_table_all(
     ctx: CLIContext,
     *,
     release_mode: bool,
-    select_released: bool,
-    select_unreleased: bool,
+    scope: Scope,
     components: set[str],
     include_emoji: bool,
     banner: bool,
 ) -> None:
-    """Handle --all/--released/--unreleased flags in table view."""
+    """Handle scope-based filtering in table view."""
     config = ctx.ensure_config()
     project_root = ctx.project_root
     release_index = build_entry_release_index(project_root, project=config.id)
+    release_order = _build_release_sort_order(project_root)
 
     manifests = list(iter_release_manifests(project_root))
     manifests.sort(key=lambda m: m.created)
 
-    # Determine what to include based on flags
-    # --all: both released and unreleased (select_released=False, select_unreleased=False)
-    # --released: only released entries
-    # --unreleased: only unreleased entries
-    include_unreleased = not select_released  # Include unless --released is set
-    include_released = not select_unreleased  # Include unless --unreleased is set
+    # Determine what to include based on scope
+    # "all": both released and unreleased
+    # "released": only released entries
+    # "unreleased": only unreleased entries
+    # "latest": only entries from the latest release
+    include_unreleased = scope in ("all", "unreleased")
+    include_released = scope in ("all", "released", "latest")
+
+    # For "latest" scope, filter manifests to only the latest one
+    if scope == "latest":
+        if not manifests:
+            raise click.ClickException("No releases found.")
+        manifests = [manifests[-1]]  # Latest release is last after sorting by created
 
     unreleased_entries: list[Entry] = []
     if include_unreleased:
@@ -421,56 +490,44 @@ def _show_entries_table_all(
         unreleased_entries = _filter_entries_by_component(unreleased, components)
         unreleased_entries = sort_entries_desc(unreleased_entries)
 
+    all_entries: list[Entry]
     if release_mode:
-        if banner:
-            _render_project_header(config)
+        # Build unified table with Release column (oldest release first)
+        release_versions: dict[str, str] = {}
+        all_entries = []
 
-        rendered = False
-
-        if unreleased_entries:
-            _render_release_header(None, project_id=config.id)
-            _print_renderable(Text())
-            _render_entries(
-                unreleased_entries,
-                release_index,
-                config,
-                show_banner=False,
-                release_order=None,
-                include_emoji=include_emoji,
-            )
-            rendered = True
-
+        # Add released entries grouped by release (oldest first)
         if include_released:
-            for manifest in manifests:
+            for manifest in manifests:  # Oldest release first
                 release_entries: list[Entry] = []
                 for entry_id in manifest.entries:
                     entry = load_release_entry(project_root, manifest, entry_id)
                     if entry is not None:
                         release_entries.append(entry)
                 filtered = _filter_entries_by_component(release_entries, components)
-                filtered = sort_entries_desc(filtered)
+                for entry in filtered:
+                    release_versions[entry.entry_id] = manifest.version
+                    all_entries.append(entry)
 
-                if rendered:
-                    _print_renderable(Text())
-                _render_release_header(manifest, project_id=config.id)
-                _print_renderable(Text())
-                if filtered:
-                    _render_entries(
-                        filtered,
-                        release_index,
-                        config,
-                        show_banner=False,
-                        release_order=None,
-                        include_emoji=include_emoji,
-                    )
-                else:
-                    _print_renderable(Text("No entries in this release.", style="dim"))
-                rendered = True
+        # Add unreleased entries last (they are the "newest" release)
+        for entry in unreleased_entries:
+            release_versions[entry.entry_id] = UNRELEASED_LABEL
+            all_entries.append(entry)
 
-        if not rendered:
-            raise click.ClickException("No entries found.")
+        # Sort entries by release first, then by date (oldest first)
+        all_entries = _sort_entries_for_display(all_entries, release_index, release_order)
+
+        _render_entries(
+            all_entries,
+            release_index,
+            config,
+            show_banner=banner,
+            release_order=release_order,
+            include_emoji=include_emoji,
+            release_versions=release_versions,
+        )
     else:
-        all_entries: list[Entry] = list(unreleased_entries)
+        all_entries = list(unreleased_entries)
 
         if include_released:
             for manifest in manifests:
@@ -480,17 +537,15 @@ def _show_entries_table_all(
                         all_entries.append(entry)
 
         all_entries = _filter_entries_by_component(all_entries, components)
-        all_entries = sort_entries_desc(all_entries)
-
-        if not all_entries:
-            raise click.ClickException("No entries found.")
+        # Sort by release first, then by date (oldest first = default order)
+        all_entries = _sort_entries_for_display(all_entries, release_index, release_order)
 
         _render_entries(
             all_entries,
             release_index,
             config,
             show_banner=banner,
-            release_order=None,
+            release_order=release_order,
             include_emoji=include_emoji,
         )
 
@@ -504,7 +559,7 @@ def _show_entries_table_release_mode(
     entry_map: dict[str, Entry],
     sorted_entries: list[Entry],
 ) -> None:
-    """Handle --release flag with identifiers: group entries by release with headers."""
+    """Handle --release flag with identifiers: display entries in a unified table with Release column."""
     config = ctx.ensure_config()
     project_root = ctx.project_root
     release_index = build_entry_release_index(project_root, project=config.id)
@@ -517,6 +572,7 @@ def _show_entries_table_release_mode(
         entry_map=entry_map,
     )
 
+    # Build flat list of entries with their release versions
     release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
     for resolution in resolutions:
         filtered = _filter_entries_by_component(resolution.entries, components)
@@ -553,24 +609,27 @@ def _show_entries_table_release_mode(
     if not release_groups:
         raise click.ClickException("No entries found for the given identifiers.")
 
-    rendered = False
+    # Build release_versions mapping and flat entry list (preserving release group order)
+    release_versions: dict[str, str] = {}
+    all_entries: list[Entry] = []
     for manifest, entries in release_groups:
-        if rendered:
-            _print_renderable(Text())
-        _render_release_header(manifest, project_id=config.id)
-        _print_renderable(Text())
-        if entries:
-            _render_entries(
-                entries,
-                release_index,
-                config,
-                show_banner=False,
-                release_order=None,
-                include_emoji=include_emoji,
-            )
-        else:
-            _print_renderable(Text("No entries match the filters.", style="dim"))
-        rendered = True
+        version_label = manifest.version if manifest else UNRELEASED_LABEL
+        for entry in entries:
+            release_versions[entry.entry_id] = version_label
+            all_entries.append(entry)
+
+    if not all_entries:
+        raise click.ClickException("No entries match the filters.")
+
+    _render_entries(
+        all_entries,
+        release_index,
+        config,
+        show_banner=False,
+        release_order=None,
+        include_emoji=include_emoji,
+        release_versions=release_versions,
+    )
 
 
 def _show_entries_table(
@@ -582,9 +641,7 @@ def _show_entries_table(
     *,
     include_emoji: bool,
     release_mode: bool = False,
-    select_all: bool = False,
-    select_released: bool = False,
-    select_unreleased: bool = False,
+    scope: Scope = "all",
 ) -> None:
     """Display entries in table format."""
     modules = ctx.get_modules()
@@ -641,12 +698,12 @@ def _show_entries_table(
 
     sorted_entries = _sort_entries_for_display(entry_map.values(), release_index, release_order)
 
-    if select_all or select_released or select_unreleased:
+    # Handle scope-based filtering (no specific identifiers provided)
+    if not identifiers:
         _show_entries_table_all(
             ctx,
             release_mode=release_mode,
-            select_released=select_released,
-            select_unreleased=select_unreleased,
+            scope=scope,
             components=components,
             include_emoji=include_emoji,
             banner=banner,
@@ -654,11 +711,6 @@ def _show_entries_table(
         return
 
     if release_mode:
-        if not identifiers:
-            latest = _get_latest_release_manifest(project_root)
-            if latest is None:
-                raise click.ClickException("No releases found.")
-            identifiers = (latest.version,)
         _show_entries_table_release_mode(
             ctx,
             identifiers,
@@ -711,9 +763,7 @@ def _show_entries_card(
     *,
     include_emoji: bool,
     release_mode: bool = False,
-    select_all: bool = False,
-    select_released: bool = False,
-    select_unreleased: bool = False,
+    scope: Scope = "all",
     compact: bool = True,
 ) -> None:
     """Display entries as detailed cards."""
@@ -722,13 +772,20 @@ def _show_entries_card(
     components = _normalize_component_filters(component_filter, config)
     release_index = build_entry_release_index(project_root, project=config.id)
 
-    if select_all or select_released or select_unreleased:
+    # Handle scope-based filtering when no identifiers provided
+    if not identifiers:
         manifests = list(iter_release_manifests(project_root))
         manifests.sort(key=lambda m: m.created)
 
-        # Determine what to include based on flags
-        include_unreleased = not select_released
-        include_released = not select_unreleased
+        # Determine what to include based on scope
+        include_unreleased = scope in ("all", "unreleased")
+        include_released = scope in ("all", "released", "latest")
+
+        # For "latest" scope, filter manifests to only the latest one
+        if scope == "latest":
+            if not manifests:
+                raise click.ClickException("No releases found.")
+            manifests = [manifests[-1]]
 
         unreleased_entries: list[Entry] = []
         if include_unreleased:
@@ -785,12 +842,6 @@ def _show_entries_card(
         return
 
     if release_mode:
-        if not identifiers:
-            latest = _get_latest_release_manifest(project_root)
-            if latest is None:
-                raise click.ClickException("No releases found.")
-            identifiers = (latest.version,)
-
         modules = ctx.get_modules()
         entry_map, release_index_all, _, sorted_entries = _gather_entry_context(
             project_root, modules
@@ -921,10 +972,9 @@ def _show_entries_export_all(
     explicit_links: bool,
     components: set[str],
     release_mode: bool,
-    select_released: bool,
-    select_unreleased: bool,
+    scope: Scope,
 ) -> None:
-    """Handle --all/--released/--unreleased flags: export entries."""
+    """Handle scope-based filtering for export views."""
     config = ctx.ensure_config()
     project_root = ctx.project_root
     release_index = build_entry_release_index(project_root, project=config.id)
@@ -932,9 +982,15 @@ def _show_entries_export_all(
     manifests = list(iter_release_manifests(project_root))
     manifests.sort(key=lambda m: m.created)
 
-    # Determine what to include based on flags
-    include_unreleased = not select_released
-    include_released = not select_unreleased
+    # Determine what to include based on scope
+    include_unreleased = scope in ("all", "unreleased")
+    include_released = scope in ("all", "released", "latest")
+
+    # For "latest" scope, filter manifests to only the latest one
+    if scope == "latest":
+        if not manifests:
+            raise click.ClickException("No releases found.")
+        manifests = [manifests[-1]]
 
     unreleased_entries: list[Entry] = []
     if include_unreleased:
@@ -951,17 +1007,13 @@ def _show_entries_export_all(
         current_versions: dict[str, str] = {}
         if modules and include_unreleased:
             previous_release = _get_latest_release_manifest(project_root)
-            previous_module_versions = (
-                previous_release.modules if previous_release else None
-            )
+            previous_module_versions = previous_release.modules if previous_release else None
             module_entries_map, current_versions = _gather_module_released_entries(
                 modules, previous_module_versions, None
             )
 
         if unreleased_entries:
-            payload = _build_release_payload(
-                None, unreleased_entries, config, compact=compact
-            )
+            payload = _build_release_payload(None, unreleased_entries, config, compact=compact)
             # Add modules to the payload for JSON output
             if module_entries_map:
                 modules_data: list[dict[str, object]] = []
@@ -1132,9 +1184,7 @@ def _show_entries_export_release_mode(
                 manifest = resolution.manifest
                 entries_for_output = sorted(resolution.entries, key=_release_entry_sort_key)
 
-                fallback_heading = (
-                    manifest.title if manifest and manifest.title else identifier
-                )
+                fallback_heading = manifest.title if manifest and manifest.title else identifier
                 fallback_created = manifest.created if manifest else None
                 payload = _export_json_payload(
                     manifest,
@@ -1351,9 +1401,7 @@ def _show_entries_export(
     explicit_links: bool,
     component_filter: tuple[str, ...],
     release_mode: bool = False,
-    select_all: bool = False,
-    select_released: bool = False,
-    select_unreleased: bool = False,
+    scope: Scope = "all",
 ) -> None:
     """Export entries as Markdown or JSON."""
     config = ctx.ensure_config()
@@ -1364,7 +1412,8 @@ def _show_entries_export(
     compact_flag = config.export_style == EXPORT_STYLE_COMPACT if compact is None else compact
     release_index_export = build_entry_release_index(project_root, project=config.id)
 
-    if select_all or select_released or select_unreleased:
+    # Handle scope-based filtering when no identifiers provided
+    if not identifiers:
         _show_entries_export_all(
             ctx,
             view=view,
@@ -1373,17 +1422,11 @@ def _show_entries_export(
             explicit_links=explicit_links,
             components=components,
             release_mode=release_mode,
-            select_released=select_released,
-            select_unreleased=select_unreleased,
+            scope=scope,
         )
         return
 
     if release_mode:
-        if not identifiers:
-            latest = _get_latest_release_manifest(project_root)
-            if latest is None:
-                raise click.ClickException("No releases found.")
-            identifiers = (latest.version,)
         _show_entries_export_release_mode(
             ctx,
             identifiers,
@@ -1490,9 +1533,6 @@ def run_show_entries(
     include_emoji: bool = True,
     explicit_links: bool = False,
     release_mode: bool = False,
-    select_all: bool = False,
-    select_released: bool = False,
-    select_unreleased: bool = False,
 ) -> None:
     """Python-friendly wrapper around the ``show`` command."""
 
@@ -1500,17 +1540,8 @@ def run_show_entries(
     project_filters = tuple(project_filter or ())
     component_filters = tuple(component_filter or ())
 
-    # Validate mutually exclusive flags
-    filter_flags = [select_all, select_released, select_unreleased]
-    if sum(filter_flags) > 1:
-        raise click.ClickException(
-            "--all, --released, and --unreleased are mutually exclusive."
-        )
-    if any(filter_flags) and identifier_values:
-        raise click.ClickException(
-            "Filter flags (--all, --released, --unreleased) cannot be combined "
-            "with explicit identifiers."
-        )
+    # Parse scope from identifiers (e.g., "unreleased", "released", "latest", "all")
+    scope, remaining_identifiers = _parse_scope_from_identifiers(identifier_values)
 
     if view == "table":
         if compact is not None:
@@ -1519,15 +1550,13 @@ def run_show_entries(
             )
         _show_entries_table(
             ctx,
-            identifier_values,
+            remaining_identifiers,
             project_filters,
             component_filters,
             banner,
             include_emoji=include_emoji,
             release_mode=release_mode,
-            select_all=select_all,
-            select_released=select_released,
-            select_unreleased=select_unreleased,
+            scope=scope,
         )
         return
 
@@ -1542,13 +1571,11 @@ def run_show_entries(
         card_compact = compact if compact is not None else False
         _show_entries_card(
             ctx,
-            identifier_values,
+            remaining_identifiers,
             component_filters,
             include_emoji=include_emoji,
             release_mode=release_mode,
-            select_all=select_all,
-            select_released=select_released,
-            select_unreleased=select_unreleased,
+            scope=scope,
             compact=card_compact,
         )
         return
@@ -1556,16 +1583,14 @@ def run_show_entries(
     if view in {"markdown", "json"}:
         _show_entries_export(
             ctx,
-            identifier_values,
+            remaining_identifiers,
             view=view,
             compact=compact,
             include_emoji=include_emoji,
             explicit_links=explicit_links,
             component_filter=component_filters,
             release_mode=release_mode,
-            select_all=select_all,
-            select_released=select_released,
-            select_unreleased=select_unreleased,
+            scope=scope,
         )
         return
 
@@ -1644,25 +1669,7 @@ def _create_show_command() -> click.Command:
     @click.option(
         "--release",
         is_flag=True,
-        help="Display entries grouped by release with release metadata.",
-    )
-    @click.option(
-        "--all",
-        "select_all",
-        is_flag=True,
-        help="Show all entries (released and unreleased).",
-    )
-    @click.option(
-        "--released",
-        "select_released",
-        is_flag=True,
-        help="Show only released entries.",
-    )
-    @click.option(
-        "--unreleased",
-        "select_unreleased",
-        is_flag=True,
-        help="Show only unreleased entries.",
+        help="Group entries by release and include release metadata.",
     )
     @click.pass_obj
     def show_entries_cmd(
@@ -1676,9 +1683,6 @@ def _create_show_command() -> click.Command:
         no_emoji: bool,
         explicit_links: Optional[bool],
         release: bool,
-        select_all: bool,
-        select_released: bool,
-        select_unreleased: bool,
     ) -> None:
         """Display changelog entries in tables, cards, or export formats."""
 
@@ -1700,9 +1704,6 @@ def _create_show_command() -> click.Command:
             include_emoji=not no_emoji,
             explicit_links=resolved_explicit_links,
             release_mode=release,
-            select_all=select_all,
-            select_released=select_released,
-            select_unreleased=select_unreleased,
         )
 
     show_help = _command_help_text(
@@ -1711,6 +1712,7 @@ def _create_show_command() -> click.Command:
         verb="show",
         row_hint="Row numbers (e.g., 1, 2, 3)",
         version_hint="to show all entries in that release or export it",
+        include_scope=True,
     )
     show_entries_cmd.__doc__ = show_help
     show_entries_cmd.help = show_help
