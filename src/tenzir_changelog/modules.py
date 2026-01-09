@@ -66,15 +66,15 @@ def discover_modules(parent_root: Path, glob_pattern: str) -> Iterator[Module]:
             continue
 
         # Calculate relative path for display
+        # Always show path relative to base_path (after resolving ../)
+        # This gives cleaner paths like "plugins/brand/changelog" instead of
+        # "../plugins/brand/changelog"
         try:
             relative_path = str(match.relative_to(parent_root))
         except ValueError:
             # Path is not relative to parent_root (e.g., ../packages/foo)
+            # Show relative to base_path for cleaner display
             relative_path = str(match.relative_to(base_path))
-            if glob_pattern.startswith(".."):
-                # Reconstruct the relative path with leading ../
-                prefix = "../" * glob_pattern.count("../")
-                relative_path = prefix + relative_path
 
         yield Module(
             root=resolved_match,

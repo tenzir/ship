@@ -205,21 +205,21 @@ def test_run_validation_with_modules_prefixes_issues(tmp_path: Path) -> None:
 # --- CLI Tests ---
 
 
-def test_cli_modules_command_no_config(tmp_path: Path) -> None:
-    """modules command reports when no modules are configured."""
+def test_cli_show_modules_option_no_config(tmp_path: Path) -> None:
+    """--show-modules reports when no modules are configured."""
     runner = CliRunner()
     project_dir = tmp_path / "changelog"
     project_dir.mkdir()
     write_yaml(project_dir / "config.yaml", {"id": "test", "name": "Test"})
 
-    result = runner.invoke(cli, ["--root", str(project_dir), "modules"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "--show-modules"])
 
     assert result.exit_code == 0
     assert "No modules configured" in result.output
 
 
-def test_cli_modules_command_lists_modules(tmp_path: Path) -> None:
-    """modules command lists discovered modules."""
+def test_cli_show_modules_option_lists_modules(tmp_path: Path) -> None:
+    """--show-modules lists discovered modules."""
     packages = tmp_path / "packages"
     create_module(packages, "foo", "Foo Package")
     create_module(packages, "bar", "Bar Package")
@@ -233,7 +233,7 @@ def test_cli_modules_command_lists_modules(tmp_path: Path) -> None:
     (project_dir / "unreleased").mkdir()
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "modules"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "--show-modules"])
 
     assert result.exit_code == 0
     assert "foo" in result.output

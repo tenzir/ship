@@ -380,6 +380,42 @@ def create_cli_context(
 cli: click.Group = None  # type: ignore[assignment]
 
 
+def _show_modules_table(ctx: CLIContext) -> None:
+    """Display discovered modules in a table."""
+    from rich.table import Table
+
+    from ..entries import iter_entries
+    from ..utils import console
+
+    config = ctx.ensure_config()
+    if not config.modules:
+        log_info("No modules configured.")
+        log_info("Add a 'modules' field to config.yaml with a glob pattern.")
+        return
+
+    modules = ctx.get_modules()
+    if not modules:
+        log_info(f"No modules found matching pattern: {config.modules}")
+        return
+
+    table = Table(box=None, padding=(0, 2, 0, 0), show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("NAME")
+    table.add_column("PATH", style="dim")
+    table.add_column("UNRELEASED", justify="right")
+
+    for module in modules:
+        unreleased_count = sum(1 for _ in iter_entries(module.root))
+        table.add_row(
+            module.config.id,
+            module.config.name,
+            module.relative_path,
+            str(unreleased_count),
+        )
+
+    console.print(table)
+
+
 def _create_cli_group() -> click.Group:
     """Create the main CLI group. Called after all commands are defined."""
 
@@ -402,11 +438,26 @@ def _create_cli_group() -> click.Group:
         is_flag=True,
         help="Enable debug logging.",
     )
+    @click.option(
+        "--show-modules",
+        is_flag=True,
+        help="List discovered modules and exit.",
+    )
     @click.pass_context
-    def _cli(ctx: click.Context, root: Path | None, config: Optional[Path], debug: bool) -> None:
+    def _cli(
+        ctx: click.Context,
+        root: Path | None,
+        config: Optional[Path],
+        debug: bool,
+        show_modules: bool,
+    ) -> None:
         """Manage changelog entries and release manifests."""
 
         ctx.obj = create_cli_context(root=root, config=config, debug=debug)
+
+        if show_modules:
+            _show_modules_table(ctx.obj)
+            raise SystemExit(0)
 
         if ctx.invoked_subcommand is None:
             # Import here to avoid circular import

@@ -7,7 +7,7 @@ This package contains the modular CLI implementation:
 - _export.py: markdown and JSON export formatting
 - _manifests.py: release manifest operations
 - _add.py: add command for creating entries
-- _validate.py: validate and modules commands
+- _validate.py: validate command
 - _release.py: release command group
 """
 
@@ -101,11 +101,10 @@ from ._add import (
     add,
 )
 
-# Re-export validate and modules commands
+# Re-export validate command
 from ._validate import (
     run_validate,
     validate_cmd,
-    modules_cmd,
 )
 
 # Re-export release commands
@@ -126,7 +125,6 @@ cli = _create_cli_group()
 cli.add_command(show_entries)
 cli.add_command(add)
 cli.add_command(validate_cmd)
-cli.add_command(modules_cmd)
 cli.add_command(release_group)
 
 
@@ -172,10 +170,9 @@ __all__ = [
     "render_release_notes",
     "publish_release",
     "release_group",
-    # Validate/Modules
+    # Validate
     "run_validate",
     "validate_cmd",
-    "modules_cmd",
     # Rendering
     "IdentifierResolution",
     "ColumnSpec",
