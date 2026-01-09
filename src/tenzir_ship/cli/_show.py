@@ -655,10 +655,10 @@ def _show_entries_table(
 
     if release_mode:
         if not identifiers:
-            raise click.ClickException(
-                "--release requires identifiers (e.g., v1.0.0) or use "
-                "--all, --released, or --unreleased flags."
-            )
+            latest = _get_latest_release_manifest(project_root)
+            if latest is None:
+                raise click.ClickException("No releases found.")
+            identifiers = (latest.version,)
         _show_entries_table_release_mode(
             ctx,
             identifiers,
@@ -786,10 +786,10 @@ def _show_entries_card(
 
     if release_mode:
         if not identifiers:
-            raise click.ClickException(
-                "--release requires identifiers (e.g., v1.0.0) or use "
-                "--all, --released, or --unreleased flags."
-            )
+            latest = _get_latest_release_manifest(project_root)
+            if latest is None:
+                raise click.ClickException("No releases found.")
+            identifiers = (latest.version,)
 
         modules = ctx.get_modules()
         entry_map, release_index_all, _, sorted_entries = _gather_entry_context(
@@ -1380,10 +1380,10 @@ def _show_entries_export(
 
     if release_mode:
         if not identifiers:
-            raise click.ClickException(
-                "--release requires identifiers (e.g., v1.0.0) or use "
-                "--all, --released, or --unreleased flags."
-            )
+            latest = _get_latest_release_manifest(project_root)
+            if latest is None:
+                raise click.ClickException("No releases found.")
+            identifiers = (latest.version,)
         _show_entries_export_release_mode(
             ctx,
             identifiers,
