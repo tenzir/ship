@@ -1,0 +1,10 @@
+created: 2026-01-09
+title: Ship Relaunch
+intro: >-
+  This major release renames the package from `tenzir-changelog` to `tenzir-ship`
+  and introduces several breaking changes to streamline the CLI interface. The `show`
+  command now uses intuitive positional tokens (`unreleased`, `released`, `latest`,
+  `all`) instead of flags, and the `release notes` command has been merged into `show
+  --release`. A new `stats` command provides adaptive project statistics, and the
+  table layout has been enhanced with better title formatting and inline component
+  labels.
