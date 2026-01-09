@@ -1,15 +1,16 @@
 # 🚀 tenzir-ship
 
-`tenzir-ship` is a release engineering accelerator for software teams. It
-streamlines the path from code to production by automating changelog
-management, release coordination, and shipping workflows across repositories.
+`tenzir-ship` helps you ship faster with automated release engineering. Manage
+changelogs, generate release notes, and publish GitHub releases.
 
 ## ✨ Highlights
 
 - 📝 **Changelog management**: Capture entries via an interactive assistant that
   pulls metadata from Git and GitHub, pre-filling authors and PR references.
-- 📦 **Release assembly**: Create release manifests with narrative introductions
-  and structured entry lists, ready for documentation pipelines.
+- 📦 **Release notes**: Generate release notes from structured entries, ready
+  for documentation pipelines or direct publishing.
+- 🚀 **GitHub releases**: Publish releases directly to GitHub with generated
+  notes and assets.
 - 🔧 **CLI and Python API**: Use the command line for interactive workflows or
   the Python API for automation.
 
@@ -33,7 +34,7 @@ guide](https://docs.tenzir.com/guides/package-management/maintain-a-changelog)
 for an end-to-end walkthrough of maintaining changelogs.
 
 We also provide a dense
-[reference](https://docs.tenzir.com/reference/changelog-framework) that explains
+[reference](https://docs.tenzir.com/reference/ship-framework) that explains
 concepts, abstractions, and CLI details.
 
 ## 🐶 Dogfooded Project

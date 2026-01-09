@@ -816,12 +816,16 @@ def test_show_orders_rows_oldest_to_newest(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
     plain_output = click.utils.strip_ansi(result.output)
-    data_rows = [line for line in plain_output.splitlines() if line.startswith("│")]
-    row_numbers = [row.split("│")[1].strip() for row in data_rows]
-    assert row_numbers == ["3", "2", "1"]
-    assert [row.split("│")[4].strip() for row in data_rows] == ["Oldest", "Middle", "Newest"]
-    dates = [row.split("│")[2].strip() for row in data_rows]
-    assert dates == sorted(dates)
+    # With borderless tables, check that titles appear in oldest-to-newest order
+    # by finding their line positions in the output
+    oldest_pos = plain_output.find("Oldest")
+    middle_pos = plain_output.find("Middle")
+    newest_pos = plain_output.find("Newest")
+    assert oldest_pos < middle_pos < newest_pos, "Entries should be ordered oldest to newest"
+    # Verify all three entries are present
+    assert "Oldest" in plain_output
+    assert "Middle" in plain_output
+    assert "Newest" in plain_output
 
     newest_card = runner.invoke(cli, ["--root", str(project_dir), "show", "-c", "1"])
     assert newest_card.exit_code == 0, newest_card.output

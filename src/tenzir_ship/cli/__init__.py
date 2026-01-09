@@ -115,6 +115,9 @@ from ._release import (
     release_group,
 )
 
+# Re-export stats command
+from ._stats import stats_cmd
+
 # Re-export detect_github_login from utils for backwards compatibility
 from ..utils import detect_github_login
 
@@ -126,6 +129,7 @@ cli.add_command(show_entries)
 cli.add_command(add)
 cli.add_command(validate_cmd)
 cli.add_command(release_group)
+cli.add_command(stats_cmd)
 
 
 __all__ = [

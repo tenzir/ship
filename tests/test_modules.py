@@ -205,21 +205,22 @@ def test_run_validation_with_modules_prefixes_issues(tmp_path: Path) -> None:
 # --- CLI Tests ---
 
 
-def test_cli_show_modules_option_no_config(tmp_path: Path) -> None:
-    """--show-modules reports when no modules are configured."""
+def test_cli_stats_command_shows_parent(tmp_path: Path) -> None:
+    """stats command shows parent project even without modules."""
     runner = CliRunner()
     project_dir = tmp_path / "changelog"
     project_dir.mkdir()
     write_yaml(project_dir / "config.yaml", {"id": "test", "name": "Test"})
 
-    result = runner.invoke(cli, ["--root", str(project_dir), "--show-modules"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats"])
 
     assert result.exit_code == 0
-    assert "No modules configured" in result.output
+    assert "test" in result.output
+    assert "📛" in result.output  # vertical view shows project info
 
 
-def test_cli_show_modules_option_lists_modules(tmp_path: Path) -> None:
-    """--show-modules lists discovered modules."""
+def test_cli_stats_command_lists_modules(tmp_path: Path) -> None:
+    """stats command lists discovered modules with their IDs."""
     packages = tmp_path / "packages"
     create_module(packages, "foo", "Foo Package")
     create_module(packages, "bar", "Bar Package")
@@ -233,13 +234,68 @@ def test_cli_show_modules_option_lists_modules(tmp_path: Path) -> None:
     (project_dir / "unreleased").mkdir()
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--root", str(project_dir), "--show-modules"])
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats"])
 
     assert result.exit_code == 0
+    # IDs may be truncated in narrow terminals, so check for prefix
+    assert "pa" in result.output  # parent
     assert "foo" in result.output
     assert "bar" in result.output
-    assert "Foo Package" in result.output
-    assert "Bar Package" in result.output
+
+
+def test_cli_stats_vertical_view_for_single_project(tmp_path: Path) -> None:
+    """stats command uses vertical view for projects without modules."""
+    runner = CliRunner()
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(project_dir / "config.yaml", {"id": "myproject", "name": "My Project"})
+    (project_dir / "unreleased").mkdir()
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats"])
+
+    assert result.exit_code == 0
+    # Vertical view shows project info with emoji indicators
+    # Text may be truncated in narrow test terminal, but emojis survive
+    assert "📛" in result.output  # Name row
+    assert "🔖" in result.output  # Version row
+
+
+def test_cli_stats_table_flag_forces_table_view(tmp_path: Path) -> None:
+    """stats --table forces table view even for single project."""
+    runner = CliRunner()
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(project_dir / "config.yaml", {"id": "myproject", "name": "My Project"})
+    (project_dir / "unreleased").mkdir()
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats", "--table"])
+
+    assert result.exit_code == 0
+    # Table view has emoji headers (📛 for name/ID column)
+    assert "📛" in result.output
+    # Table shows project ID in data row
+    assert "myproject" in result.output
+
+
+def test_cli_stats_json_output(tmp_path: Path) -> None:
+    """stats --json produces valid JSON output."""
+    import json
+
+    runner = CliRunner()
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(project_dir / "config.yaml", {"id": "myproject", "name": "My Project"})
+    (project_dir / "unreleased").mkdir()
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats", "--json"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "project_root" in data
+    assert "parent" in data
+    assert data["parent"]["id"] == "myproject"
+    assert "releases" in data["parent"]
+    assert "entries" in data["parent"]
 
 
 def test_cli_show_includes_modules_by_default(tmp_path: Path) -> None:

@@ -39,7 +39,6 @@ from ..releases import (
     used_entry_ids,
 )
 from ..utils import (
-    console,
     emit_output,
 )
 from ._core import (

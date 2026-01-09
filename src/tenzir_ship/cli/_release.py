@@ -20,7 +20,6 @@ from ..entries import Entry
 from ..releases import (
     ReleaseManifest,
     NOTES_FILENAME,
-    build_entry_release_index,
     iter_release_manifests,
     load_release_entry,
     release_directory,
