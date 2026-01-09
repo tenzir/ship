@@ -1,18 +1,19 @@
-# 📝 tenzir-ship
+# 🚀 tenzir-ship
 
-`tenzir-ship` is the reusable changelog companion for Tenzir projects. It
-helps contributors capture entries, maintain release manifests, and ship tidy
-change logs across public and private repositories.
+`tenzir-ship` is a release engineering accelerator for software teams. It
+streamlines the path from code to production by automating changelog
+management, release coordination, and shipping workflows across repositories.
 
 ## ✨ Highlights
 
-- 🚀 Bootstrap a changelog project with sensible defaults and YAML
-  configuration in seconds.
-- 🧾 Capture changelog entries via an interactive assistant that pulls metadata
-  from Git and GitHub, pre-filling authors from your `gh` login and current PRs.
-- 📦 Assemble release manifests that include narrative introductions before the
-  structured list of entries.
-- 🔍 Validate entry metadata and release manifests to keep docs tooling happy.
+- 📝 **Changelog management**: Capture entries via an interactive assistant that
+  pulls metadata from Git and GitHub, pre-filling authors and PR references.
+- 📦 **Release assembly**: Create release manifests with narrative introductions
+  and structured entry lists, ready for documentation pipelines.
+- ✅ **Validation**: Ensure entry metadata and release manifests stay consistent
+  and complete across your project.
+- 🔧 **Extensible**: YAML configuration and a Python API for integration into
+  custom release workflows.
 
 ## 📦 Installation
 
