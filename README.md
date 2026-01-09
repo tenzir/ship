@@ -1,6 +1,6 @@
-# 📝 tenzir-changelog
+# 📝 tenzir-ship
 
-`tenzir-changelog` is the reusable changelog companion for Tenzir projects. It
+`tenzir-ship` is the reusable changelog companion for Tenzir projects. It
 helps contributors capture entries, maintain release manifests, and ship tidy
 change logs across public and private repositories.
 
@@ -16,12 +16,12 @@ change logs across public and private repositories.
 
 ## 📦 Installation
 
-`tenzir-changelog` ships on PyPI. Use
+`tenzir-ship` ships on PyPI. Use
 [`uvx`](https://docs.astral.sh/uv/concepts/tools/) to fetch and execute the
 latest compatible version on demand (requires Python 3.12+):
 
 ```sh
-uvx tenzir-changelog --help
+uvx tenzir-ship --help
 ```
 
 `uvx` downloads the newest release, runs it in an isolated environment, and
@@ -52,5 +52,5 @@ plugins](https://github.com/tenzir/claude-plugins)—just clone and start hackin
 
 ## 📄 License
 
-`tenzir-changelog` is released under the Apache License, Version 2.0. Consult
+`tenzir-ship` is released under the Apache License, Version 2.0. Consult
 [`LICENSE`](LICENSE) for the full text.

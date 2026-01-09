@@ -55,7 +55,7 @@ jobs:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     environment:
       name: pypi
-      url: https://pypi.org/p/tenzir-changelog
+      url: https://pypi.org/p/tenzir-ship
 
     steps:
       - name: Download artifacts
@@ -96,7 +96,7 @@ jobs:
         env:
           EXPECTED_VERSION: ${{ steps.expected-version.outputs.expected_version }}
         run: |
-          installed_version="$(uvx tenzir-changelog --version | tr -d '\r')"
+          installed_version="$(uvx tenzir-ship --version | tr -d '\r')"
           if [ "$installed_version" != "$EXPECTED_VERSION" ]; then
             echo "Expected version $EXPECTED_VERSION but received $installed_version." >&2
             exit 1
