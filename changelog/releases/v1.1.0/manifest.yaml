@@ -1,0 +1,5 @@
+created: 2026-01-17
+title: Publish Progress Tracking
+intro: "This release improves the user experience when `release publish` encounters\n\
+  failures mid-workflow. You now see a clear progress summary showing which steps\n\
+  completed, which step failed, and what remains pending\u2014making recovery\nstraightforward."
