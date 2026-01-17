@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from dataclasses import dataclass, field
 from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import NoReturn, Optional
 
 import click
 from click.core import ParameterSource
 from packaging.version import InvalidVersion, Version
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
@@ -57,6 +60,81 @@ from ._show import (
     _gather_module_released_entries,
     _get_latest_release_manifest,
 )
+
+
+class StepStatus(Enum):
+    """Status of a release workflow step."""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+@dataclass
+class ReleaseStep:
+    """A single step in the release workflow."""
+
+    name: str
+    command: str
+    status: StepStatus = StepStatus.PENDING
+
+
+@dataclass
+class StepTracker:
+    """Tracks progress through release workflow steps."""
+
+    steps: list[ReleaseStep] = field(default_factory=list)
+
+    def add(self, name: str, command: str) -> None:
+        """Add a step to track."""
+        self.steps.append(ReleaseStep(name, command))
+
+    def complete(self, name: str) -> None:
+        """Mark a step as completed."""
+        for step in self.steps:
+            if step.name == name:
+                step.status = StepStatus.COMPLETED
+
+    def skip(self, name: str) -> None:
+        """Mark a step as skipped."""
+        for step in self.steps:
+            if step.name == name:
+                step.status = StepStatus.SKIPPED
+
+    def fail(self, name: str) -> None:
+        """Mark a step as failed."""
+        for step in self.steps:
+            if step.name == name:
+                step.status = StepStatus.FAILED
+
+
+def _render_release_progress(tracker: StepTracker) -> None:
+    """Render release progress summary to stderr on failure."""
+    total = len(tracker.steps)
+    done = len([s for s in tracker.steps if s.status == StepStatus.COMPLETED])
+    progress = f"{done}/{total}"
+
+    lines: list[str] = []
+    for step in tracker.steps:
+        if step.status == StepStatus.COMPLETED:
+            icon = "[green]\u2714[/green]"
+            cmd = f"[dim]{step.command}[/dim]"
+        elif step.status == StepStatus.FAILED:
+            icon = "[red]\u2718[/red]"
+            cmd = f"[red]{step.command}[/red]"
+        elif step.status == StepStatus.SKIPPED:
+            continue  # Don't show skipped steps
+        else:  # PENDING
+            icon = "[dim]\u25cb[/dim]"
+            cmd = f"[dim]{step.command}[/dim]"
+        lines.append(f"{icon} {cmd}")
+
+    if lines:
+        content = Text.from_markup("\n".join(lines))
+        title = f"Release Progress ({progress})"
+        _print_renderable(Panel(content, title=title, border_style="red"))
+
 
 __all__ = [
     "create_release",
@@ -478,6 +556,8 @@ def publish_release(
     if not notes_content:
         raise click.ClickException("Release notes are empty; aborting publish.")
 
+    # Determine commit message early for step tracking display
+    final_commit_message: str | None = None
     if create_commit:
         if not create_tag:
             raise click.ClickException("--commit requires --tag to be specified.")
@@ -485,37 +565,63 @@ def publish_release(
             raise click.ClickException(
                 "No staged changes to commit. Stage changes with 'git add' first."
             )
-        # Determine commit message: CLI flag > config > default
         final_commit_message = commit_message or config.release.commit_message.format(
             version=manifest.version
         )
+
+    # Initialize step tracker with all planned steps
+    tracker = StepTracker()
+    if create_commit:
+        tracker.add("commit", f'git commit -m "{final_commit_message}"')
+    if create_tag:
+        tracker.add("tag", f'git tag -a {manifest.version} -m "Release {manifest.version}"')
+        tracker.add("push_branch", "git push origin <branch>:<branch>")
+        tracker.add("push_tag", f"git push origin {manifest.version}")
+    tracker.add("publish", f"gh release create {manifest.version} --repo {config.repository} ...")
+
+    def _fail_step_and_raise(step_name: str, exc: Exception) -> NoReturn:
+        """Mark step as failed, render progress, and re-raise the exception."""
+        tracker.fail(step_name)
+        _render_release_progress(tracker)
+        raise click.ClickException(str(exc)) from exc
+
+    # Execute commit step
+    if create_commit:
+        assert final_commit_message is not None
         try:
             create_git_commit(project_root, final_commit_message)
         except RuntimeError as exc:
-            raise click.ClickException(str(exc)) from exc
+            _fail_step_and_raise("commit", exc)
+        tracker.complete("commit")
         log_success(f"created commit: {final_commit_message}")
 
+    # Execute tag and push steps
     if create_tag:
         tag_message = f"Release {manifest.version}"
         try:
             created = create_annotated_git_tag(project_root, manifest.version, tag_message)
         except RuntimeError as exc:
-            raise click.ClickException(str(exc)) from exc
+            _fail_step_and_raise("tag", exc)
+        tracker.complete("tag")
         if created:
             log_success(f"created git tag {manifest.version}.")
         else:
             log_warning(f"git tag {manifest.version} already exists; skipping creation.")
+
         try:
             branch_remote, branch_remote_ref, branch_name = push_current_branch(
                 project_root, config.repository
             )
         except RuntimeError as exc:
-            raise click.ClickException(str(exc)) from exc
+            _fail_step_and_raise("push_branch", exc)
+        tracker.complete("push_branch")
         log_success(f"pushed branch {branch_name} to remote {branch_remote}/{branch_remote_ref}.")
+
         try:
             remote_name = push_git_tag(project_root, manifest.version, config.repository)
         except RuntimeError as exc:
-            raise click.ClickException(str(exc)) from exc
+            _fail_step_and_raise("push_tag", exc)
+        tracker.complete("push_tag")
         log_success(f"pushed git tag {manifest.version} to remote {remote_name}.")
 
     release_exists = _github_release_exists(config.repository, manifest.version, gh_path)
@@ -575,9 +681,12 @@ def publish_release(
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as exc:
+        tracker.fail("publish")
+        _render_release_progress(tracker)
         raise click.ClickException(
             f"'gh' exited with status {exc.returncode}. See output for details."
         ) from exc
+    tracker.complete("publish")
 
     log_success(f"published {manifest.version} to GitHub repository {config.repository}.")
 
