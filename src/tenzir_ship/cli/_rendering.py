@@ -768,11 +768,11 @@ def _render_entries_multi_project(
     if "id" in visible_columns:
         _add_table_column(table, "ID", "id", column_specs, style="cyan", no_wrap_default=True)
 
-    # Sort entries: by project order, then by date descending
+    # Sort entries: by project order, then by date ascending (oldest first)
     def sort_key(multi: MultiProjectEntry) -> tuple[int, float, str]:
         proj_idx = project_order.get(multi.project_id, 999)
         ts = multi.entry.created_at.timestamp() if multi.entry.created_at else 0
-        return (proj_idx, -ts, multi.entry.entry_id)
+        return (proj_idx, ts, multi.entry.entry_id)
 
     sorted_entries = sorted(entries, key=sort_key)
 
