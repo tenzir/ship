@@ -34,6 +34,7 @@ from ..utils import (
     create_git_commit,
     emit_output,
     format_bold,
+    get_push_branch_info,
     has_staged_changes,
     log_info,
     log_success,
@@ -573,10 +574,22 @@ def publish_release(
     tracker = StepTracker()
     if create_commit:
         tracker.add("commit", f'git commit -m "{final_commit_message}"')
+
+    # Get branch info early for accurate step tracking display
+    push_remote: str | None = None
+    push_remote_ref: str | None = None
+    push_branch: str | None = None
     if create_tag:
+        try:
+            push_remote, push_remote_ref, push_branch = get_push_branch_info(
+                project_root, config.repository
+            )
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
+
         tracker.add("tag", f'git tag -a {manifest.version} -m "Release {manifest.version}"')
-        tracker.add("push_branch", "git push origin <branch>:<branch>")
-        tracker.add("push_tag", f"git push origin {manifest.version}")
+        tracker.add("push_branch", f"git push {push_remote} {push_branch}:{push_remote_ref}")
+        tracker.add("push_tag", f"git push {push_remote} {manifest.version}")
     tracker.add("publish", f"gh release create {manifest.version} --repo {config.repository} ...")
 
     def _fail_step_and_raise(step_name: str, exc: Exception) -> NoReturn:
@@ -609,13 +622,11 @@ def publish_release(
             log_warning(f"git tag {manifest.version} already exists; skipping creation.")
 
         try:
-            branch_remote, branch_remote_ref, branch_name = push_current_branch(
-                project_root, config.repository
-            )
+            push_current_branch(project_root, config.repository)
         except RuntimeError as exc:
             _fail_step_and_raise("push_branch", exc)
         tracker.complete("push_branch")
-        log_success(f"pushed branch {branch_name} to remote {branch_remote}/{branch_remote_ref}.")
+        log_success(f"pushed branch {push_branch} to remote {push_remote}/{push_remote_ref}.")
 
         try:
             remote_name = push_git_tag(project_root, manifest.version, config.repository)

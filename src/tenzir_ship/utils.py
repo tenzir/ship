@@ -548,6 +548,27 @@ def _upstream_branch(project_root: Path) -> Optional[tuple[str, str]]:
     return remote_name, branch_name
 
 
+def get_push_branch_info(
+    project_root: Path, repository: str | None = None
+) -> tuple[str, str, str]:
+    """Return push branch info (remote, remote_ref, branch) without executing.
+
+    Raises RuntimeError if HEAD is detached.
+    """
+    branch = _current_branch(project_root)
+    if not branch:
+        raise RuntimeError("cannot determine current branch because HEAD is detached.")
+
+    upstream = _upstream_branch(project_root)
+    if upstream:
+        remote_name, remote_branch = upstream
+    else:
+        remote_name = _select_remote_name(project_root, repository)
+        remote_branch = branch
+
+    return remote_name, remote_branch, branch
+
+
 def push_current_branch(project_root: Path, repository: str | None = None) -> tuple[str, str, str]:
     """Push the current branch to its upstream (or configured) remote."""
     branch = _current_branch(project_root)
