@@ -526,3 +526,72 @@ def test_show_release_no_modules_no_separator(tmp_path: Path) -> None:
     assert "Test Feature" in result.output
     # No separator when no modules
     assert "---" not in result.output
+
+
+def create_entry_with_timestamp(
+    module_root: Path, title: str, timestamp: str, entry_type: str = "feature"
+) -> Path:
+    """Create a changelog entry with a specific timestamp."""
+    slug = title.lower().replace(" ", "-")
+    entry_path = module_root / "unreleased" / f"{slug}.md"
+    entry_path.write_text(
+        f"---\ntitle: {title}\ntype: {entry_type}\ncreated: {timestamp}\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    return entry_path
+
+
+def test_cli_show_multi_project_sorts_entries_oldest_first(tmp_path: Path) -> None:
+    """Multi-project show command sorts entries oldest-first within each project."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+
+    # Create module entries with different timestamps (out of order)
+    create_entry_with_timestamp(mod_root, "Newest Module Entry", "2025-01-03T00:00:00Z")
+    create_entry_with_timestamp(mod_root, "Oldest Module Entry", "2025-01-01T00:00:00Z")
+    create_entry_with_timestamp(mod_root, "Middle Module Entry", "2025-01-02T00:00:00Z")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+
+    # Create parent entries with different timestamps (out of order)
+    create_entry_with_timestamp(project_dir, "Newest Parent Entry", "2025-01-03T00:00:00Z")
+    create_entry_with_timestamp(project_dir, "Oldest Parent Entry", "2025-01-01T00:00:00Z")
+    create_entry_with_timestamp(project_dir, "Middle Parent Entry", "2025-01-02T00:00:00Z")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "show"])
+
+    assert result.exit_code == 0
+
+    # Find positions of entries in output to verify ordering
+    output = result.output
+    parent_oldest = output.find("Oldest Parent Entry")
+    parent_middle = output.find("Middle Parent Entry")
+    parent_newest = output.find("Newest Parent Entry")
+    module_oldest = output.find("Oldest Module Entry")
+    module_middle = output.find("Middle Module Entry")
+    module_newest = output.find("Newest Module Entry")
+
+    # Verify all entries are present
+    assert parent_oldest != -1, "Oldest Parent Entry not found"
+    assert parent_middle != -1, "Middle Parent Entry not found"
+    assert parent_newest != -1, "Newest Parent Entry not found"
+    assert module_oldest != -1, "Oldest Module Entry not found"
+    assert module_middle != -1, "Middle Module Entry not found"
+    assert module_newest != -1, "Newest Module Entry not found"
+
+    # Within parent project: oldest should appear before middle, middle before newest
+    assert parent_oldest < parent_middle < parent_newest, (
+        "Parent entries not sorted oldest-first"
+    )
+
+    # Within module project: oldest should appear before middle, middle before newest
+    assert module_oldest < module_middle < module_newest, (
+        "Module entries not sorted oldest-first"
+    )
