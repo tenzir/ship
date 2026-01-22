@@ -548,9 +548,7 @@ def _upstream_branch(project_root: Path) -> Optional[tuple[str, str]]:
     return remote_name, branch_name
 
 
-def get_push_branch_info(
-    project_root: Path, repository: str | None = None
-) -> tuple[str, str, str]:
+def get_push_branch_info(project_root: Path, repository: str | None = None) -> tuple[str, str, str]:
     """Return push branch info (remote, remote_ref, branch) without executing.
 
     Raises RuntimeError if HEAD is detached.
