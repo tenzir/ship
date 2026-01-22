@@ -587,11 +587,7 @@ def test_cli_show_multi_project_sorts_entries_oldest_first(tmp_path: Path) -> No
     assert module_newest != -1, "Newest Module Entry not found"
 
     # Within parent project: oldest should appear before middle, middle before newest
-    assert parent_oldest < parent_middle < parent_newest, (
-        "Parent entries not sorted oldest-first"
-    )
+    assert parent_oldest < parent_middle < parent_newest, "Parent entries not sorted oldest-first"
 
     # Within module project: oldest should appear before middle, middle before newest
-    assert module_oldest < module_middle < module_newest, (
-        "Module entries not sorted oldest-first"
-    )
+    assert module_oldest < module_middle < module_newest, "Module entries not sorted oldest-first"
