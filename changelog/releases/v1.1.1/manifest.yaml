@@ -1,0 +1,6 @@
+created: 2026-01-23
+title: Bugfixes for Multi-Project Display
+intro: >-
+  This release fixes two bugs: the multi-project `show` command now displays entries
+  in consistent chronological order, and release recovery instructions show the actual
+  branch name instead of a placeholder.
