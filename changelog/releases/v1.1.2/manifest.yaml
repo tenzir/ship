@@ -1,0 +1,6 @@
+created: 2026-01-26
+title: Bugfixes for Entry Processing
+intro: >-
+  This release fixes bugs in changelog entry processing and version detection. The
+  `authors` field now correctly normalizes single string values, and the `show` command
+  no longer misidentifies entry IDs as release versions.
