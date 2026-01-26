@@ -61,6 +61,18 @@ def test_read_entry_normalizes_singular_author_to_authors(tmp_path: Path) -> Non
     assert entry.metadata["authors"] == ["codex"]
 
 
+def test_read_entry_normalizes_authors_string_to_list(tmp_path: Path) -> None:
+    """Plural `authors` key as a string should be normalized to a list."""
+    entry_file = tmp_path / "test.md"
+    entry_file.write_text(
+        "---\ntitle: Test Entry\ntype: feature\nauthors: mavam\n---\nBody text.\n",
+        encoding="utf-8",
+    )
+
+    entry = read_entry(entry_file)
+    assert entry.metadata["authors"] == ["mavam"]
+
+
 def test_read_entry_rejects_both_pr_and_prs(tmp_path: Path) -> None:
     """Having both `pr` and `prs` should raise an error."""
     import pytest

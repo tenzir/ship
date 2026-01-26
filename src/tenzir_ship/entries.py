@@ -240,6 +240,11 @@ def _normalize_authors_metadata(metadata: dict[str, Any]) -> None:
             metadata["authors"] = (
                 [author_value] if not isinstance(author_value, list) else author_value
             )
+    # Also normalize authors if it's a singleton string
+    elif "authors" in metadata:
+        authors_value = metadata["authors"]
+        if authors_value is not None and not isinstance(authors_value, list):
+            metadata["authors"] = [authors_value]
 
 
 def _normalize_components_metadata(metadata: dict[str, Any]) -> None:
