@@ -96,8 +96,21 @@ Scope = Literal["all", "unreleased", "released", "latest"]
 SCOPE_TOKENS: set[Scope] = {"all", "unreleased", "released", "latest"}
 
 
+def _get_known_release_versions(project_root: Path) -> dict[str, str]:
+    """Return mapping of lowercase version to original version string.
+
+    Returns a dict for case-insensitive version lookups:
+    - Keys: lowercase version strings (use for matching user input)
+    - Values: original case-preserved versions (use for display and loading)
+
+    Example: {"v1.0.0": "v1.0.0", "v2.0.0-beta": "v2.0.0-Beta"}
+    """
+    return {m.version.lower(): m.version for m in iter_release_manifests(project_root)}
+
+
 def _parse_scope_from_identifiers(
     identifiers: tuple[str, ...],
+    known_versions: dict[str, str],
 ) -> tuple[Scope, tuple[str, ...]]:
     """Extract scope token from identifiers, returning (scope, remaining_identifiers).
 
@@ -138,12 +151,12 @@ def _parse_scope_from_identifiers(
             "Use 'all' alone to show everything."
         )
     if scope == "unreleased" and remaining:
-        # Check if any remaining identifiers look like versions
-        version_like = [r for r in remaining if r.lower().startswith("v")]
-        if version_like:
+        # Check if any remaining identifiers are known release versions
+        matched_versions = [r for r in remaining if r.lower() in known_versions]
+        if matched_versions:
             raise click.ClickException(
                 f"'unreleased' scope cannot be combined with version identifiers: "
-                f"{', '.join(version_like)}"
+                f"{', '.join(matched_versions)}"
             )
 
     return scope, tuple(remaining)
@@ -248,6 +261,7 @@ def _resolve_identifier(
     config: Config,
     sorted_entries: list[Entry],
     entry_map: dict[str, Entry],
+    known_versions: dict[str, str],
     allowed_kinds: Optional[Iterable[IdentifierKind]] = None,
 ) -> IdentifierResolution:
     """Resolve a single identifier to its matching entries."""
@@ -291,13 +305,15 @@ def _resolve_identifier(
             f"Row number {row_num} is out of range. Valid range: 1-{len(sorted_entries)}"
         )
 
-    if token.startswith(("v", "V")):
+    if lowered in known_versions:
         if "release" not in allowed:
             raise click.ClickException(
                 f"Release identifiers such as '{token}' are not supported by this command."
             )
+        # Use the original version string from the manifest to ensure case-sensitive match
+        original_version = known_versions[lowered]
         manifest, release_entries = _load_release_entries_for_display(
-            project_root, token, entry_map
+            project_root, original_version, entry_map
         )
         return IdentifierResolution(
             kind="release",
@@ -334,6 +350,7 @@ def _resolve_identifiers_sequence(
     config: Config,
     sorted_entries: list[Entry],
     entry_map: dict[str, Entry],
+    known_versions: dict[str, str],
     allowed_kinds: Optional[Iterable[IdentifierKind]] = None,
 ) -> list[IdentifierResolution]:
     """Resolve a list of identifiers into their matching entries."""
@@ -344,6 +361,7 @@ def _resolve_identifiers_sequence(
             config=config,
             sorted_entries=sorted_entries,
             entry_map=entry_map,
+            known_versions=known_versions,
             allowed_kinds=allowed_kinds,
         )
         for identifier in identifiers
@@ -558,6 +576,7 @@ def _show_entries_table_release_mode(
     include_emoji: bool,
     entry_map: dict[str, Entry],
     sorted_entries: list[Entry],
+    known_versions: dict[str, str],
 ) -> None:
     """Handle --release flag with identifiers: display entries in a unified table with Release column."""
     config = ctx.ensure_config()
@@ -570,6 +589,7 @@ def _show_entries_table_release_mode(
         config=config,
         sorted_entries=sorted_entries,
         entry_map=entry_map,
+        known_versions=known_versions,
     )
 
     # Build flat list of entries with their release versions
@@ -642,6 +662,7 @@ def _show_entries_table(
     include_emoji: bool,
     release_mode: bool = False,
     scope: Scope = "all",
+    known_versions: dict[str, str],
 ) -> None:
     """Display entries in table format."""
     modules = ctx.get_modules()
@@ -718,6 +739,7 @@ def _show_entries_table(
             include_emoji=include_emoji,
             entry_map=entry_map,
             sorted_entries=sorted_entries,
+            known_versions=known_versions,
         )
         return
 
@@ -728,6 +750,7 @@ def _show_entries_table(
             config=config,
             sorted_entries=sorted_entries,
             entry_map=entry_map,
+            known_versions=known_versions,
         )
         if len(resolutions) == 1 and resolutions[0].kind == "release" and not components:
             release_resolution = resolutions[0]
@@ -765,6 +788,7 @@ def _show_entries_card(
     release_mode: bool = False,
     scope: Scope = "all",
     compact: bool = True,
+    known_versions: dict[str, str],
 ) -> None:
     """Display entries as detailed cards."""
     config = ctx.ensure_config()
@@ -853,6 +877,7 @@ def _show_entries_card(
             config=config,
             sorted_entries=sorted_entries,
             entry_map=entry_map,
+            known_versions=known_versions,
         )
 
         release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
@@ -941,6 +966,7 @@ def _show_entries_card(
         config=config,
         sorted_entries=sorted_entries,
         entry_map=entry_map,
+        known_versions=known_versions,
     )
 
     release_index = release_index_all
@@ -1163,6 +1189,7 @@ def _show_entries_export_release_mode(
     components: set[str],
     entry_map: dict[str, Entry],
     sorted_entries: list[Entry],
+    known_versions: dict[str, str],
 ) -> None:
     """Handle --release flag with explicit identifiers: group entries by release."""
     config = ctx.ensure_config()
@@ -1176,6 +1203,7 @@ def _show_entries_export_release_mode(
             config=config,
             sorted_entries=sorted_entries,
             entry_map=entry_map,
+            known_versions=known_versions,
         )
         if len(resolutions) == 1 and resolutions[0].kind == "release":
             if view == "json":
@@ -1331,6 +1359,7 @@ def _show_entries_export_release_mode(
         config=config,
         sorted_entries=sorted_entries,
         entry_map=entry_map,
+        known_versions=known_versions,
     )
 
     release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
@@ -1402,6 +1431,7 @@ def _show_entries_export(
     component_filter: tuple[str, ...],
     release_mode: bool = False,
     scope: Scope = "all",
+    known_versions: dict[str, str],
 ) -> None:
     """Export entries as Markdown or JSON."""
     config = ctx.ensure_config()
@@ -1437,6 +1467,7 @@ def _show_entries_export(
             components=components,
             entry_map=entry_map,
             sorted_entries=sorted_entries,
+            known_versions=known_versions,
         )
         return
 
@@ -1449,6 +1480,7 @@ def _show_entries_export(
             config=config,
             sorted_entries=sorted_entries,
             entry_map=entry_map,
+            known_versions=known_versions,
         )
 
         if len(resolutions) == 1 and resolutions[0].kind == "release":
@@ -1541,7 +1573,8 @@ def run_show_entries(
     component_filters = tuple(component_filter or ())
 
     # Parse scope from identifiers (e.g., "unreleased", "released", "latest", "all")
-    scope, remaining_identifiers = _parse_scope_from_identifiers(identifier_values)
+    known_versions = _get_known_release_versions(ctx.project_root)
+    scope, remaining_identifiers = _parse_scope_from_identifiers(identifier_values, known_versions)
 
     if view == "table":
         if compact is not None:
@@ -1557,6 +1590,7 @@ def run_show_entries(
             include_emoji=include_emoji,
             release_mode=release_mode,
             scope=scope,
+            known_versions=known_versions,
         )
         return
 
@@ -1577,6 +1611,7 @@ def run_show_entries(
             release_mode=release_mode,
             scope=scope,
             compact=card_compact,
+            known_versions=known_versions,
         )
         return
 
@@ -1591,6 +1626,7 @@ def run_show_entries(
             component_filter=component_filters,
             release_mode=release_mode,
             scope=scope,
+            known_versions=known_versions,
         )
         return
 

@@ -1009,6 +1009,168 @@ def test_get_unreleased_scope(tmp_path: Path) -> None:
     assert dash_result.exit_code != 0
 
 
+def test_unreleased_scope_cannot_combine_with_versions(tmp_path: Path) -> None:
+    """Test that 'unreleased' scope cannot be combined with version identifiers."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "config.yaml").write_text(
+        "\n".join(
+            [
+                "id: sample",
+                "name: Sample Project",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # Add an entry and create a release
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    # Attempt to combine 'unreleased' scope with a version identifier
+    combined_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "unreleased", "v1.0.0"],
+    )
+    assert combined_result.exit_code != 0
+    assert (
+        "'unreleased' scope cannot be combined with version identifiers" in combined_result.output
+    )
+
+
+def test_all_scope_cannot_combine_with_identifiers(tmp_path: Path) -> None:
+    """Test that 'all' scope cannot be combined with other identifiers."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "config.yaml").write_text(
+        "\n".join(
+            [
+                "id: sample",
+                "name: Sample Project",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # Add an entry and create a release.
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    # Attempt to combine 'all' scope with an entry identifier.
+    combined_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "all", "test-feature"],
+    )
+    assert combined_result.exit_code != 0
+    assert "'all' scope cannot be combined with other identifiers" in combined_result.output
+
+
+def test_unreleased_scope_allows_v_prefixed_entry_ids(tmp_path: Path) -> None:
+    """Test that 'unreleased' scope allows entry IDs starting with 'v' that are not release versions.
+
+    Entry IDs like 'v2-draft-feature' should be allowed with the 'unreleased' scope
+    because they are not known release versions, even though they start with 'v'.
+    """
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "config.yaml").write_text(
+        "\n".join(
+            [
+                "id: sample",
+                "name: Sample Project",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # Create an entry with 'v'-prefixed ID (no releases exist, so no known versions)
+    unreleased_dir = project_dir / "unreleased"
+    unreleased_dir.mkdir(parents=True, exist_ok=True)
+    entry_file = unreleased_dir / "v2-draft-feature.md"
+    entry_file.write_text(
+        "\n".join(
+            [
+                "---",
+                "title: Draft V2 Feature",
+                "type: feature",
+                "created: 2024-06-15",
+                "---",
+                "This is a draft feature for version 2.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # The 'v2-draft-feature' ID should be allowed with 'unreleased' scope
+    # since it's not a known release version (no releases exist)
+    result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "unreleased", "v2-draft-feature"],
+    )
+    assert result.exit_code == 0, result.output
+    plain_output = click.utils.strip_ansi(result.output)
+    assert "Draft V2 Feature" in plain_output
+
+
 def test_component_filtering(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -3205,3 +3367,77 @@ def test_add_omit_author_config_warns_on_co_author(tmp_path: Path) -> None:
     entry = read_entry(entry_files[0])
     assert "author" not in entry.metadata
     assert "authors" not in entry.metadata
+
+
+def test_show_version_case_insensitive(tmp_path: Path) -> None:
+    """Test that show command handles version identifiers case-insensitively."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # Create an entry and release with lowercase version.
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Case Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Tests case-insensitive version matching.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    # Test show with lowercase version (exact match).
+    lowercase_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "v1.0.0"],
+    )
+    assert lowercase_result.exit_code == 0, lowercase_result.output
+    lowercase_output = click.utils.strip_ansi(lowercase_result.output)
+    assert "Case Test Feature" in lowercase_output
+
+    # Test show with uppercase V (case-insensitive match).
+    uppercase_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "V1.0.0"],
+    )
+    assert uppercase_result.exit_code == 0, uppercase_result.output
+    uppercase_output = click.utils.strip_ansi(uppercase_result.output)
+    assert "Case Test Feature" in uppercase_output
+
+    # Test show with fully uppercase version.
+    full_upper_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "V1.0.0"],
+    )
+    assert full_upper_result.exit_code == 0, full_upper_result.output
+    full_upper_output = click.utils.strip_ansi(full_upper_result.output)
+    assert "Case Test Feature" in full_upper_output
+
+    # Test markdown output with mixed case version.
+    markdown_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "-m", "V1.0.0"],
+    )
+    assert markdown_result.exit_code == 0, markdown_result.output
+    assert "Case Test Feature" in markdown_result.output
