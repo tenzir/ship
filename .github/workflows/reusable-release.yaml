@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      bump:
+        description: "Version bump type: major, minor, or patch"
+        required: true
+        type: string
+      intro:
+        description: "1-2 sentence release introduction"
+        required: true
+        type: string
+      title:
+        description: "User-facing release title (empty = auto-generated)"
+        required: false
+        default: ""
+        type: string
+      changelog-root:
+        description: "Project root for --root flag"
+        required: false
+        default: "."
+        type: string
+      git-add-paths:
+        description: "Space-separated extra paths to stage before publish"
+        required: false
+        default: ""
+        type: string
+      pre-create:
+        description: "Shell script for quality gates (runs before release create)"
+        required: false
+        default: ""
+        type: string
+      post-create:
+        description: "Shell script for version bumping (runs after release create)"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Validate bump input
+        run: |
+          case "${{ inputs.bump }}" in
+            major|minor|patch) ;;
+            *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Must be major, minor, or patch." && exit 1 ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install tenzir-ship
+        run: uv tool install tenzir-ship
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+          private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+
+      - name: Set up GPG signing
+        run: |
+          echo "${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --keyid-format=long | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          git config --global user.signingkey "$KEY_ID"
+          git config --global commit.gpgsign true
+          git config --global tag.gpgsign true
+
+      - name: Configure Git
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global user.name "tenzir-bot"
+          git config --global user.email "engineering@tenzir.com"
+          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}.git"
+
+      - name: Run pre-create script
+        if: inputs.pre-create != ''
+        run: ${{ inputs.pre-create }}
+
+      - name: Create release
+        run: |
+          TITLE_ARGS=()
+          if [ -n "$RELEASE_TITLE" ]; then
+            TITLE_ARGS=(--title "$RELEASE_TITLE")
+          fi
+          tenzir-ship --root "$CHANGELOG_ROOT" release create \
+            "--${{ inputs.bump }}" \
+            --intro "$RELEASE_INTRO" \
+            "${TITLE_ARGS[@]}" \
+            --yes
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          RELEASE_TITLE: ${{ inputs.title }}
+          RELEASE_INTRO: ${{ inputs.intro }}
+
+      - name: Run post-create script
+        if: inputs.post-create != ''
+        run: ${{ inputs.post-create }}
+
+      - name: Stage and publish
+        run: |
+          git add "$CHANGELOG_ROOT/changelog"
+          if [ -n "$GIT_ADD_PATHS" ]; then
+            # shellcheck disable=SC2086 # Intentional word splitting.
+            git add $GIT_ADD_PATHS
+          fi
+          tenzir-ship --root "$CHANGELOG_ROOT" release publish --commit --tag --yes
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
+
+      - name: Summary
+        run: |
+          VERSION=$(tenzir-ship --root "$CHANGELOG_ROOT" release version)
+          {
+            echo "## Release ${VERSION}"
+            echo ""
+            echo "Successfully released version **${VERSION}**."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
