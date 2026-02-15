@@ -1883,6 +1883,84 @@ def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert commands[0][:3] == ["/usr/bin/gh", "release", "view"]
 
 
+def test_release_publish_retry_hint_preserves_bracketed_title(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Retry Hint Test",
+            "--type",
+            "feature",
+            "--description",
+            "Ensures retry hint output is copy-paste safe.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_entry.exit_code == 0, add_entry.output
+
+    create_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v3.1.0",
+            "--title",
+            "[LTS] Stable",
+            "--yes",
+        ],
+    )
+    assert create_release.exit_code == 0, create_release.output
+
+    config_path = project_dir / "config.yaml"
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_data["repository"] = "tenzir/example"
+    config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
+
+    def fake_which(command: str) -> str:
+        assert command == "gh"
+        return "/usr/bin/gh"
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
+        if len(args) >= 3 and args[1:3] == ["release", "create"]:
+            raise subprocess.CalledProcessError(returncode=23, cmd=args)
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    publish_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v3.1.0",
+            "--yes",
+        ],
+    )
+    assert publish_result.exit_code != 0
+    plain_output = click.utils.strip_ansi(publish_result.output)
+    assert "To retry the failed step, run:" in plain_output
+    assert "--title '[LTS] Stable'" in plain_output
+
+
 def test_release_publish_updates_existing_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
