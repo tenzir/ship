@@ -127,6 +127,7 @@ jobs:
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Summary
         run: |
