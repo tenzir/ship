@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from typing import NoReturn, Optional
 import click
 from click.core import ParameterSource
 from packaging.version import InvalidVersion, Version
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -30,6 +32,7 @@ from ..releases import (
 )
 from ..utils import (
     abort_on_user_interrupt,
+    console,
     create_annotated_git_tag,
     create_git_commit,
     emit_output,
@@ -109,6 +112,12 @@ class StepTracker:
             if step.name == name:
                 step.status = StepStatus.FAILED
 
+    def update_command(self, name: str, command: str) -> None:
+        """Update the command string for a step."""
+        for step in self.steps:
+            if step.name == name:
+                step.command = command
+
 
 def _render_release_progress(tracker: StepTracker) -> None:
     """Render release progress summary to stderr on failure."""
@@ -120,21 +129,27 @@ def _render_release_progress(tracker: StepTracker) -> None:
     for step in tracker.steps:
         if step.status == StepStatus.COMPLETED:
             icon = "[green]\u2714[/green]"
-            cmd = f"[dim]{step.command}[/dim]"
+            cmd = f"[dim]{escape(step.command)}[/dim]"
         elif step.status == StepStatus.FAILED:
             icon = "[red]\u2718[/red]"
-            cmd = f"[red]{step.command}[/red]"
+            cmd = f"[red]{escape(step.command)}[/red]"
         elif step.status == StepStatus.SKIPPED:
             continue  # Don't show skipped steps
         else:  # PENDING
             icon = "[dim]\u25cb[/dim]"
-            cmd = f"[dim]{step.command}[/dim]"
+            cmd = f"[dim]{escape(step.command)}[/dim]"
         lines.append(f"{icon} {cmd}")
 
     if lines:
         content = Text.from_markup("\n".join(lines))
         title = f"Release Progress ({progress})"
         _print_renderable(Panel(content, title=title, border_style="red"))
+
+    for step in tracker.steps:
+        if step.status == StepStatus.FAILED:
+            console.print()
+            console.print("[bold]To retry the failed step, run:[/bold]", highlight=False)
+            console.print(f"  {step.command}", highlight=False, markup=False, soft_wrap=True)
 
 
 __all__ = [
@@ -670,6 +685,8 @@ def publish_release(
         if no_latest:
             command.append("--latest=false")
         confirmation_action = "gh release create"
+
+    tracker.update_command("publish", shlex.join(command))
 
     if not assume_yes:
         prompt_question = f"Publish {manifest.version} to GitHub repository {config.repository}?"
