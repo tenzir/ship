@@ -36,106 +36,28 @@ on:
         required: false
         default: ""
         type: string
+    outputs:
+      version:
+        description: "Created release version tag (for example v1.2.3)"
+        value: ${{ jobs.release.outputs.version }}
+      is_latest:
+        description: "Whether the release was created from the main branch"
+        value: ${{ jobs.release.outputs.is_latest }}
 
 jobs:
   release:
-    name: Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Validate bump input
-        run: |
-          case "${{ inputs.bump }}" in
-            major|minor|patch) ;;
-            *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Must be major, minor, or patch." && exit 1 ;;
-          esac
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install tenzir-ship
-        run: uv tool install tenzir-ship
-
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
-          private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
-
-      - name: Set up GPG signing
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}
-          git_user_signingkey: true
-          git_commit_gpgsign: true
-          git_tag_gpgsign: true
-
-      - name: Configure Git
-        env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          git config --global user.name "tenzir-bot"
-          git config --global user.email "engineering@tenzir.com"
-          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}.git"
-
-      - name: Run pre-create script
-        if: inputs.pre-create != ''
-        run: ${{ inputs.pre-create }}
-
-      - name: Create release
-        run: |
-          TITLE_ARGS=()
-          if [ -n "$RELEASE_TITLE" ]; then
-            TITLE_ARGS=(--title "$RELEASE_TITLE")
-          fi
-          tenzir-ship --root "$CHANGELOG_ROOT" release create \
-            "--${{ inputs.bump }}" \
-            --intro "$RELEASE_INTRO" \
-            "${TITLE_ARGS[@]}" \
-            --yes
-        env:
-          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
-          RELEASE_TITLE: ${{ inputs.title }}
-          RELEASE_INTRO: ${{ inputs.intro }}
-
-      - name: Run post-create script
-        if: inputs.post-create != ''
-        run: ${{ inputs.post-create }}
-
-      - name: Stage and publish
-        run: |
-          git add "$CHANGELOG_ROOT/changelog"
-          if [ -n "$GIT_ADD_PATHS" ]; then
-            # shellcheck disable=SC2086 # Intentional word splitting.
-            git add $GIT_ADD_PATHS
-          fi
-          tenzir-ship --root "$CHANGELOG_ROOT" release publish --commit --tag --yes
-        env:
-          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
-          GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
-      - name: Summary
-        run: |
-          VERSION=$(tenzir-ship --root "$CHANGELOG_ROOT" release version)
-          {
-            echo "## Release ${VERSION}"
-            echo ""
-            echo "Successfully released version **${VERSION}**."
-          } >> "$GITHUB_STEP_SUMMARY"
-        env:
-          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+    uses: ./.github/workflows/reusable-release-advanced.yaml
+    with:
+      bump: ${{ inputs.bump }}
+      intro: ${{ inputs.intro }}
+      title: ${{ inputs.title }}
+      changelog-root: ${{ inputs.changelog-root }}
+      git-add-paths: ${{ inputs.git-add-paths }}
+      pre-create: ${{ inputs.pre-create }}
+      post-create: ${{ inputs.post-create }}
+      pre-publish: ""
+      post-publish: ""
+      publish-no-latest-on-non-main: false
+      copy-release-to-main-on-non-main: false
+      update-latest-branch-on-main: false
+    secrets: inherit

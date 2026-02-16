@@ -1,0 +1,241 @@
+name: Release (Advanced)
+
+on:
+  workflow_call:
+    inputs:
+      bump:
+        description: "Version bump type: major, minor, or patch"
+        required: true
+        type: string
+      intro:
+        description: "1-2 sentence release introduction"
+        required: true
+        type: string
+      title:
+        description: "User-facing release title (empty = auto-generated)"
+        required: false
+        default: ""
+        type: string
+      changelog-root:
+        description: "Project root for --root flag"
+        required: false
+        default: "."
+        type: string
+      git-add-paths:
+        description: "Space-separated extra paths to stage before publish"
+        required: false
+        default: ""
+        type: string
+      pre-create:
+        description: "Shell script for quality gates (runs before release create)"
+        required: false
+        default: ""
+        type: string
+      post-create:
+        description: "Shell script for version bumping (runs after release create)"
+        required: false
+        default: ""
+        type: string
+      pre-publish:
+        description: "Shell script that runs after release create and before publish"
+        required: false
+        default: ""
+        type: string
+      post-publish:
+        description: "Shell script that runs after publish and branch updates"
+        required: false
+        default: ""
+        type: string
+      publish-no-latest-on-non-main:
+        description: "Pass --no-latest on non-main branch releases"
+        required: false
+        default: false
+        type: boolean
+      copy-release-to-main-on-non-main:
+        description: "Copy changelog/releases/<version> to main for non-main releases"
+        required: false
+        default: false
+        type: boolean
+      update-latest-branch-on-main:
+        description: "Force-update latest branch when releasing from main"
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      version:
+        description: "Created release version tag (for example v1.2.3)"
+        value: ${{ jobs.release.outputs.version }}
+      is_latest:
+        description: "Whether the release was created from the main branch"
+        value: ${{ jobs.release.outputs.is_latest }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.create-release.outputs.version }}
+      is_latest: ${{ steps.release-type.outputs.is_latest }}
+
+    steps:
+      - name: Validate bump input
+        run: |
+          case "${{ inputs.bump }}" in
+            major|minor|patch) ;;
+            *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Must be major, minor, or patch." && exit 1 ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install tenzir-ship
+        run: uv tool install tenzir-ship
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+          private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+
+      - name: Set up GPG signing
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          git_tag_gpgsign: true
+
+      - name: Configure Git
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global user.name "tenzir-bot"
+          git config --global user.email "engineering@tenzir.com"
+          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}.git"
+
+      - name: Determine release type
+        id: release-type
+        run: |
+          BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}"
+          if [ "$BRANCH" = "main" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Run pre-create script
+        if: inputs.pre-create != ''
+        run: ${{ inputs.pre-create }}
+
+      - name: Create release
+        id: create-release
+        run: |
+          TITLE_ARGS=()
+          if [ -n "$RELEASE_TITLE" ]; then
+            TITLE_ARGS=(--title "$RELEASE_TITLE")
+          fi
+          VERSION=$(tenzir-ship --root "$CHANGELOG_ROOT" release create \
+            "--${{ inputs.bump }}" \
+            --intro "$RELEASE_INTRO" \
+            "${TITLE_ARGS[@]}" \
+            --yes)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          RELEASE_TITLE: ${{ inputs.title }}
+          RELEASE_INTRO: ${{ inputs.intro }}
+
+      - name: Run post-create script
+        if: inputs.post-create != ''
+        run: ${{ inputs.post-create }}
+
+      - name: Run pre-publish script
+        if: inputs.pre-publish != ''
+        run: ${{ inputs.pre-publish }}
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Stage and publish
+        run: |
+          git add "$CHANGELOG_ROOT/changelog"
+          if [ -n "$GIT_ADD_PATHS" ]; then
+            # shellcheck disable=SC2086 # Intentional word splitting.
+            git add $GIT_ADD_PATHS
+          fi
+          PUBLISH_ARGS=(--commit --tag --yes)
+          if [ "$IS_LATEST" != "true" ] && [ "$NO_LATEST_NON_MAIN" = "true" ]; then
+            PUBLISH_ARGS+=(--no-latest)
+          fi
+          tenzir-ship --root "$CHANGELOG_ROOT" release publish "${PUBLISH_ARGS[@]}"
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
+          IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
+          NO_LATEST_NON_MAIN: ${{ inputs.publish-no-latest-on-non-main }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Copy release to main branch (non-main release)
+        if: inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.is_latest == 'false'
+        run: |
+          RELEASE_DIR="$CHANGELOG_ROOT/changelog/releases/$RELEASE_VERSION"
+          TMP_DIR="$(mktemp -d)"
+          cp -R "$RELEASE_DIR" "$TMP_DIR/"
+          git fetch origin main
+          git checkout main
+          mkdir -p "$CHANGELOG_ROOT/changelog/releases"
+          if [ -e "$RELEASE_DIR" ]; then
+            echo "Release directory already present on main; skipping copy."
+            exit 0
+          fi
+          cp -R "$TMP_DIR/$RELEASE_VERSION" "$RELEASE_DIR"
+          git add "$RELEASE_DIR"
+          git commit -s -m "Add backport release $RELEASE_VERSION"
+          git push origin main
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
+
+      - name: Update latest branch
+        if: inputs.update-latest-branch-on-main && steps.release-type.outputs.is_latest == 'true'
+        run: |
+          git checkout -B latest
+          git push origin latest --force
+
+      - name: Run post-publish script
+        if: inputs.post-publish != ''
+        run: ${{ inputs.post-publish }}
+        env:
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
+          IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.create-release.outputs.version }}"
+          IS_LATEST="${{ steps.release-type.outputs.is_latest }}"
+          {
+            echo "## Release ${VERSION}"
+            echo ""
+            echo "Successfully released version **${VERSION}**."
+            echo ""
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Latest release: \`${IS_LATEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
