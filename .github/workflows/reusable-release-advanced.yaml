@@ -46,6 +46,11 @@ on:
         required: false
         default: ""
         type: string
+      skip-publish:
+        description: "Create and prepare release but skip publish/tag/branch updates"
+        required: false
+        default: false
+        type: boolean
       publish-no-latest-on-non-main:
         description: "Pass --no-latest on non-main branch releases"
         required: false
@@ -165,7 +170,7 @@ jobs:
         run: ${{ inputs.post-create }}
 
       - name: Run pre-publish script
-        if: inputs.pre-publish != ''
+        if: ${{ inputs.pre-publish != '' && !inputs['skip-publish'] }}
         run: ${{ inputs.pre-publish }}
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
@@ -173,6 +178,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Stage and publish
+        if: ${{ !inputs['skip-publish'] }}
         run: |
           git add "$CHANGELOG_ROOT/changelog"
           if [ -n "$GIT_ADD_PATHS" ]; then
@@ -192,7 +198,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Copy release to main branch (non-main release)
-        if: inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.is_latest == 'false'
+        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.is_latest == 'false' }}
         run: |
           RELEASE_DIR="$CHANGELOG_ROOT/changelog/releases/$RELEASE_VERSION"
           TMP_DIR="$(mktemp -d)"
@@ -213,13 +219,13 @@ jobs:
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
 
       - name: Update latest branch
-        if: inputs.update-latest-branch-on-main && steps.release-type.outputs.is_latest == 'true'
+        if: ${{ !inputs['skip-publish'] && inputs.update-latest-branch-on-main && steps.release-type.outputs.is_latest == 'true' }}
         run: |
           git checkout -B latest
           git push origin latest --force
 
       - name: Run post-publish script
-        if: inputs.post-publish != ''
+        if: ${{ inputs.post-publish != '' && !inputs['skip-publish'] }}
         run: ${{ inputs.post-publish }}
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
@@ -238,4 +244,5 @@ jobs:
             echo ""
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
             echo "- Latest release: \`${IS_LATEST}\`"
+            echo "- Publish skipped: \`${{ inputs['skip-publish'] }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

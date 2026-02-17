@@ -57,6 +57,7 @@ jobs:
       post-create: ${{ inputs.post-create }}
       pre-publish: ""
       post-publish: ""
+      skip-publish: false
       publish-no-latest-on-non-main: false
       copy-release-to-main-on-non-main: false
       update-latest-branch-on-main: false

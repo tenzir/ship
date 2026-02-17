@@ -12,5 +12,6 @@ created: 2026-02-16T15:47:58Z
 
 The advanced workflow adds optional hooks and release controls for complex
 consumers: pre/post publish scripts, non-main `--no-latest` publishing,
-optional copy of release directories to `main`, `latest` branch updates, and
-workflow outputs for `version` and `is_latest`.
+optional copy of release directories to `main`, `latest` branch updates, a
+`skip-publish` dry-run mode, and workflow outputs for `version` and
+`is_latest`.
