@@ -36,7 +36,13 @@ from ..utils import (
     log_debug,
     log_info,
     log_success,
+    log_warning,
     slugify,
+)
+from ..validate import (
+    ValidationIssue,
+    run_structure_validation,
+    run_structure_validation_with_modules,
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -68,6 +74,9 @@ __all__ = [
     "_collect_author_pr_text",
     "_format_author_line",
     "_create_cli_group",
+    "_collect_structure_issues",
+    "_warn_on_structure_issues",
+    "_enforce_structure_is_valid",
     "main",
 ]
 
@@ -248,6 +257,48 @@ class CLIContext:
             config = self.ensure_config()
             self._modules = discover_modules_from_config(self.project_root, config)
         return self._modules
+
+
+def _collect_structure_issues(ctx: CLIContext) -> list[ValidationIssue]:
+    """Collect changelog structure issues for parent project and configured modules."""
+    ctx.ensure_config()
+    modules = ctx.get_modules()
+    if modules:
+        return run_structure_validation_with_modules(ctx.project_root, modules)
+    return run_structure_validation(ctx.project_root)
+
+
+def _format_issue_location(ctx: CLIContext, issue: ValidationIssue) -> str:
+    """Format a validation issue path for user-facing output."""
+    try:
+        return str(issue.path.relative_to(ctx.project_root))
+    except ValueError:
+        return str(issue.path)
+
+
+def _warn_on_structure_issues(ctx: CLIContext) -> None:
+    """Emit warnings when changelog structure issues are detected."""
+    issues = _collect_structure_issues(ctx)
+    if not issues:
+        return
+    log_warning("changelog structure issues detected; release commands may fail.")
+    for issue in issues:
+        location = _format_issue_location(ctx, issue)
+        log_warning(f"{location}: {issue.message}")
+
+
+def _enforce_structure_is_valid(ctx: CLIContext, *, action: str) -> None:
+    """Raise a ClickException if changelog structure issues are detected."""
+    issues = _collect_structure_issues(ctx)
+    if not issues:
+        return
+    detail_lines = [
+        f"- {_format_issue_location(ctx, issue)}: {issue.message}"
+        for issue in issues
+    ]
+    raise click.ClickException(
+        f"Cannot {action}: changelog structure is invalid.\n" + "\n".join(detail_lines)
+    )
 
 
 def _default_project_id(project_root: Path) -> str:

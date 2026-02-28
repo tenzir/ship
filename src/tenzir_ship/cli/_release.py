@@ -48,6 +48,8 @@ from ..utils import (
 from ._core import (
     CLIContext,
     ENTRY_TYPE_EMOJIS,
+    _enforce_structure_is_valid,
+    _warn_on_structure_issues,
     compact_option,
     explicit_links_option,
 )
@@ -290,6 +292,7 @@ def create_release(
     """Python wrapper for release creation that mirrors CLI behavior."""
 
     config = ctx.ensure_config()
+    _enforce_structure_is_valid(ctx, action="create a release")
     project_root = ctx.project_root
 
     version = _resolve_release_version(project_root, version, version_bump)
@@ -545,6 +548,7 @@ def publish_release(
     """Python wrapper around the ``release publish`` command."""
 
     config = ctx.ensure_config()
+    _enforce_structure_is_valid(ctx, action="publish a release")
     project_root = ctx.project_root
 
     if not config.repository:
@@ -819,6 +823,7 @@ def release_create_cmd(
 def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
     """Print the latest released version."""
 
+    _warn_on_structure_issues(ctx)
     manifest = _get_latest_release_manifest(ctx.project_root)
     if manifest is None:
         raise click.ClickException(

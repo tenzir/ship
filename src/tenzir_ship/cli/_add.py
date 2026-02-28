@@ -24,6 +24,7 @@ from ._core import (
     CLIContext,
     DEFAULT_ENTRY_TYPE,
     ENTRY_TYPE_STYLES,
+    _warn_on_structure_issues,
 )
 
 __all__ = [
@@ -384,3 +385,4 @@ def add(
         prs=prs,
         description=resolved_description,
     )
+    _warn_on_structure_issues(ctx)

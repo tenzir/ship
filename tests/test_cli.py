@@ -596,6 +596,16 @@ def _create_project_with_entry(
     )
 
 
+def _bootstrap_changelog_project(project_dir: Path, *, repository: str | None = None) -> None:
+    """Create a minimal changelog project scaffold for CLI tests."""
+    project_dir.mkdir(parents=True, exist_ok=True)
+    save_config(
+        Config(id="project", name="Project", repository=repository),
+        project_dir / "config.yaml",
+    )
+    (project_dir / "unreleased").mkdir(parents=True, exist_ok=True)
+
+
 def test_missing_project_reports_info_message(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["--root", str(tmp_path), "show"])
@@ -2118,6 +2128,8 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    changelog_root = project_dir / "changelog"
+    changelog_root.mkdir()
 
     # Initialize a Git repository with a single commit.
     subprocess.run(["git", "init"], cwd=project_dir, check=True, stdout=subprocess.PIPE)
@@ -2162,7 +2174,7 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
     )
 
     # Write minimal configuration and release artifacts.
-    config_path = project_dir / "config.yaml"
+    config_path = changelog_root / "config.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
@@ -2174,7 +2186,7 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    release_dir = project_dir / "releases" / "v9.9.9"
+    release_dir = changelog_root / "releases" / "v9.9.9"
     release_dir.mkdir(parents=True)
     (release_dir / "manifest.yaml").write_text(
         "version: v9.9.9\ncreated: 2024-01-01\n",
@@ -2214,7 +2226,7 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
         cli,
         [
             "--root",
-            str(project_dir),
+            str(changelog_root),
             "release",
             "publish",
             "v9.9.9",
@@ -2255,6 +2267,8 @@ def test_release_publish_skips_existing_tag(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    changelog_root = project_dir / "changelog"
+    changelog_root.mkdir()
 
     subprocess.run(["git", "init"], cwd=project_dir, check=True, stdout=subprocess.PIPE)
     subprocess.run(
@@ -2287,7 +2301,7 @@ def test_release_publish_skips_existing_tag(tmp_path: Path) -> None:
         stdout=subprocess.PIPE,
     )
 
-    config_path = project_dir / "config.yaml"
+    config_path = changelog_root / "config.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
@@ -2299,7 +2313,7 @@ def test_release_publish_skips_existing_tag(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    release_dir = project_dir / "releases" / "v9.9.9"
+    release_dir = changelog_root / "releases" / "v9.9.9"
     release_dir.mkdir(parents=True)
     (release_dir / "manifest.yaml").write_text(
         "version: v9.9.9\ncreated: 2024-01-01\n",
@@ -2344,7 +2358,7 @@ def test_release_publish_skips_existing_tag(tmp_path: Path) -> None:
         cli,
         [
             "--root",
-            str(project_dir),
+            str(changelog_root),
             "release",
             "publish",
             "v9.9.9",
@@ -3003,6 +3017,162 @@ def test_release_create_rejects_non_semver_version(tmp_path: Path) -> None:
     )
     assert release_result.exit_code != 0
     assert "valid semantic version" in release_result.output
+
+
+def test_release_create_fails_on_structure_violation(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+
+    write_entry(
+        project_dir,
+        {
+            "title": "Test Feature",
+            "type": "feature",
+            "author": "tester",
+        },
+        "A test feature.",
+        default_project="project",
+    )
+    (project_dir / "next").mkdir()
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code != 0
+    assert "Cannot create a release: changelog structure is invalid." in release_result.output
+    assert "Unexpected item in changelog root: 'next'" in release_result.output
+    assert not (project_dir / "releases" / "v1.0.0").exists()
+
+
+def test_release_publish_fails_on_structure_violation(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir, repository="owner/repo")
+    (project_dir / "next").mkdir()
+
+    publish_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert publish_result.exit_code != 0
+    assert "Cannot publish a release: changelog structure is invalid." in publish_result.output
+    assert "Unexpected item in changelog root: 'next'" in publish_result.output
+
+
+def test_show_warns_on_structure_violation(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "next").mkdir()
+
+    write_entry(
+        project_dir,
+        {
+            "title": "Warn Feature",
+            "type": "feature",
+            "author": "tester",
+        },
+        "Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "show"])
+    assert result.exit_code == 0, result.output
+    assert "changelog structure issues detected; release commands may fail." in result.output
+    assert "Unexpected item in changelog root: 'next'" in result.output
+
+
+def test_add_warns_on_structure_violation(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "next").mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Warn Entry",
+            "--type",
+            "feature",
+            "--author",
+            "tester",
+            "--description",
+            "Body.",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "entry created:" in result.output
+    assert "changelog structure issues detected; release commands may fail." in result.output
+    assert "Unexpected item in changelog root: 'next'" in result.output
+
+
+def test_stats_warns_on_structure_violation(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "next").mkdir()
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats"])
+    assert result.exit_code == 0, result.output
+    assert "changelog structure issues detected; release commands may fail." in result.output
+    assert "Unexpected item in changelog root: 'next'" in result.output
+
+
+def test_release_version_warns_on_structure_violation(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+
+    release_dir = project_dir / "releases" / "v1.2.3"
+    release_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text("created: 2024-01-01\n", encoding="utf-8")
+    (project_dir / "next").mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "version",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "v1.2.3"
+    assert "changelog structure issues detected; release commands may fail." in result.output
+    assert "Unexpected item in changelog root: 'next'" in result.output
+
+
+def test_validate_reports_structure_issues_without_preflight_warning(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "next").mkdir()
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    assert result.exit_code != 0
+    assert "Unexpected item in changelog root: 'next'" in result.output
+    assert "changelog structure issues detected; release commands may fail." not in result.output
 
 
 def test_release_version_command(tmp_path: Path) -> None:
