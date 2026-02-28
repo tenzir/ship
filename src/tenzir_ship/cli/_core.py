@@ -292,10 +292,7 @@ def _enforce_structure_is_valid(ctx: CLIContext, *, action: str) -> None:
     issues = _collect_structure_issues(ctx)
     if not issues:
         return
-    detail_lines = [
-        f"- {_format_issue_location(ctx, issue)}: {issue.message}"
-        for issue in issues
-    ]
+    detail_lines = [f"- {_format_issue_location(ctx, issue)}: {issue.message}" for issue in issues]
     raise click.ClickException(
         f"Cannot {action}: changelog structure is invalid.\n" + "\n".join(detail_lines)
     )
