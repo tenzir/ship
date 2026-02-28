@@ -3,7 +3,7 @@ title: Allow intro-only releases
 type: feature
 authors:
   - mavam
-  - claude
+  - codex
 pr: 9
 created: 2026-02-28T10:39:48.110043Z
 ---
