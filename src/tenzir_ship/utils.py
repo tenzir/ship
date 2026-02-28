@@ -22,7 +22,7 @@ from rich.theme import Theme
 CHECKMARK = "\033[92;1m✔\033[0m"
 CROSS = "\033[31m✘\033[0m"
 INFO = "\033[94;1mi\033[0m"
-WARNING = "○"
+WARNING = "\033[33;1m!\033[0m"
 DEBUG_PREFIX = "\033[95m◆\033[0m"
 
 CHECKMARK_PREFIX = f"{CHECKMARK} "
