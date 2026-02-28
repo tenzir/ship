@@ -1748,6 +1748,140 @@ def test_release_create_updates_detected_pyproject_version(tmp_path: Path) -> No
     assert 'version = "1.0.0"' in pyproject_path.read_text(encoding="utf-8")
 
 
+def test_release_create_skips_dynamic_pyproject_version_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    original_pyproject = '[project]\nname = "demo"\ndynamic = ["version"]\n'
+    pyproject_path.write_text(original_pyproject, encoding="utf-8")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Dynamic version",
+            "--type",
+            "feature",
+            "--description",
+            "Dynamic versions should be ignored in auto mode.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject
+
+
+def test_release_create_falls_back_to_poetry_version_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        (
+            '[project]\nname = "demo"\ndynamic = ["version"]\n\n'
+            '[tool.poetry]\nname = "demo"\nversion = "0.1.0"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Poetry fallback",
+            "--type",
+            "feature",
+            "--description",
+            "Poetry version should be updated when project.version is dynamic.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert 'version = "1.2.3"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_release_create_skips_workspace_cargo_manifest_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    cargo_toml_path = project_dir / "Cargo.toml"
+    original_cargo_toml = '[workspace]\nmembers = ["crate-a"]\n'
+    cargo_toml_path.write_text(original_cargo_toml, encoding="utf-8")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Workspace release",
+            "--type",
+            "feature",
+            "--description",
+            "Workspace Cargo manifests should be ignored in auto mode.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert cargo_toml_path.read_text(encoding="utf-8") == original_cargo_toml
+
+
 def test_release_create_updates_detected_package_json_version(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"

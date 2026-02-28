@@ -45,6 +45,14 @@ class _TomlUpdateResult:
     content: str
 
 
+@dataclass(frozen=True)
+class _ResolvedVersionFileTarget:
+    """Resolved version file target along with how it was configured."""
+
+    path: Path
+    explicit: bool
+
+
 def _strip_release_prefix(version: str) -> str:
     """Convert release labels like v1.2.3 into package-manager version strings."""
 
@@ -76,22 +84,40 @@ def _auto_search_roots(project_root: Path) -> list[Path]:
 def resolve_version_file_targets(project_root: Path, explicit_paths: Sequence[str]) -> list[Path]:
     """Resolve auto-detected and configured version file paths in deterministic order."""
 
-    candidates: list[Path] = []
+    candidates = _resolve_version_file_targets(project_root, explicit_paths)
+    return [candidate.path for candidate in candidates]
+
+
+def _resolve_version_file_targets(
+    project_root: Path, explicit_paths: Sequence[str]
+) -> list[_ResolvedVersionFileTarget]:
+    candidates: list[_ResolvedVersionFileTarget] = []
     for root in _auto_search_roots(project_root):
         for filename in SUPPORTED_AUTO_VERSION_FILES:
             candidate = root / filename
             if candidate.is_file():
-                candidates.append(candidate.resolve())
+                candidates.append(_ResolvedVersionFileTarget(path=candidate.resolve(), explicit=False))
 
     for raw_path in explicit_paths:
-        candidates.append(_resolve_explicit_version_file_path(project_root, raw_path))
+        candidates.append(
+            _ResolvedVersionFileTarget(
+                path=_resolve_explicit_version_file_path(project_root, raw_path),
+                explicit=True,
+            )
+        )
 
-    deduped: list[Path] = []
-    seen: set[Path] = set()
+    deduped: list[_ResolvedVersionFileTarget] = []
+    seen: dict[Path, int] = {}
     for candidate in candidates:
-        if candidate in seen:
+        existing_index = seen.get(candidate.path)
+        if existing_index is not None:
+            if candidate.explicit and not deduped[existing_index].explicit:
+                deduped[existing_index] = _ResolvedVersionFileTarget(
+                    path=candidate.path,
+                    explicit=True,
+                )
             continue
-        seen.add(candidate)
+        seen[candidate.path] = len(deduped)
         deduped.append(candidate)
     return deduped
 
@@ -162,35 +188,68 @@ def _update_package_json(path: Path, content: str, new_version: str) -> tuple[st
     return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n", old_version
 
 
-def _update_pyproject_like(path: Path, content: str, new_version: str) -> tuple[str, str | None]:
+def _update_pyproject_like(
+    path: Path,
+    content: str,
+    new_version: str,
+    *,
+    skip_if_missing_static_version: bool,
+) -> tuple[str, str | None]:
     project_update = _replace_toml_table_version(content, "project", new_version)
     if project_update.found_table:
-        if not project_update.found_version:
-            raise click.ClickException(
-                f"{path} has a [project] table but no static 'version' field."
-            )
-        return project_update.content, project_update.old_version
+        if project_update.found_version:
+            return project_update.content, project_update.old_version
 
     poetry_update = _replace_toml_table_version(content, "tool.poetry", new_version)
     if poetry_update.found_table:
-        if not poetry_update.found_version:
-            raise click.ClickException(
-                f"{path} has a [tool.poetry] table but no static 'version' field."
-            )
-        return poetry_update.content, poetry_update.old_version
+        if poetry_update.found_version:
+            return poetry_update.content, poetry_update.old_version
+
+    if skip_if_missing_static_version:
+        return content, None
+
+    if project_update.found_table:
+        raise click.ClickException(
+            f"{path} has a [project] table but no static 'version' field."
+        )
+    if poetry_update.found_table:
+        raise click.ClickException(
+            f"{path} has a [tool.poetry] table but no static 'version' field."
+        )
 
     raise click.ClickException(
         f"{path} is missing [project] and [tool.poetry] tables with a static 'version' field."
     )
 
 
-def _update_cargo_toml(path: Path, content: str, new_version: str) -> tuple[str, str | None]:
+def _update_cargo_toml(
+    path: Path,
+    content: str,
+    new_version: str,
+    *,
+    skip_if_missing_static_version: bool,
+) -> tuple[str, str | None]:
     package_update = _replace_toml_table_version(content, "package", new_version)
-    if not package_update.found_table:
-        raise click.ClickException(f"{path} is missing a [package] table.")
-    if not package_update.found_version:
+    if package_update.found_table:
+        if package_update.found_version:
+            return package_update.content, package_update.old_version
+        if skip_if_missing_static_version:
+            return content, None
         raise click.ClickException(f"{path} has a [package] table but no static 'version' field.")
-    return package_update.content, package_update.old_version
+
+    workspace_package_update = _replace_toml_table_version(content, "workspace.package", new_version)
+    if workspace_package_update.found_table:
+        if workspace_package_update.found_version:
+            return workspace_package_update.content, workspace_package_update.old_version
+        if skip_if_missing_static_version:
+            return content, None
+        raise click.ClickException(
+            f"{path} has a [workspace.package] table but no static 'version' field."
+        )
+
+    if skip_if_missing_static_version:
+        return content, None
+    raise click.ClickException(f"{path} is missing a [package] table.")
 
 
 def _version_file_kind(path: Path) -> Literal["package_json", "pyproject", "cargo"]:
@@ -210,7 +269,12 @@ def _version_file_kind(path: Path) -> Literal["package_json", "pyproject", "carg
     )
 
 
-def _plan_single_version_file_update(path: Path, release_version: str) -> VersionFileUpdate | None:
+def _plan_single_version_file_update(
+    path: Path,
+    release_version: str,
+    *,
+    strict: bool,
+) -> VersionFileUpdate | None:
     content = path.read_text(encoding="utf-8")
     new_version = _strip_release_prefix(release_version)
     kind = _version_file_kind(path)
@@ -218,9 +282,19 @@ def _plan_single_version_file_update(path: Path, release_version: str) -> Versio
     if kind == "package_json":
         updated_content, old_version = _update_package_json(path, content, new_version)
     elif kind == "pyproject":
-        updated_content, old_version = _update_pyproject_like(path, content, new_version)
+        updated_content, old_version = _update_pyproject_like(
+            path,
+            content,
+            new_version,
+            skip_if_missing_static_version=not strict,
+        )
     else:
-        updated_content, old_version = _update_cargo_toml(path, content, new_version)
+        updated_content, old_version = _update_cargo_toml(
+            path,
+            content,
+            new_version,
+            skip_if_missing_static_version=not strict,
+        )
 
     if updated_content == content:
         return None
@@ -249,10 +323,14 @@ def plan_version_file_updates(
             f"Unknown release.version_bump_mode '{bump_mode}'. Supported values: auto, off."
         )
 
-    targets = resolve_version_file_targets(project_root, explicit_paths)
+    targets = _resolve_version_file_targets(project_root, explicit_paths)
     updates: list[VersionFileUpdate] = []
     for target in targets:
-        update = _plan_single_version_file_update(target, release_version)
+        update = _plan_single_version_file_update(
+            target.path,
+            release_version,
+            strict=target.explicit,
+        )
         if update is not None:
             updates.append(update)
     return updates
