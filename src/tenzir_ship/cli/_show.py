@@ -43,6 +43,7 @@ from ..utils import (
 )
 from ._core import (
     CLIContext,
+    _warn_on_structure_issues,
     _command_help_text,
     _filter_entries_by_project,
     _normalize_component_filters,
@@ -1723,6 +1724,7 @@ def _create_show_command() -> click.Command:
         """Display changelog entries in tables, cards, or export formats."""
 
         config = ctx.ensure_config()
+        _warn_on_structure_issues(ctx)
         view_choice = view_flags[-1] if view_flags else "table"
         if view_choice not in {"table", "card", "markdown", "json"}:
             raise click.ClickException(f"Unsupported view '{view_choice}'.")

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from ._core import CLIContext
+from ._core import CLIContext, _warn_on_structure_issues
 from ._rendering import create_table
 from ..entries import iter_entries
 from ..releases import collect_release_entries, iter_release_manifests
@@ -357,6 +357,7 @@ def stats_cmd(ctx: click.Context, force_table: bool, as_json: bool) -> None:
     or --json to export structured data.
     """
     cli_ctx: CLIContext = ctx.obj
+    _warn_on_structure_issues(cli_ctx)
 
     if as_json:
         _show_stats_json(cli_ctx)

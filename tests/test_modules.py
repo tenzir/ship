@@ -344,6 +344,58 @@ def test_cli_validate_with_modules(tmp_path: Path) -> None:
     assert "all changelog files look good" in result.output
 
 
+def test_show_warns_on_module_structure_violation(tmp_path: Path) -> None:
+    """Non-release commands warn when module changelog layout is invalid."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_entry(mod_root, "Module Entry")
+    (mod_root / "next").mkdir()
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Entry")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "show"])
+
+    assert result.exit_code == 0, result.output
+    assert "changelog structure issues detected; release commands may fail." in result.output
+    assert "[mymod] Unexpected item in changelog root: 'next'" in result.output
+
+
+def test_release_create_fails_on_module_structure_violation(tmp_path: Path) -> None:
+    """Release creation hard-fails when a module changelog layout is invalid."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_entry(mod_root, "Module Entry")
+    (mod_root / "next").mkdir()
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Entry")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+
+    assert result.exit_code != 0
+    assert "Cannot create a release: changelog structure is invalid." in result.output
+    assert "[mymod] Unexpected item in changelog root: 'next'" in result.output
+    assert not (project_dir / "releases" / "v1.0.0").exists()
+
+
 # --- Release Notes with Modules Tests ---
 
 

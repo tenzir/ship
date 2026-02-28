@@ -36,7 +36,13 @@ from ..utils import (
     log_debug,
     log_info,
     log_success,
+    log_warning,
     slugify,
+)
+from ..validate import (
+    ValidationIssue,
+    run_structure_validation,
+    run_structure_validation_with_modules,
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -68,6 +74,9 @@ __all__ = [
     "_collect_author_pr_text",
     "_format_author_line",
     "_create_cli_group",
+    "_collect_structure_issues",
+    "_warn_on_structure_issues",
+    "_enforce_structure_is_valid",
     "main",
 ]
 
@@ -250,6 +259,45 @@ class CLIContext:
         return self._modules
 
 
+def _collect_structure_issues(ctx: CLIContext) -> list[ValidationIssue]:
+    """Collect changelog structure issues for parent project and configured modules."""
+    ctx.ensure_config()
+    modules = ctx.get_modules()
+    if modules:
+        return run_structure_validation_with_modules(ctx.project_root, modules)
+    return run_structure_validation(ctx.project_root)
+
+
+def _format_issue_location(ctx: CLIContext, issue: ValidationIssue) -> str:
+    """Format a validation issue path for user-facing output."""
+    try:
+        return str(issue.path.relative_to(ctx.project_root))
+    except ValueError:
+        return str(issue.path)
+
+
+def _warn_on_structure_issues(ctx: CLIContext) -> None:
+    """Emit warnings when changelog structure issues are detected."""
+    issues = _collect_structure_issues(ctx)
+    if not issues:
+        return
+    log_warning("changelog structure issues detected; release commands may fail.")
+    for issue in issues:
+        location = _format_issue_location(ctx, issue)
+        log_warning(f"{location}: {issue.message}")
+
+
+def _enforce_structure_is_valid(ctx: CLIContext, *, action: str) -> None:
+    """Raise a ClickException if changelog structure issues are detected."""
+    issues = _collect_structure_issues(ctx)
+    if not issues:
+        return
+    detail_lines = [f"- {_format_issue_location(ctx, issue)}: {issue.message}" for issue in issues]
+    raise click.ClickException(
+        f"Cannot {action}: changelog structure is invalid.\n" + "\n".join(detail_lines)
+    )
+
+
 def _default_project_id(project_root: Path) -> str:
     slug = slugify(project_root.name)
     return slug or DEFAULT_PROJECT_ID
@@ -291,23 +339,46 @@ def _resolve_project_root(value: Path, *, bootstrap_in_subdir: bool = False) -> 
         metadata = package_metadata_path(path)
         return metadata.is_file()
 
+    def _is_changelog_dir(path: Path) -> bool:
+        return path.name == CHANGELOG_DIRECTORY_NAME
+
+    def _select_known_project(path: Path) -> Path | None:
+        if _is_package_changelog(path):
+            return path.resolve()
+        if _has_config(path):
+            if not bootstrap_in_subdir or _is_changelog_dir(path):
+                return path.resolve()
+        if _is_package_root(path):
+            return (path / CHANGELOG_DIRECTORY_NAME).resolve()
+        return None
+
     if resolved.is_dir():
-        if _has_config(resolved) or _is_package_changelog(resolved):
-            return resolved
-        if _is_package_root(resolved):
-            return (resolved / CHANGELOG_DIRECTORY_NAME).resolve()
-        # Check if a changelog/ subdirectory exists with a valid config.
+        selected = _select_known_project(resolved)
+        if selected is not None:
+            return selected
+
+        # Check if a changelog/ subdirectory exists and prefer it for implicit
+        # root resolution to enforce the opinionated top-level layout.
         changelog_subdir = resolved / CHANGELOG_DIRECTORY_NAME
-        if changelog_subdir.is_dir() and _has_config(changelog_subdir):
-            return changelog_subdir.resolve()
+        if changelog_subdir.is_dir():
+            selected = _select_known_project(changelog_subdir)
+            if selected is not None:
+                return selected
+            if bootstrap_in_subdir:
+                return changelog_subdir.resolve()
 
     for candidate in [resolved] + list(resolved.parents):
         if not candidate.is_dir():
             continue
-        if _has_config(candidate) or _is_package_changelog(candidate):
-            return candidate
-        if _is_package_root(candidate):
-            return (candidate / CHANGELOG_DIRECTORY_NAME).resolve()
+        if bootstrap_in_subdir:
+            changelog_subdir = candidate / CHANGELOG_DIRECTORY_NAME
+            if changelog_subdir.is_dir():
+                selected = _select_known_project(changelog_subdir)
+                if selected is not None:
+                    return selected
+        selected = _select_known_project(candidate)
+        if selected is not None:
+            return selected
 
     # No existing project found. When bootstrapping without explicit --root,
     # default to changelog/ subdirectory for consistency with package mode.
