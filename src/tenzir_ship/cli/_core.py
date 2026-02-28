@@ -373,7 +373,9 @@ def _resolve_project_root(value: Path, *, bootstrap_in_subdir: bool = False) -> 
         if bootstrap_in_subdir:
             changelog_subdir = candidate / CHANGELOG_DIRECTORY_NAME
             if changelog_subdir.is_dir():
-                return changelog_subdir.resolve()
+                selected = _select_known_project(changelog_subdir)
+                if selected is not None:
+                    return selected
         selected = _select_known_project(candidate)
         if selected is not None:
             return selected

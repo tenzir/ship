@@ -671,6 +671,29 @@ def test_implicit_resolution_ignores_legacy_root_layout(tmp_path: Path) -> None:
     assert "Error:" not in result.output
 
 
+def test_implicit_resolution_skips_unconfigured_ancestor_changelog(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    canonical_root = workspace / "changelog"
+    canonical_root.mkdir(parents=True)
+    save_config(Config(id="canonical", name="Canonical"), canonical_root / "config.yaml")
+    (canonical_root / "unreleased").mkdir()
+
+    unrelated_changelog = workspace / "nested" / "changelog"
+    unrelated_changelog.mkdir(parents=True)
+    cwd = workspace / "nested" / "pkg"
+    cwd.mkdir(parents=True)
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(cwd)
+        ctx = create_cli_context(debug=False)
+    finally:
+        os.chdir(original_cwd)
+
+    assert ctx.project_root == canonical_root.resolve()
+    assert ctx.config_path == (canonical_root / "config.yaml").resolve()
+
+
 def _write_package_metadata(path: Path, *, package_id: str = "pkg", name: str = "Package") -> None:
     path.write_text(
         yaml.safe_dump({"id": package_id, "name": name}, sort_keys=False),
