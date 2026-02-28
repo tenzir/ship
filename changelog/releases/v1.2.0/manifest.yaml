@@ -1,0 +1,7 @@
+created: 2026-02-28
+title: Intro-Only Releases
+intro: >-
+  This release adds support for creating releases with only introductory text and
+  no changelog entries, and splits the reusable release workflow into minimal and
+  advanced variants. It also fixes changelog structure validation and release progress
+  panel display issues.
