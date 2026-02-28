@@ -317,8 +317,6 @@ def create_release(
             existing_entry_ids.add(entry.entry_id)
 
     unused_entries = _collect_unused_entries_for_release(project_root, config)
-    if not unused_entries and not existing_entries:
-        raise click.ClickException("No unused entries available for release creation.")
 
     new_entries = [entry for entry in unused_entries if entry.entry_id not in existing_entry_ids]
 
@@ -327,29 +325,6 @@ def create_release(
         combined_entries[entry.entry_id] = entry
 
     entries_sorted = sorted(combined_entries.values(), key=_release_entry_sort_key)
-    if not entries_sorted:
-        raise click.ClickException("No entries available to include in the release.")
-
-    table = Table()
-    table.add_column("✓", no_wrap=True, justify="center", header_style="dim")
-    table.add_column("Title")
-    table.add_column("Type", no_wrap=True, justify="center")
-    table.add_column("ID", style="cyan")
-    new_entry_ids = {entry.entry_id for entry in new_entries}
-    for entry in entries_sorted:
-        status = "new" if entry.entry_id in new_entry_ids else "existing"
-        status_cell = STATUS_TABLE_CELLS.get(status, Text("•"))
-        if isinstance(status_cell, Text):
-            status_cell = status_cell.copy()
-        type_value = entry.metadata.get("type", "change")
-        type_emoji = ENTRY_TYPE_EMOJIS.get(type_value, "•")
-        table.add_row(
-            status_cell,
-            entry.metadata.get("title", "Untitled"),
-            type_emoji,
-            entry.entry_id,
-        )
-    _print_renderable(table)
 
     if title is not None and not title_explicit:
         # Treat explicitly provided empty strings as intentional overrides.
@@ -372,6 +347,34 @@ def create_release(
         manifest_intro = existing_manifest.intro.strip() or None
     else:
         manifest_intro = None
+
+    if not entries_sorted and not manifest_intro:
+        raise click.ClickException(
+            "No changelog entries available. Provide --intro or --intro-file "
+            "to create an intro-only release."
+        )
+
+    if entries_sorted:
+        table = Table()
+        table.add_column("✓", no_wrap=True, justify="center", header_style="dim")
+        table.add_column("Title")
+        table.add_column("Type", no_wrap=True, justify="center")
+        table.add_column("ID", style="cyan")
+        new_entry_ids = {entry.entry_id for entry in new_entries}
+        for entry in entries_sorted:
+            status = "new" if entry.entry_id in new_entry_ids else "existing"
+            status_cell = STATUS_TABLE_CELLS.get(status, Text("•"))
+            if isinstance(status_cell, Text):
+                status_cell = status_cell.copy()
+            type_value = entry.metadata.get("type", "change")
+            type_emoji = ENTRY_TYPE_EMOJIS.get(type_value, "•")
+            table.add_row(
+                status_cell,
+                entry.metadata.get("title", "Untitled"),
+                type_emoji,
+                entry.entry_id,
+            )
+        _print_renderable(table)
 
     release_dt = (
         release_date.date()
@@ -785,7 +788,7 @@ def release_create_cmd(
     assume_yes: bool,
     version_bump: Optional[str],
 ) -> None:
-    """Create or update a release manifest from unused entries."""
+    """Create or update a release manifest from changelog entries and intro text."""
 
     config = ctx.ensure_config()
     click_ctx = click.get_current_context()
