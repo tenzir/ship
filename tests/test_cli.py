@@ -1692,6 +1692,187 @@ def test_release_create_bump_from_implicit_zero(tmp_path: Path) -> None:
     assert (major_dir / "releases" / "1.0.0").exists()
 
 
+def test_release_create_patch_bump_allows_intro_only_release(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    first_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    intro_text = "Republish after yanking the previous package artifact."
+    patch_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--patch",
+            "--intro",
+            intro_text,
+            "--yes",
+        ],
+    )
+    assert patch_release.exit_code == 0, patch_release.output
+    assert patch_release.stdout.strip() == "v1.0.1"
+
+    release_dir = project_dir / "releases" / "v1.0.1"
+    assert release_dir.exists()
+
+    manifest_data = yaml.safe_load((release_dir / "manifest.yaml").read_text(encoding="utf-8"))
+    assert manifest_data["intro"] == intro_text
+    assert "entries" not in manifest_data
+
+    notes_text = (release_dir / "notes.md").read_text(encoding="utf-8")
+    assert notes_text.strip() == intro_text
+
+    release_entries_dir = release_dir / "entries"
+    assert release_entries_dir.is_dir()
+    assert list(release_entries_dir.glob("*.md")) == []
+
+
+def test_release_create_explicit_version_allows_intro_only_release(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    first_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.0",
+            "--yes",
+        ],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    intro_text = "Retry release after a failed publish workflow."
+    next_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.1",
+            "--intro",
+            intro_text,
+            "--yes",
+        ],
+    )
+    assert next_release.exit_code == 0, next_release.output
+    assert next_release.stdout.strip() == "v2.0.1"
+
+    release_dir = project_dir / "releases" / "v2.0.1"
+    manifest_data = yaml.safe_load((release_dir / "manifest.yaml").read_text(encoding="utf-8"))
+    assert manifest_data["intro"] == intro_text
+    assert "entries" not in manifest_data
+    assert (release_dir / "notes.md").read_text(encoding="utf-8").strip() == intro_text
+
+
+def test_release_create_rejects_empty_release_without_intro(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    first_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v3.0.0",
+            "--yes",
+        ],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    empty_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--patch",
+            "--yes",
+        ],
+    )
+    assert empty_release.exit_code != 0
+    assert (
+        "Provide --intro or --intro-file to create an intro-only release." in empty_release.output
+    )
+
+
 def test_show_release_mode(tmp_path: Path) -> None:
     """Test show --release flag as replacement for release notes command."""
     runner = CliRunner()
