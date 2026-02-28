@@ -16,7 +16,7 @@ from click.testing import CliRunner
 from tenzir_ship import __version__
 from tenzir_ship.cli import INFO_PREFIX, cli, main
 from tenzir_ship.cli._core import create_cli_context
-from tenzir_ship.config import Config, save_config
+from tenzir_ship.config import Config, ReleaseConfig, save_config
 from tenzir_ship.entries import read_entry, write_entry
 
 
@@ -1701,6 +1701,390 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
     )
     assert patch_from_zero.exit_code == 0, patch_from_zero.output
     assert (empty_dir / "releases" / "0.0.1").exists()
+
+
+def test_release_create_updates_detected_pyproject_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Bump test",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies pyproject bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert 'version = "1.0.0"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_release_create_skips_dynamic_pyproject_version_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    original_pyproject = '[project]\nname = "demo"\ndynamic = ["version"]\n'
+    pyproject_path.write_text(original_pyproject, encoding="utf-8")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Dynamic version",
+            "--type",
+            "feature",
+            "--description",
+            "Dynamic versions should be ignored in auto mode.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject
+
+
+def test_release_create_falls_back_to_poetry_version_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        (
+            '[project]\nname = "demo"\ndynamic = ["version"]\n\n'
+            '[tool.poetry]\nname = "demo"\nversion = "0.1.0"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Poetry fallback",
+            "--type",
+            "feature",
+            "--description",
+            "Poetry version should be updated when project.version is dynamic.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert 'version = "1.2.3"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_release_create_skips_workspace_cargo_manifest_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    cargo_toml_path = project_dir / "Cargo.toml"
+    original_cargo_toml = '[workspace]\nmembers = ["crate-a"]\n'
+    cargo_toml_path.write_text(original_cargo_toml, encoding="utf-8")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Workspace release",
+            "--type",
+            "feature",
+            "--description",
+            "Workspace Cargo manifests should be ignored in auto mode.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert cargo_toml_path.read_text(encoding="utf-8") == original_cargo_toml
+
+
+def test_release_create_updates_detected_package_json_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    package_json_path.write_text(
+        json.dumps({"name": "demo", "version": "0.1.0"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Package bump",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies package.json bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v2.3.4",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    package_payload = json.loads(package_json_path.read_text(encoding="utf-8"))
+    assert package_payload["version"] == "2.3.4"
+
+
+def test_release_create_version_bump_mode_off_skips_version_files(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            release=ReleaseConfig(version_bump_mode="off"),
+        ),
+        changelog_dir / "config.yaml",
+    )
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "No bump",
+            "--type",
+            "feature",
+            "--description",
+            "Version files should not update.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert 'version = "0.1.0"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_release_create_updates_configured_version_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+    workspace_dir = tmp_path / "workspace"
+    changelog_dir = workspace_dir / "changelog"
+    python_dir = workspace_dir / "python"
+    changelog_dir.mkdir(parents=True)
+    python_dir.mkdir(parents=True)
+
+    pyproject_path = python_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            release=ReleaseConfig(version_files=["../python/pyproject.toml"]),
+        ),
+        changelog_dir / "config.yaml",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Configured bump",
+            "--type",
+            "feature",
+            "--description",
+            "Configured version file update.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v3.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert 'version = "3.0.0"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_release_create_fails_for_unsupported_configured_version_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+    workspace_dir = tmp_path / "workspace"
+    changelog_dir = workspace_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    custom_version_file = workspace_dir / "version.json"
+    custom_version_file.write_text('{"tenzir-version":"0.1.0"}\n', encoding="utf-8")
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            release=ReleaseConfig(version_files=["../version.json"]),
+        ),
+        changelog_dir / "config.yaml",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Unsupported file",
+            "--type",
+            "feature",
+            "--description",
+            "Unsupported file should fail release create.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code != 0
+    assert "Unsupported version file" in create_result.output
+    assert not (changelog_dir / "releases" / "v1.0.0").exists()
 
 
 def test_release_create_bump_from_implicit_zero(tmp_path: Path) -> None:

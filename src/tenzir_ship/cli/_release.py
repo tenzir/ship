@@ -45,6 +45,7 @@ from ..utils import (
     push_current_branch,
     push_git_tag,
 )
+from ..version_files import apply_version_file_updates, plan_version_file_updates
 from ._core import (
     CLIContext,
     ENTRY_TYPE_EMOJIS,
@@ -492,6 +493,18 @@ def create_release(
         changes_required = True
         change_reasons.append("refresh release notes")
 
+    version_file_updates = plan_version_file_updates(
+        project_root,
+        version,
+        bump_mode=config.release.version_bump_mode,
+        explicit_paths=config.release.version_files,
+    )
+    if version_file_updates:
+        changes_required = True
+        count = len(version_file_updates)
+        plural = "s" if count != 1 else ""
+        change_reasons.append(f"update {count} version file{plural}")
+
     if not changes_required:
         log_success(f"release '{version}' is already up to date.")
         return
@@ -506,6 +519,15 @@ def create_release(
     release_dir.mkdir(parents=True, exist_ok=True)
     release_entries_dir = release_dir / "entries"
     release_entries_dir.mkdir(parents=True, exist_ok=True)
+
+    if version_file_updates:
+        apply_version_file_updates(version_file_updates)
+        for update in version_file_updates:
+            try:
+                display_path = update.path.relative_to(project_root)
+            except ValueError:
+                display_path = update.path
+            log_success(f"updated version file: {display_path}")
 
     for entry in new_entries:
         source_path = entry.path

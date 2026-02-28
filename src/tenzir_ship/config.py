@@ -11,6 +11,7 @@ import yaml
 from .utils import parse_components
 
 ExportStyle = Literal["standard", "compact"]
+ReleaseVersionBumpMode = Literal["auto", "off"]
 CONFIG_RELATIVE_PATH = Path("config.yaml")
 PACKAGE_METADATA_FILENAME = "package.yaml"
 CHANGELOG_DIRECTORY_NAME = "changelog"
@@ -39,6 +40,8 @@ class ReleaseConfig:
     """Configuration for release operations."""
 
     commit_message: str = "Release {version}"
+    version_bump_mode: ReleaseVersionBumpMode = "auto"
+    version_files: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -119,8 +122,46 @@ def load_config(path: Path) -> Config:
         if not isinstance(release_raw, MutableMapping):
             raise ValueError("Config option 'release' must be a mapping.")
         commit_message = release_raw.get("commit_message")
-        if commit_message is not None:
-            release_config = ReleaseConfig(commit_message=str(commit_message))
+        version_bump_mode_raw = release_raw.get("version_bump_mode")
+        version_bump_mode: ReleaseVersionBumpMode = "auto"
+        if version_bump_mode_raw is not None:
+            if not isinstance(version_bump_mode_raw, str):
+                raise ValueError("Config option 'release.version_bump_mode' must be a string.")
+            normalized_mode = version_bump_mode_raw.strip().lower()
+            if normalized_mode not in {"auto", "off"}:
+                raise ValueError(
+                    "Config option 'release.version_bump_mode' must be one of: auto, off."
+                )
+            version_bump_mode = cast(ReleaseVersionBumpMode, normalized_mode)
+
+        version_files_raw = release_raw.get("version_files")
+        version_files: list[str] = []
+        if version_files_raw is not None:
+            if not isinstance(version_files_raw, list):
+                raise ValueError("Config option 'release.version_files' must be a list of paths.")
+            normalized_files: list[str] = []
+            for item in version_files_raw:
+                if not isinstance(item, str):
+                    raise ValueError(
+                        "Config option 'release.version_files' must contain only strings."
+                    )
+                value = item.strip()
+                if not value:
+                    raise ValueError(
+                        "Config option 'release.version_files' must not contain empty paths."
+                    )
+                normalized_files.append(value)
+            version_files = normalized_files
+
+        release_config = ReleaseConfig(
+            commit_message=(
+                str(commit_message)
+                if commit_message is not None
+                else release_config.commit_message
+            ),
+            version_bump_mode=version_bump_mode,
+            version_files=version_files,
+        )
 
     return Config(
         id=project_value,
@@ -198,8 +239,50 @@ def load_package_config(path: Path) -> Config:
         if not isinstance(release_raw, MutableMapping):
             raise ValueError("Package metadata option 'release' must be a mapping.")
         commit_message = release_raw.get("commit_message")
-        if commit_message is not None:
-            release_config = ReleaseConfig(commit_message=str(commit_message))
+        version_bump_mode_raw = release_raw.get("version_bump_mode")
+        version_bump_mode: ReleaseVersionBumpMode = "auto"
+        if version_bump_mode_raw is not None:
+            if not isinstance(version_bump_mode_raw, str):
+                raise ValueError(
+                    "Package metadata option 'release.version_bump_mode' must be a string."
+                )
+            normalized_mode = version_bump_mode_raw.strip().lower()
+            if normalized_mode not in {"auto", "off"}:
+                raise ValueError(
+                    "Package metadata option 'release.version_bump_mode' must be one of: auto, off."
+                )
+            version_bump_mode = cast(ReleaseVersionBumpMode, normalized_mode)
+
+        version_files_raw = release_raw.get("version_files")
+        version_files: list[str] = []
+        if version_files_raw is not None:
+            if not isinstance(version_files_raw, list):
+                raise ValueError(
+                    "Package metadata option 'release.version_files' must be a list of paths."
+                )
+            normalized_files: list[str] = []
+            for item in version_files_raw:
+                if not isinstance(item, str):
+                    raise ValueError(
+                        "Package metadata option 'release.version_files' must contain only strings."
+                    )
+                value = item.strip()
+                if not value:
+                    raise ValueError(
+                        "Package metadata option 'release.version_files' must not contain empty paths."
+                    )
+                normalized_files.append(value)
+            version_files = normalized_files
+
+        release_config = ReleaseConfig(
+            commit_message=(
+                str(commit_message)
+                if commit_message is not None
+                else release_config.commit_message
+            ),
+            version_bump_mode=version_bump_mode,
+            version_files=version_files,
+        )
 
     return Config(
         id=package_id,
@@ -254,8 +337,15 @@ def dump_config(config: Config) -> dict[str, Any]:
         data["components"] = dict(config.components)
     if config.modules:
         data["modules"] = config.modules
+    release_data: dict[str, Any] = {}
     if config.release.commit_message != "Release {version}":
-        data["release"] = {"commit_message": config.release.commit_message}
+        release_data["commit_message"] = config.release.commit_message
+    if config.release.version_bump_mode != "auto":
+        release_data["version_bump_mode"] = config.release.version_bump_mode
+    if config.release.version_files:
+        release_data["version_files"] = list(config.release.version_files)
+    if release_data:
+        data["release"] = release_data
     return data
 
 

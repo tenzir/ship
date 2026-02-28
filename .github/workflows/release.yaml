@@ -33,7 +33,7 @@ jobs:
       bump: ${{ inputs.bump }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
-      git-add-paths: pyproject.toml uv.lock
+      git-add-paths: pyproject.toml
       pre-create: |
         uv sync --dev
         uv run ruff check
@@ -41,6 +41,4 @@ jobs:
         uv run mypy
         uv run pytest
         uv build
-      post-create: |
-        uv version --bump ${{ inputs.bump }}
     secrets: inherit
