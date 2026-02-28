@@ -1869,8 +1869,7 @@ def test_release_create_rejects_empty_release_without_intro(tmp_path: Path) -> N
     )
     assert empty_release.exit_code != 0
     assert (
-        "Provide --intro or --intro-file to create an intro-only release."
-        in empty_release.output
+        "Provide --intro or --intro-file to create an intro-only release." in empty_release.output
     )
 
 
