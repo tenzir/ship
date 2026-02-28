@@ -1,7 +1,9 @@
 ---
 title: Enforce changelog structure for releases and command warnings
 type: bugfix
-author: codex
+authors:
+  - mavam
+  - codex
 created: 2026-02-28T00:00:00Z
 ---
 
