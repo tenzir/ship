@@ -15,6 +15,7 @@ from click.testing import CliRunner
 
 from tenzir_ship import __version__
 from tenzir_ship.cli import INFO_PREFIX, cli, main
+from tenzir_ship.cli._core import create_cli_context
 from tenzir_ship.config import Config, save_config
 from tenzir_ship.entries import read_entry, write_entry
 
@@ -611,6 +612,56 @@ def test_missing_project_reports_info_message(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["--root", str(tmp_path), "show"])
     assert result.exit_code == 1
     expected_root = tmp_path.resolve()
+    plain_prefix = click.utils.strip_ansi(INFO_PREFIX)
+    expected_plain_output = (
+        f"{plain_prefix}no tenzir-ship project detected at {expected_root}.\n"
+        f"{plain_prefix}run 'tenzir-ship add' from your project root or provide --root.\n"
+    )
+    assert click.utils.strip_ansi(result.output) == expected_plain_output
+    assert "Error:" not in result.output
+
+
+def test_implicit_resolution_prefers_changelog_subdirectory(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    # Legacy root-level config should not win over changelog/ when resolving implicitly.
+    save_config(Config(id="legacy-root", name="Legacy Root"), workspace / "config.yaml")
+    (workspace / "unreleased").mkdir()
+    (workspace / "README.md").write_text("workspace readme", encoding="utf-8")
+
+    changelog_root = workspace / "changelog"
+    changelog_root.mkdir()
+    save_config(Config(id="canonical", name="Canonical"), changelog_root / "config.yaml")
+    (changelog_root / "unreleased").mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(workspace)
+        ctx = create_cli_context(debug=False)
+    finally:
+        os.chdir(original_cwd)
+
+    assert ctx.project_root == changelog_root.resolve()
+    assert ctx.config_path == (changelog_root / "config.yaml").resolve()
+
+
+def test_implicit_resolution_ignores_legacy_root_layout(tmp_path: Path) -> None:
+    runner = CliRunner()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    save_config(Config(id="legacy-root", name="Legacy Root"), workspace / "config.yaml")
+    (workspace / "unreleased").mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(workspace)
+        result = runner.invoke(cli, ["show"])
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 1
+    expected_root = (workspace / "changelog").resolve()
     plain_prefix = click.utils.strip_ansi(INFO_PREFIX)
     expected_plain_output = (
         f"{plain_prefix}no tenzir-ship project detected at {expected_root}.\n"

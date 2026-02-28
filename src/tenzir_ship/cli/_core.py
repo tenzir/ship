@@ -339,23 +339,44 @@ def _resolve_project_root(value: Path, *, bootstrap_in_subdir: bool = False) -> 
         metadata = package_metadata_path(path)
         return metadata.is_file()
 
+    def _is_changelog_dir(path: Path) -> bool:
+        return path.name == CHANGELOG_DIRECTORY_NAME
+
+    def _select_known_project(path: Path) -> Path | None:
+        if _is_package_changelog(path):
+            return path.resolve()
+        if _has_config(path):
+            if not bootstrap_in_subdir or _is_changelog_dir(path):
+                return path.resolve()
+        if _is_package_root(path):
+            return (path / CHANGELOG_DIRECTORY_NAME).resolve()
+        return None
+
     if resolved.is_dir():
-        if _has_config(resolved) or _is_package_changelog(resolved):
-            return resolved
-        if _is_package_root(resolved):
-            return (resolved / CHANGELOG_DIRECTORY_NAME).resolve()
-        # Check if a changelog/ subdirectory exists with a valid config.
+        selected = _select_known_project(resolved)
+        if selected is not None:
+            return selected
+
+        # Check if a changelog/ subdirectory exists and prefer it for implicit
+        # root resolution to enforce the opinionated top-level layout.
         changelog_subdir = resolved / CHANGELOG_DIRECTORY_NAME
-        if changelog_subdir.is_dir() and _has_config(changelog_subdir):
-            return changelog_subdir.resolve()
+        if changelog_subdir.is_dir():
+            selected = _select_known_project(changelog_subdir)
+            if selected is not None:
+                return selected
+            if bootstrap_in_subdir:
+                return changelog_subdir.resolve()
 
     for candidate in [resolved] + list(resolved.parents):
         if not candidate.is_dir():
             continue
-        if _has_config(candidate) or _is_package_changelog(candidate):
-            return candidate
-        if _is_package_root(candidate):
-            return (candidate / CHANGELOG_DIRECTORY_NAME).resolve()
+        if bootstrap_in_subdir:
+            changelog_subdir = candidate / CHANGELOG_DIRECTORY_NAME
+            if changelog_subdir.is_dir():
+                return changelog_subdir.resolve()
+        selected = _select_known_project(candidate)
+        if selected is not None:
+            return selected
 
     # No existing project found. When bootstrapping without explicit --root,
     # default to changelog/ subdirectory for consistency with package mode.
