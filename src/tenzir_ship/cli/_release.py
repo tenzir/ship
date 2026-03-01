@@ -279,6 +279,20 @@ def _validate_semver_label(version: str) -> None:
         ) from exc
 
 
+def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
+    latest = _latest_semver(project_root)
+    if latest is None:
+        return True
+
+    latest_version, _ = latest
+    normalized = version[1:] if version.startswith(("v", "V")) else version
+    try:
+        target = Version(normalized)
+    except InvalidVersion:
+        return False
+    return target >= latest_version
+
+
 def _resolve_release_version(
     project_root: Path,
     explicit: Optional[str],
@@ -554,12 +568,14 @@ def create_release(
         changes_required = True
         change_reasons.append("refresh release notes")
 
-    version_file_updates = plan_version_file_updates(
-        project_root,
-        version,
-        bump_mode=config.release.version_bump_mode,
-        explicit_paths=config.release.version_files,
-    )
+    version_file_updates = []
+    if _is_current_or_newer_release(project_root, version):
+        version_file_updates = plan_version_file_updates(
+            project_root,
+            version,
+            bump_mode=config.release.version_bump_mode,
+            explicit_paths=config.release.version_files,
+        )
     if version_file_updates:
         changes_required = True
         count = len(version_file_updates)

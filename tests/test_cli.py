@@ -2231,6 +2231,49 @@ def test_release_create_updates_detected_package_json_version(tmp_path: Path) ->
     assert package_payload["version"] == "2.3.4"
 
 
+def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    original_content = json.dumps({"name": "demo", "private": True}, indent=2) + "\n"
+    package_json_path.write_text(original_content, encoding="utf-8")
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "No static version",
+            "--type",
+            "feature",
+            "--description",
+            "package.json without a version key should be skipped in auto mode.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert package_json_path.read_text(encoding="utf-8") == original_content
+
+
 def test_release_create_version_bump_mode_off_skips_version_files(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -2292,6 +2335,12 @@ def test_release_create_updates_configured_version_file(tmp_path: Path) -> None:
     changelog_dir.mkdir(parents=True)
     python_dir.mkdir(parents=True)
 
+    root_pyproject_path = workspace_dir / "pyproject.toml"
+    root_pyproject_path.write_text(
+        '[project]\nname = "workspace-root"\nversion = "9.9.9"\n',
+        encoding="utf-8",
+    )
+
     pyproject_path = python_dir / "pyproject.toml"
     pyproject_path.write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -2336,7 +2385,103 @@ def test_release_create_updates_configured_version_file(tmp_path: Path) -> None:
         ],
     )
     assert create_result.exit_code == 0, create_result.output
+    assert 'version = "9.9.9"' in root_pyproject_path.read_text(encoding="utf-8")
     assert 'version = "3.0.0"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_release_create_editing_old_release_does_not_downgrade_version_file(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+    add_first = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "First release",
+            "--type",
+            "feature",
+            "--description",
+            "First release content.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_first.exit_code == 0, add_first.output
+
+    create_first = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+    )
+    assert create_first.exit_code == 0, create_first.output
+    assert 'version = "1.0.0"' in pyproject_path.read_text(encoding="utf-8")
+
+    add_second = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Second release",
+            "--type",
+            "feature",
+            "--description",
+            "Second release content.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_second.exit_code == 0, add_second.output
+
+    create_second = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.1.0",
+            "--yes",
+        ],
+    )
+    assert create_second.exit_code == 0, create_second.output
+    assert 'version = "1.1.0"' in pyproject_path.read_text(encoding="utf-8")
+
+    edit_old_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--title",
+            "Edited v1.0.0 title",
+            "--yes",
+        ],
+    )
+    assert edit_old_release.exit_code == 0, edit_old_release.output
+    assert 'version = "1.1.0"' in pyproject_path.read_text(encoding="utf-8")
 
 
 def test_release_create_fails_for_unsupported_configured_version_file(tmp_path: Path) -> None:

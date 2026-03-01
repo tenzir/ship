@@ -82,7 +82,7 @@ def _auto_search_roots(project_root: Path) -> list[Path]:
 
 
 def resolve_version_file_targets(project_root: Path, explicit_paths: Sequence[str]) -> list[Path]:
-    """Resolve auto-detected and configured version file paths in deterministic order."""
+    """Resolve configured or auto-detected version file paths in deterministic order."""
 
     candidates = _resolve_version_file_targets(project_root, explicit_paths)
     return [candidate.path for candidate in candidates]
@@ -92,21 +92,22 @@ def _resolve_version_file_targets(
     project_root: Path, explicit_paths: Sequence[str]
 ) -> list[_ResolvedVersionFileTarget]:
     candidates: list[_ResolvedVersionFileTarget] = []
-    for root in _auto_search_roots(project_root):
-        for filename in SUPPORTED_AUTO_VERSION_FILES:
-            filepath = root / filename
-            if filepath.is_file():
-                candidates.append(
-                    _ResolvedVersionFileTarget(path=filepath.resolve(), explicit=False)
+    if explicit_paths:
+        for raw_path in explicit_paths:
+            candidates.append(
+                _ResolvedVersionFileTarget(
+                    path=_resolve_explicit_version_file_path(project_root, raw_path),
+                    explicit=True,
                 )
-
-    for raw_path in explicit_paths:
-        candidates.append(
-            _ResolvedVersionFileTarget(
-                path=_resolve_explicit_version_file_path(project_root, raw_path),
-                explicit=True,
             )
-        )
+    else:
+        for root in _auto_search_roots(project_root):
+            for filename in SUPPORTED_AUTO_VERSION_FILES:
+                filepath = root / filename
+                if filepath.is_file():
+                    candidates.append(
+                        _ResolvedVersionFileTarget(path=filepath.resolve(), explicit=False)
+                    )
 
     deduped: list[_ResolvedVersionFileTarget] = []
     seen: dict[Path, int] = {}
@@ -173,7 +174,13 @@ def _replace_toml_table_version(
     )
 
 
-def _update_package_json(path: Path, content: str, new_version: str) -> tuple[str, str | None]:
+def _update_package_json(
+    path: Path,
+    content: str,
+    new_version: str,
+    *,
+    skip_if_missing_static_version: bool,
+) -> tuple[str, str | None]:
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -182,14 +189,22 @@ def _update_package_json(path: Path, content: str, new_version: str) -> tuple[st
     if not isinstance(parsed, dict):
         raise click.ClickException(f"Expected a JSON object in {path}.")
 
-    old_value = parsed.get("version")
-    if old_value is not None and not isinstance(old_value, str):
+    if "version" not in parsed:
+        if skip_if_missing_static_version:
+            return content, None
+        raise click.ClickException(f"{path} is missing a static 'version' field.")
+
+    old_value = parsed["version"]
+    if not isinstance(old_value, str):
         raise click.ClickException(
             f"Expected 'version' in {path} to be a string, got {type(old_value).__name__}."
         )
-    old_version = old_value if isinstance(old_value, str) else None
+
+    if old_value == new_version:
+        return content, old_value
+
     parsed["version"] = new_version
-    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n", old_version
+    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n", old_value
 
 
 def _update_pyproject_like(
@@ -284,7 +299,12 @@ def _plan_single_version_file_update(
     kind = _version_file_kind(path)
 
     if kind == "package_json":
-        updated_content, old_version = _update_package_json(path, content, new_version)
+        updated_content, old_version = _update_package_json(
+            path,
+            content,
+            new_version,
+            skip_if_missing_static_version=not strict,
+        )
     elif kind == "pyproject":
         updated_content, old_version = _update_pyproject_like(
             path,
