@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
-from typing import NoReturn, Optional
+from typing import Literal, NoReturn, Optional, cast
 
 import click
 from click.core import ParameterSource
@@ -45,6 +45,7 @@ from ..utils import (
     push_current_branch,
     push_git_tag,
 )
+from ..version_files import apply_version_file_updates, plan_version_file_updates
 from ._core import (
     CLIContext,
     ENTRY_TYPE_EMOJIS,
@@ -176,6 +177,9 @@ STATUS_TABLE_CELLS = {
     "new": Text("+", style="green bold"),
 }
 
+ReleaseBump = Literal["patch", "minor", "major"]
+ReleaseVersionSource = Literal["explicit", "manual", "auto"]
+
 
 def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
     normalized_version = version.strip()
@@ -235,6 +239,34 @@ def _bump_version_value(base: Version, bump: str) -> Version:
     return Version(f"{major}.{minor}.{micro}")
 
 
+def _next_version_for_bump(project_root: Path, bump: ReleaseBump) -> str:
+    latest = _latest_semver(project_root)
+    if latest is None:
+        base_version = Version("0.0.0")
+        prefix = ""
+    else:
+        base_version, prefix = latest
+    next_version = _bump_version_value(base_version, bump)
+    return f"{prefix}{next_version}"
+
+
+def _infer_release_bump(unreleased_entries: list[Entry]) -> ReleaseBump | None:
+    if not unreleased_entries:
+        return None
+    if any(entry.type == "breaking" for entry in unreleased_entries):
+        return "major"
+    if any(entry.type in {"feature", "change"} for entry in unreleased_entries):
+        return "minor"
+    return "patch"
+
+
+def _infer_next_release_version(project_root: Path, unreleased_entries: list[Entry]) -> str | None:
+    bump = _infer_release_bump(unreleased_entries)
+    if bump is None:
+        return None
+    return _next_version_for_bump(project_root, bump)
+
+
 def _validate_semver_label(version: str) -> None:
     value = version
     if value.startswith(("v", "V")):
@@ -247,31 +279,67 @@ def _validate_semver_label(version: str) -> None:
         ) from exc
 
 
+def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
+    latest = _latest_semver(project_root)
+    if latest is None:
+        return True
+
+    latest_version, _ = latest
+    normalized = version[1:] if version.startswith(("v", "V")) else version
+    try:
+        target = Version(normalized)
+    except InvalidVersion:
+        return False
+    return target >= latest_version
+
+
 def _resolve_release_version(
     project_root: Path,
     explicit: Optional[str],
-    bump: Optional[str],
-) -> str:
-    if explicit and bump:
+    bump: ReleaseBump | None,
+    *,
+    unreleased_entries: list[Entry],
+) -> tuple[str, ReleaseVersionSource]:
+    if explicit is not None and bump:
         raise click.ClickException("Provide either a version argument or a bump flag, not both.")
-    if explicit:
+    if explicit is not None:
         value = explicit.strip()
         if not value:
             raise click.ClickException("Release version cannot be empty.")
         _validate_semver_label(value)
-        return value
-    if not bump:
+        return value, "explicit"
+    if bump:
+        return _next_version_for_bump(project_root, bump), "manual"
+
+    inferred = _infer_next_release_version(project_root, unreleased_entries)
+    if inferred is None:
         raise click.ClickException(
-            "Provide a version argument or specify one of --patch/--minor/--major."
+            "Cannot auto-bump release version because no unreleased changelog entries were "
+            "found. Provide a version argument or specify one of --patch/--minor/--major."
         )
-    latest = _latest_semver(project_root)
-    if latest is None:
-        base_version = Version("0.0.0")
-        prefix = ""
-    else:
-        base_version, prefix = latest
-    next_version = _bump_version_value(base_version, bump)
-    return f"{prefix}{next_version}"
+    return inferred, "auto"
+
+
+def _resolve_manual_bump_flags(*, patch: bool, minor: bool, major: bool) -> ReleaseBump | None:
+    selected: list[ReleaseBump] = []
+    if patch:
+        selected.append("patch")
+    if minor:
+        selected.append("minor")
+    if major:
+        selected.append("major")
+    if len(selected) > 1:
+        raise click.ClickException("Use only one of --patch, --minor, or --major.")
+    return selected[0] if selected else None
+
+
+def _coerce_release_bump(value: Optional[str]) -> ReleaseBump | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in {"patch", "minor", "major"}:
+        raise click.ClickException("Invalid bump value. Expected one of: patch, minor, or major.")
+    return cast(ReleaseBump, normalized)
 
 
 def create_release(
@@ -294,14 +362,24 @@ def create_release(
     config = ctx.ensure_config()
     _enforce_structure_is_valid(ctx, action="create a release")
     project_root = ctx.project_root
+    normalized_bump = _coerce_release_bump(version_bump)
 
-    version = _resolve_release_version(project_root, version, version_bump)
+    unused_entries = _collect_unused_entries_for_release(project_root, config)
+    version, version_source = _resolve_release_version(
+        project_root,
+        version,
+        normalized_bump,
+        unreleased_entries=unused_entries,
+    )
 
     existing_manifest = _find_release_manifest(project_root, version)
-    if version_bump and existing_manifest is not None:
-        raise click.ClickException(
-            f"Release '{version}' already exists. Supply a different bump flag or explicit version."
+    if version_source in {"manual", "auto"} and existing_manifest is not None:
+        follow_up = (
+            "Supply a different bump flag or explicit version."
+            if version_source == "manual"
+            else "Supply an explicit version or a manual bump flag."
         )
+        raise click.ClickException(f"Release '{version}' already exists. {follow_up}")
     release_dir = release_directory(project_root) / version
     manifest_path = release_dir / "manifest.yaml"
     notes_path = release_dir / NOTES_FILENAME
@@ -318,8 +396,6 @@ def create_release(
                 )
             existing_entries.append(entry)
             existing_entry_ids.add(entry.entry_id)
-
-    unused_entries = _collect_unused_entries_for_release(project_root, config)
 
     new_entries = [entry for entry in unused_entries if entry.entry_id not in existing_entry_ids]
 
@@ -492,6 +568,20 @@ def create_release(
         changes_required = True
         change_reasons.append("refresh release notes")
 
+    version_file_updates = []
+    if _is_current_or_newer_release(project_root, version):
+        version_file_updates = plan_version_file_updates(
+            project_root,
+            version,
+            bump_mode=config.release.version_bump_mode,
+            explicit_paths=config.release.version_files,
+        )
+    if version_file_updates:
+        changes_required = True
+        count = len(version_file_updates)
+        plural = "s" if count != 1 else ""
+        change_reasons.append(f"update {count} version file{plural}")
+
     if not changes_required:
         log_success(f"release '{version}' is already up to date.")
         return
@@ -506,6 +596,15 @@ def create_release(
     release_dir.mkdir(parents=True, exist_ok=True)
     release_entries_dir = release_dir / "entries"
     release_entries_dir.mkdir(parents=True, exist_ok=True)
+
+    if version_file_updates:
+        apply_version_file_updates(version_file_updates)
+        for update in version_file_updates:
+            try:
+                display_path = update.path.relative_to(project_root)
+            except ValueError:
+                display_path = update.path
+            log_success(f"updated version file: {display_path}")
 
     for entry in new_entries:
         source_path = entry.path
@@ -762,21 +861,20 @@ def release_group(ctx: CLIContext) -> None:
 )
 @click.option(
     "--patch",
-    "version_bump",
-    flag_value="patch",
-    default=None,
+    "patch",
+    is_flag=True,
     help="Bump the patch segment from the latest release.",
 )
 @click.option(
     "--minor",
-    "version_bump",
-    flag_value="minor",
+    "minor",
+    is_flag=True,
     help="Bump the minor segment from the latest release.",
 )
 @click.option(
     "--major",
-    "version_bump",
-    flag_value="major",
+    "major",
+    is_flag=True,
     help="Bump the major segment from the latest release.",
 )
 @click.pass_obj
@@ -790,7 +888,9 @@ def release_create_cmd(
     compact: Optional[bool],
     explicit_links: Optional[bool],
     assume_yes: bool,
-    version_bump: Optional[str],
+    patch: bool,
+    minor: bool,
+    major: bool,
 ) -> None:
     """Create or update a release manifest from changelog entries and intro text."""
 
@@ -798,6 +898,7 @@ def release_create_cmd(
     click_ctx = click.get_current_context()
     title_explicit = click_ctx.get_parameter_source("title") != ParameterSource.DEFAULT
     compact_explicit = click_ctx.get_parameter_source("compact") != ParameterSource.DEFAULT
+    version_bump = _resolve_manual_bump_flags(patch=patch, minor=minor, major=major)
     # Resolve explicit_links: CLI flag overrides config default
     resolved_explicit_links = config.explicit_links if explicit_links is None else explicit_links
     create_release(

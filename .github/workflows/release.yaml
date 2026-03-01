@@ -42,5 +42,5 @@ jobs:
         uv run pytest
         uv build
       post-create: |
-        uv version --bump ${{ inputs.bump }}
+        uv lock
     secrets: inherit
