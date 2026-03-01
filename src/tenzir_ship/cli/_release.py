@@ -300,9 +300,9 @@ def _resolve_release_version(
     *,
     unreleased_entries: list[Entry],
 ) -> tuple[str, ReleaseVersionSource]:
-    if explicit and bump:
+    if explicit is not None and bump:
         raise click.ClickException("Provide either a version argument or a bump flag, not both.")
-    if explicit:
+    if explicit is not None:
         value = explicit.strip()
         if not value:
             raise click.ClickException("Release version cannot be empty.")

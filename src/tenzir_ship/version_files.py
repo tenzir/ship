@@ -17,7 +17,9 @@ SUPPORTED_AUTO_VERSION_FILES: tuple[str, ...] = (
     "Cargo.toml",
 )
 
-_TABLE_PATTERN = re.compile(r"^\s*\[(?P<table>[^\]]+)\]\s*(?:#.*)?$")
+_TABLE_PATTERN = re.compile(
+    r"^\s*(?:\[(?P<table>[^\]]+)\]|\[\[(?P<array_table>[^\]]+)\]\])\s*(?:#.*)?$"
+)
 _VERSION_ASSIGNMENT_PATTERN = re.compile(
     r'^(?P<prefix>\s*version\s*=\s*)(?P<quote>["\'])(?P<value>[^"\']*)(?P=quote)'
     r"(?P<suffix>\s*(?:#.*)?)(?P<newline>\r?\n?)$"
@@ -139,7 +141,9 @@ def _replace_toml_table_version(
         stripped = line.rstrip("\r\n")
         table_match = _TABLE_PATTERN.match(stripped)
         if table_match:
-            current_table = table_match.group("table").strip()
+            current_table = (
+                table_match.group("table") or table_match.group("array_table") or ""
+            ).strip()
             if current_table == table_name:
                 active = True
                 found_table = True

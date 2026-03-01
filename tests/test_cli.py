@@ -2142,6 +2142,64 @@ def test_release_create_falls_back_to_poetry_version_in_auto_mode(tmp_path: Path
     assert 'version = "1.2.3"' in pyproject_path.read_text(encoding="utf-8")
 
 
+def test_release_create_falls_back_to_poetry_without_touching_array_table_versions(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        (
+            '[project]\nname = "demo"\ndynamic = ["version"]\n\n'
+            "[[tool.custom.plugin]]\nname = \"demo-plugin\"\nversion = \"7.7.7\"\n\n"
+            '[tool.poetry]\nname = "demo"\nversion = "0.1.0"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Poetry fallback with array table",
+            "--type",
+            "feature",
+            "--description",
+            "Poetry version should still be updated.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    updated_pyproject = pyproject_path.read_text(encoding="utf-8")
+    plugin_section = updated_pyproject.split("[[tool.custom.plugin]]", maxsplit=1)[1].split(
+        "[tool.poetry]", maxsplit=1
+    )[0]
+    poetry_section = updated_pyproject.split("[tool.poetry]", maxsplit=1)[1]
+    assert 'version = "7.7.7"' in plugin_section
+    assert 'version = "1.2.3"' in poetry_section
+
+
 def test_release_create_skips_workspace_cargo_manifest_in_auto_mode(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -4104,6 +4162,45 @@ def test_release_create_rejects_non_semver_version(tmp_path: Path) -> None:
     )
     assert release_result.exit_code != 0
     assert "valid semantic version" in release_result.output
+
+
+def test_release_create_rejects_empty_explicit_version_argument(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code != 0
+    assert "Release version cannot be empty." in release_result.output
+    assert not (project_dir / "releases").exists()
 
 
 def test_release_create_fails_on_structure_violation(tmp_path: Path) -> None:
