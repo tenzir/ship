@@ -1,6 +1,6 @@
 # Create a release
 
-Cut a release with`tenzir-ship`.
+Cut a release with `tenzir-ship`.
 
 ## Pre-release checks
 

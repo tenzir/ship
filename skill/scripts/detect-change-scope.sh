@@ -18,6 +18,14 @@ resolve_branch_base() {
 
   current_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
+  # Prefer upstream when it does not track this branch's own remote counterpart.
+  if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
+    if [[ -z "$current_branch" || "$upstream" != */"$current_branch" ]]; then
+      git merge-base HEAD "$upstream"
+      return 0
+    fi
+  fi
+
   # Use the remote default branch when origin/HEAD is available.
   if origin_head=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); then
     git merge-base HEAD "$origin_head"
@@ -31,14 +39,6 @@ resolve_branch_base() {
       return 0
     fi
   done
-
-  # Prefer upstream when it does not track this branch's own remote counterpart.
-  if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
-    if [[ -z "$current_branch" || "$upstream" != */"$current_branch" ]]; then
-      git merge-base HEAD "$upstream"
-      return 0
-    fi
-  fi
 
   # Fall back to local default branches (may be stale).
   for candidate in main master; do
