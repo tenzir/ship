@@ -1,0 +1,48 @@
+name: Publish Pi package to npm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/pi-tenzir-ship/package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish pi-tenzir-ship
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/pi-tenzir-ship
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish to npm
+        run: |
+          set +e
+          OUTPUT=$(npm publish --provenance --access public 2>&1)
+          STATUS=$?
+          set -e
+
+          echo "$OUTPUT"
+
+          if [ $STATUS -eq 0 ]; then
+            exit 0
+          fi
+
+          if echo "$OUTPUT" | grep -Eqi "EPUBLISHCONFLICT|cannot publish over the previously published versions"; then
+            echo "Version already published; treating as no-op."
+            exit 0
+          fi
+
+          exit $STATUS
