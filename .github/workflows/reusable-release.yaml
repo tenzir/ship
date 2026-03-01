@@ -4,8 +4,9 @@ on:
   workflow_call:
     inputs:
       bump:
-        description: "Version bump type: major, minor, or patch"
-        required: true
+        description: "Version bump type: major, minor, or patch (empty/auto = infer from unreleased entries)"
+        required: false
+        default: ""
         type: string
       intro:
         description: "1-2 sentence release introduction"

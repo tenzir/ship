@@ -4,10 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump type
-        required: true
+        description: |
+          Version bump type
+
+          Use `auto` to infer from unreleased changelog entries.
+        required: false
+        # workflow_dispatch choice inputs cannot represent an unset value.
+        # `auto` is the explicit sentinel for "infer bump".
+        default: auto
         type: choice
         options:
+          - auto
           - minor
           - patch
           - major

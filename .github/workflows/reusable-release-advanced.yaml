@@ -4,8 +4,9 @@ on:
   workflow_call:
     inputs:
       bump:
-        description: "Version bump type: major, minor, or patch"
-        required: true
+        description: "Version bump type: major, minor, or patch (empty/auto = infer from unreleased entries)"
+        required: false
+        default: ""
         type: string
       intro:
         description: "1-2 sentence release introduction"
@@ -88,8 +89,8 @@ jobs:
       - name: Validate bump input
         run: |
           case "${{ inputs.bump }}" in
-            major|minor|patch) ;;
-            *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Must be major, minor, or patch." && exit 1 ;;
+            ""|auto|major|minor|patch) ;;
+            *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Use empty, auto, major, minor, or patch." && exit 1 ;;
           esac
 
       - name: Checkout
@@ -154,8 +155,18 @@ jobs:
           if [ -n "$RELEASE_TITLE" ]; then
             TITLE_ARGS=(--title "$RELEASE_TITLE")
           fi
+          BUMP_ARGS=()
+          case "$RELEASE_BUMP" in
+            major|minor|patch)
+              BUMP_ARGS=("--$RELEASE_BUMP")
+              ;;
+            ""|auto)
+              # `auto` exists for callers that use constrained inputs (for example
+              # workflow_dispatch choice) and cannot pass an empty value.
+              ;;
+          esac
           VERSION=$(tenzir-ship --root "$CHANGELOG_ROOT" release create \
-            "--${{ inputs.bump }}" \
+            "${BUMP_ARGS[@]}" \
             --intro "$RELEASE_INTRO" \
             "${TITLE_ARGS[@]}" \
             --yes)
@@ -164,6 +175,7 @@ jobs:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_TITLE: ${{ inputs.title }}
           RELEASE_INTRO: ${{ inputs.intro }}
+          RELEASE_BUMP: ${{ inputs.bump }}
 
       - name: Run post-create script
         if: inputs.post-create != ''
