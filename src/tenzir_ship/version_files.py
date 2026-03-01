@@ -26,6 +26,87 @@ _VERSION_ASSIGNMENT_PATTERN = re.compile(
 )
 
 
+def _is_toml_basic_quote_escaped(line: str, quote_index: int) -> bool:
+    backslash_count = 0
+    cursor = quote_index - 1
+    while cursor >= 0 and line[cursor] == "\\":
+        backslash_count += 1
+        cursor -= 1
+    return (backslash_count % 2) == 1
+
+
+def _advance_toml_multiline_string_state(
+    line: str, *, in_multiline_basic_string: bool, in_multiline_literal_string: bool
+) -> tuple[bool, bool]:
+    """Track TOML multiline string state while scanning one line."""
+
+    index = 0
+    line_length = len(line)
+    in_basic_single_line_string = False
+    in_literal_single_line_string = False
+
+    while index < line_length:
+        if in_multiline_basic_string:
+            basic_close_index = line.find('"""', index)
+            if basic_close_index < 0:
+                return True, in_multiline_literal_string
+            if _is_toml_basic_quote_escaped(line, basic_close_index):
+                index = basic_close_index + 3
+                continue
+            in_multiline_basic_string = False
+            index = basic_close_index + 3
+            continue
+
+        if in_multiline_literal_string:
+            literal_close_index = line.find("'''", index)
+            if literal_close_index < 0:
+                return in_multiline_basic_string, True
+            in_multiline_literal_string = False
+            index = literal_close_index + 3
+            continue
+
+        current_char = line[index]
+
+        if not in_basic_single_line_string and not in_literal_single_line_string:
+            if current_char == "#":
+                break
+            if line.startswith('"""', index):
+                in_multiline_basic_string = True
+                index += 3
+                continue
+            if line.startswith("'''", index):
+                in_multiline_literal_string = True
+                index += 3
+                continue
+            if current_char == '"':
+                in_basic_single_line_string = True
+                index += 1
+                continue
+            if current_char == "'":
+                in_literal_single_line_string = True
+                index += 1
+                continue
+            index += 1
+            continue
+
+        if in_basic_single_line_string:
+            if current_char == "\\":
+                index += 2
+                continue
+            if current_char == '"':
+                in_basic_single_line_string = False
+            index += 1
+            continue
+
+        if in_literal_single_line_string:
+            if current_char == "'":
+                in_literal_single_line_string = False
+            index += 1
+            continue
+
+    return in_multiline_basic_string, in_multiline_literal_string
+
+
 @dataclass(frozen=True)
 class VersionFileUpdate:
     """In-memory representation of one file update."""
@@ -136,38 +217,47 @@ def _replace_toml_table_version(
     found_version = False
     changed = False
     old_version: str | None = None
+    in_multiline_basic_string = False
+    in_multiline_literal_string = False
 
     for index, line in enumerate(lines):
+        inside_multiline_string = in_multiline_basic_string or in_multiline_literal_string
         stripped = line.rstrip("\r\n")
-        table_match = _TABLE_PATTERN.match(stripped)
-        if table_match:
-            current_table = (
-                table_match.group("table") or table_match.group("array_table") or ""
-            ).strip()
-            if current_table == table_name:
-                active = True
-                found_table = True
-            elif active:
-                active = False
-            continue
+        if not inside_multiline_string:
+            table_match = _TABLE_PATTERN.match(stripped)
+            if table_match:
+                current_table = (
+                    table_match.group("table") or table_match.group("array_table") or ""
+                ).strip()
+                if current_table == table_name:
+                    active = True
+                    found_table = True
+                elif active:
+                    active = False
+            elif active and not found_version:
+                version_match = _VERSION_ASSIGNMENT_PATTERN.match(line)
+                if version_match is not None:
+                    found_version = True
+                    old_version = version_match.group("value")
+                    if old_version != new_version:
+                        changed = True
+                        lines[index] = (
+                            f"{version_match.group('prefix')}"
+                            f"{version_match.group('quote')}{new_version}{version_match.group('quote')}"
+                            f"{version_match.group('suffix')}{version_match.group('newline')}"
+                        )
 
-        if not active or found_version:
-            continue
+        (
+            in_multiline_basic_string,
+            in_multiline_literal_string,
+        ) = _advance_toml_multiline_string_state(
+            line,
+            in_multiline_basic_string=in_multiline_basic_string,
+            in_multiline_literal_string=in_multiline_literal_string,
+        )
 
-        version_match = _VERSION_ASSIGNMENT_PATTERN.match(line)
-        if version_match is None:
-            continue
-
-        found_version = True
-        old_version = version_match.group("value")
-        if old_version != new_version:
-            changed = True
-            lines[index] = (
-                f"{version_match.group('prefix')}"
-                f"{version_match.group('quote')}{new_version}{version_match.group('quote')}"
-                f"{version_match.group('suffix')}{version_match.group('newline')}"
-            )
-        break
+        if found_version:
+            break
 
     return _TomlUpdateResult(
         found_table=found_table,

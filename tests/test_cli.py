@@ -2051,6 +2051,72 @@ def test_release_create_updates_detected_pyproject_version(tmp_path: Path) -> No
     assert 'version = "1.0.0"' in pyproject_path.read_text(encoding="utf-8")
 
 
+def test_release_create_updates_configured_pyproject_version_after_multiline_string(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            release=ReleaseConfig(version_files=["../pyproject.toml"]),
+        ),
+        changelog_dir / "config.yaml",
+    )
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        (
+            "[project]\n"
+            'name = "demo"\n'
+            'readme = """\n'
+            "Project links:\n"
+            "[link]\n"
+            '"""\n'
+            'version = "0.1.0"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Configured bump with multiline strings",
+            "--type",
+            "feature",
+            "--description",
+            "Configured pyproject version should still be updated.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    updated_pyproject = pyproject_path.read_text(encoding="utf-8")
+    assert "[link]" in updated_pyproject
+    assert 'version = "1.2.3"' in updated_pyproject
+
+
 def test_release_create_skips_dynamic_pyproject_version_in_auto_mode(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -2154,7 +2220,7 @@ def test_release_create_falls_back_to_poetry_without_touching_array_table_versio
     pyproject_path.write_text(
         (
             '[project]\nname = "demo"\ndynamic = ["version"]\n\n'
-            "[[tool.custom.plugin]]\nname = \"demo-plugin\"\nversion = \"7.7.7\"\n\n"
+            '[[tool.custom.plugin]]\nname = "demo-plugin"\nversion = "7.7.7"\n\n'
             '[tool.poetry]\nname = "demo"\nversion = "0.1.0"\n'
         ),
         encoding="utf-8",
@@ -2243,7 +2309,9 @@ def test_release_create_skips_workspace_cargo_manifest_in_auto_mode(tmp_path: Pa
     assert cargo_toml_path.read_text(encoding="utf-8") == original_cargo_toml
 
 
-def test_release_create_updates_workspace_package_cargo_version_in_auto_mode(tmp_path: Path) -> None:
+def test_release_create_updates_workspace_package_cargo_version_in_auto_mode(
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     changelog_dir = project_dir / "changelog"
