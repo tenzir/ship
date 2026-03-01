@@ -1,6 +1,6 @@
 {
   "name": "pi-tenzir-ship",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi skill for tenzir-ship changelog and release workflows",
   "license": "Apache-2.0",
   "keywords": [
