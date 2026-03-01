@@ -27,8 +27,8 @@
     ]
   },
   "scripts": {
-    "sync:skill": "rm -rf skills && mkdir -p skills && cp -R ../../skills/tenzir-ship ./skills/tenzir-ship",
-    "prepack": "rm -rf skills && mkdir -p skills && cp -R ../../skills/tenzir-ship ./skills/tenzir-ship"
+    "sync:skill": "rm -rf skills && mkdir -p skills && cp -R ../../skill ./skills/tenzir-skill",
+    "prepack": "rm -rf skills && mkdir -p skills && cp -R ../../skill ./skills/tenzir-skill"
   },
   "engines": {
     "node": ">=20"
