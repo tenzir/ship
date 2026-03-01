@@ -9,7 +9,7 @@ Publishing a release to GitHub performs the following steps:
 
 ## Procedure
 
-Ensure that you have succesfully [created a release](create-standard-release.md).
+Ensure that you have successfully [created a release](create-standard-release.md).
 
 Thereafter, run:
 

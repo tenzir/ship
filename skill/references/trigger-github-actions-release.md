@@ -3,7 +3,7 @@
 Many projects have wrapped the release process into a deterministic GitHub
 Actions workflow. A **remote** release delegates the process of releasing to
 GitHub Actions CI,
-without the involvement of any local calls to `tenzir-test`. 
+without the involvement of any local calls to `tenzir-ship`.
 
 ## Locate GitHub Actions workflow
 

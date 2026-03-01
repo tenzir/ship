@@ -14,20 +14,9 @@ resolve_branch_base() {
   local candidate
   local upstream
   local origin_head
+  local current_branch
 
-  # Prefer local default branches when they exist.
-  for candidate in main master; do
-    if git show-ref --verify --quiet "refs/heads/$candidate"; then
-      git merge-base HEAD "$candidate"
-      return 0
-    fi
-  done
-
-  # Use configured upstream branch for the current branch, if available.
-  if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
-    git merge-base HEAD "$upstream"
-    return 0
-  fi
+  current_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
   # Use the remote default branch when origin/HEAD is available.
   if origin_head=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); then
@@ -35,9 +24,25 @@ resolve_branch_base() {
     return 0
   fi
 
-  # Last remote fallback for conventional branch names.
+  # Remote fallback for conventional branch names.
   for candidate in origin/main origin/master; do
     if git show-ref --verify --quiet "refs/remotes/$candidate"; then
+      git merge-base HEAD "$candidate"
+      return 0
+    fi
+  done
+
+  # Prefer upstream when it does not track this branch's own remote counterpart.
+  if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
+    if [[ -z "$current_branch" || "$upstream" != */"$current_branch" ]]; then
+      git merge-base HEAD "$upstream"
+      return 0
+    fi
+  fi
+
+  # Fall back to local default branches (may be stale).
+  for candidate in main master; do
+    if git show-ref --verify --quiet "refs/heads/$candidate"; then
       git merge-base HEAD "$candidate"
       return 0
     fi
@@ -64,7 +69,13 @@ unstaged=$(git diff --name-only)
 untracked=$(git ls-files --others --exclude-standard)
 if [[ -n "$unstaged" || -n "$untracked" ]]; then
   echo "Scope: unstaged changes"
-  echo "Diff: git diff --"
+  if [[ -n "$unstaged" && -n "$untracked" ]]; then
+    echo "Diff: { git diff -- ; git diff --no-index /dev/null <untracked>; }"
+  elif [[ -n "$untracked" ]]; then
+    echo "Diff: git diff --no-index /dev/null <untracked>"
+  else
+    echo "Diff: git diff --"
+  fi
   {
     echo "$unstaged"
     echo "$untracked"
