@@ -155,9 +155,7 @@ def load_config(path: Path) -> Config:
 
         release_config = ReleaseConfig(
             commit_message=(
-                str(commit_message)
-                if commit_message is not None
-                else release_config.commit_message
+                str(commit_message) if commit_message is not None else release_config.commit_message
             ),
             version_bump_mode=version_bump_mode,
             version_files=version_files,
@@ -276,9 +274,7 @@ def load_package_config(path: Path) -> Config:
 
         release_config = ReleaseConfig(
             commit_message=(
-                str(commit_message)
-                if commit_message is not None
-                else release_config.commit_message
+                str(commit_message) if commit_message is not None else release_config.commit_message
             ),
             version_bump_mode=version_bump_mode,
             version_files=version_files,

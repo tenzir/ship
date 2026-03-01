@@ -94,9 +94,11 @@ def _resolve_version_file_targets(
     candidates: list[_ResolvedVersionFileTarget] = []
     for root in _auto_search_roots(project_root):
         for filename in SUPPORTED_AUTO_VERSION_FILES:
-            candidate = root / filename
-            if candidate.is_file():
-                candidates.append(_ResolvedVersionFileTarget(path=candidate.resolve(), explicit=False))
+            filepath = root / filename
+            if filepath.is_file():
+                candidates.append(
+                    _ResolvedVersionFileTarget(path=filepath.resolve(), explicit=False)
+                )
 
     for raw_path in explicit_paths:
         candidates.append(
@@ -122,7 +124,9 @@ def _resolve_version_file_targets(
     return deduped
 
 
-def _replace_toml_table_version(content: str, table_name: str, new_version: str) -> _TomlUpdateResult:
+def _replace_toml_table_version(
+    content: str, table_name: str, new_version: str
+) -> _TomlUpdateResult:
     lines = content.splitlines(keepends=True)
     active = False
     found_table = False
@@ -209,9 +213,7 @@ def _update_pyproject_like(
         return content, None
 
     if project_update.found_table:
-        raise click.ClickException(
-            f"{path} has a [project] table but no static 'version' field."
-        )
+        raise click.ClickException(f"{path} has a [project] table but no static 'version' field.")
     if poetry_update.found_table:
         raise click.ClickException(
             f"{path} has a [tool.poetry] table but no static 'version' field."
@@ -237,7 +239,9 @@ def _update_cargo_toml(
             return content, None
         raise click.ClickException(f"{path} has a [package] table but no static 'version' field.")
 
-    workspace_package_update = _replace_toml_table_version(content, "workspace.package", new_version)
+    workspace_package_update = _replace_toml_table_version(
+        content, "workspace.package", new_version
+    )
     if workspace_package_update.found_table:
         if workspace_package_update.found_version:
             return workspace_package_update.content, workspace_package_update.old_version
