@@ -11,7 +11,8 @@ Publishing a release to GitHub performs the following steps:
 
 Ensure that you have successfully [created a release](create-standard-release.md).
 
-Thereafter, run:
+Thereafter, inspect the current git changes and stage the exact set you want in
+the release commit via `git add`. Then run:
 
 ```sh
 uvx tenzir-ship release publish \
@@ -22,7 +23,7 @@ uvx tenzir-ship release publish \
 
 Notes:
 
-- The `--commit` flag commits the changes of the release creation
+- The `--commit` flag commits whatever is staged
 - The `--tag` option creates an annotated tag (that gets pushed automatically)
 - Add `--draft` if the user requested a draft release
 - Add `--prerelease` if the user requested marking the release as prerelease
