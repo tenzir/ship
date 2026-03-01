@@ -14,6 +14,7 @@ from ..entries import iter_entries
 from ..releases import collect_release_entries, iter_release_manifests
 from ..utils import console
 from ._manifests import _get_latest_release_manifest
+from ._release import _infer_next_release_version
 
 
 def _format_age(days: int) -> str:
@@ -124,6 +125,7 @@ def _collect_project_stats(project_root: Path) -> dict:
     for entry in unreleased_entries:
         unreleased_types[entry.type] += 1
     unreleased_count = len(unreleased_entries)
+    next_version = _infer_next_release_version(project_root, unreleased_entries)
 
     # Combine type counts (all entries)
     all_types = released_types + unreleased_types
@@ -139,6 +141,7 @@ def _collect_project_stats(project_root: Path) -> dict:
         "cadence_str": cadence_str,
         "cadence_extra": cadence_extra,
         "version": version_str,
+        "next_version": next_version,
         "latest_entry_count": latest_entry_count,
         "release_count": release_count,
         "shipped_count": shipped_count,
@@ -181,6 +184,7 @@ def _show_stats_table(ctx: CLIContext) -> None:
     table.add_column("📛", style="cyan", no_wrap=True)  # Name/ID
     table.add_column("Path", style="dim", no_wrap=True, max_width=30, overflow="ellipsis")
     table.add_column("🔖", no_wrap=True)  # Version
+    table.add_column("⏭", no_wrap=True)  # Next
     table.add_column("📅", justify="right", no_wrap=True)  # Age
     # Block 2: Releases (matches vertical Releases section)
     table.add_column("🔢", justify="right", no_wrap=True)  # Count
@@ -198,6 +202,7 @@ def _show_stats_table(ctx: CLIContext) -> None:
     for project_id, relative_path, stats in all_stats:
         age_str = stats["age_str"] or "[dim]-[/]"
         version_str = stats["version"] or "[dim]-[/]"
+        next_version_str = stats["next_version"] or "[dim]-[/]"
         cadence_str = stats["cadence_str"] or "[dim]-[/]"
         all_types = stats["types"]
 
@@ -205,6 +210,7 @@ def _show_stats_table(ctx: CLIContext) -> None:
             project_id,
             relative_path,
             version_str,
+            next_version_str,
             age_str,
             str(stats["release_count"]),
             cadence_str,
@@ -238,6 +244,7 @@ def _show_stats_vertical(ctx: CLIContext) -> None:
     table.add_row("[bold]Project[/]", "", "")
     table.add_row("📛 Name", config.id, str(ctx.project_root.resolve()))
     table.add_row("🔖 Version", version_display, version_aux)
+    table.add_row("⏭ Next", stats["next_version"] or "-", "")
     table.add_row("📅 Age", stats["age_str"] or "-", stats["last_str"] or "")
 
     # Section: Releases
@@ -304,6 +311,7 @@ def _show_stats_json(ctx: CLIContext) -> None:
                 "last": s["last_str"],
                 "age_days": s["age_days"],
                 "latest": s["version"],
+                "next": s["next_version"],
             },
             "entries": {
                 "total": s["total_entries"],

@@ -1703,6 +1703,309 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
     assert (empty_dir / "releases" / "0.0.1").exists()
 
 
+def test_release_create_implicit_auto_bump_uses_entry_types(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_alpha = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Alpha",
+            "--type",
+            "feature",
+            "--description",
+            "Ships alpha.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_alpha.exit_code == 0, add_alpha.output
+
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    add_bugfix = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Patch me",
+            "--type",
+            "bugfix",
+            "--description",
+            "Patch release candidate.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_bugfix.exit_code == 0, add_bugfix.output
+
+    patch_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert patch_release.exit_code == 0, patch_release.output
+    assert patch_release.stdout.strip() == "v1.2.4"
+
+    add_change = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Minor me",
+            "--type",
+            "change",
+            "--description",
+            "Minor release candidate.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_change.exit_code == 0, add_change.output
+
+    minor_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert minor_release.exit_code == 0, minor_release.output
+    assert minor_release.stdout.strip() == "v1.3.0"
+
+    add_breaking = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Major me",
+            "--type",
+            "breaking",
+            "--description",
+            "Major release candidate.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_breaking.exit_code == 0, add_breaking.output
+
+    major_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert major_release.exit_code == 0, major_release.output
+    assert major_release.stdout.strip() == "v2.0.0"
+
+
+def test_release_create_implicit_auto_bump_uses_highest_severity(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_alpha = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Alpha",
+            "--type",
+            "feature",
+            "--description",
+            "Ships alpha.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_alpha.exit_code == 0, add_alpha.output
+
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    add_bugfix = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Bugfix",
+            "--type",
+            "bugfix",
+            "--description",
+            "Fixes an issue.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_bugfix.exit_code == 0, add_bugfix.output
+    add_change = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Change",
+            "--type",
+            "change",
+            "--description",
+            "Tweaks behavior.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_change.exit_code == 0, add_change.output
+
+    minor_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert minor_release.exit_code == 0, minor_release.output
+    assert minor_release.stdout.strip() == "v1.1.0"
+
+    add_bugfix_2 = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Another bugfix",
+            "--type",
+            "bugfix",
+            "--description",
+            "Fixes another issue.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_bugfix_2.exit_code == 0, add_bugfix_2.output
+    add_breaking = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Breaking change",
+            "--type",
+            "breaking",
+            "--description",
+            "Breaks compatibility.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_breaking.exit_code == 0, add_breaking.output
+
+    major_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert major_release.exit_code == 0, major_release.output
+    assert major_release.stdout.strip() == "v2.0.0"
+
+
+def test_release_create_implicit_auto_bump_requires_entries(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    auto_without_entries = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--intro",
+            "Retrying publish only.",
+            "--yes",
+        ],
+    )
+    assert auto_without_entries.exit_code != 0
+    assert "Cannot auto-bump release version" in auto_without_entries.output
+
+
+def test_release_create_rejects_multiple_manual_bump_flags(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    invalid = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--patch",
+            "--minor",
+            "--yes",
+        ],
+    )
+    assert invalid.exit_code != 0
+    assert "Use only one of --patch, --minor, or --major." in invalid.output
+
+
 def test_release_create_updates_detected_pyproject_version(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -3763,6 +4066,100 @@ def test_add_warns_on_structure_violation(tmp_path: Path) -> None:
     assert "entry created:" in result.output
     assert "changelog structure issues detected; release commands may fail." in result.output
     assert "Unexpected item in changelog root: 'next'" in result.output
+
+
+def test_stats_json_includes_next_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_first = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_first.exit_code == 0, add_first.output
+
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    add_next = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Upcoming change",
+            "--type",
+            "change",
+            "--description",
+            "Triggers a minor bump.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_next.exit_code == 0, add_next.output
+
+    stats_json = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "stats", "--json"],
+    )
+    assert stats_json.exit_code == 0, stats_json.output
+    payload = json.loads(stats_json.output)
+    assert payload["parent"]["releases"]["next"] == "v1.3.0"
+
+
+def test_stats_json_next_version_is_null_without_unreleased_entries(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_first = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships initial feature.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_first.exit_code == 0, add_first.output
+
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    stats_json = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "stats", "--json"],
+    )
+    assert stats_json.exit_code == 0, stats_json.output
+    payload = json.loads(stats_json.output)
+    assert payload["parent"]["releases"]["next"] is None
 
 
 def test_stats_warns_on_structure_violation(tmp_path: Path) -> None:

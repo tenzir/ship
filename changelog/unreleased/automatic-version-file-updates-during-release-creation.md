@@ -16,3 +16,18 @@ You can control this behavior with the `release.version_bump_mode` configuration
 - `off`: Skip version file updates
 
 For more granular control, use the `release.version_files` option to explicitly specify which files to update. Auto-detection searches the project root and parent directory (for nested changelog projects) and gracefully skips files without static version fields.
+
+Release version selection now defaults to automatic bumping when you run
+`release create` without an explicit version and without `--patch`, `--minor`,
+or `--major`. The next version is inferred from unreleased entry types:
+
+- bugfix -> patch
+- feature or change -> minor
+- breaking -> major
+
+If no unreleased changelog entries exist, automatic bumping is not available.
+In that case, provide an explicit version or a manual bump flag to create an
+intro-only release.
+
+The `stats` command now reports the computed next release version (or no value
+when no automatic bump can be inferred), including in `stats --json`.
