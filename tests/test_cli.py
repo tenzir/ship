@@ -2243,6 +2243,126 @@ def test_release_create_skips_workspace_cargo_manifest_in_auto_mode(tmp_path: Pa
     assert cargo_toml_path.read_text(encoding="utf-8") == original_cargo_toml
 
 
+def test_release_create_updates_workspace_package_cargo_version_in_auto_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    cargo_toml_path = project_dir / "Cargo.toml"
+    cargo_toml_path.write_text(
+        (
+            '[package]\nname = "workspace-root"\nversion.workspace = true\n\n'
+            '[workspace]\nmembers = ["crate-a"]\n\n'
+            '[workspace.package]\nversion = "0.1.0"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Workspace package bump",
+            "--type",
+            "feature",
+            "--description",
+            "Workspace package version should be updated.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    updated_cargo_toml = cargo_toml_path.read_text(encoding="utf-8")
+    package_section = updated_cargo_toml.split("[package]", maxsplit=1)[1].split(
+        "[workspace]", maxsplit=1
+    )[0]
+    workspace_package_section = updated_cargo_toml.split("[workspace.package]", maxsplit=1)[1]
+    assert "version.workspace = true" in package_section
+    assert 'version = "1.2.3"' in workspace_package_section
+
+
+def test_release_create_updates_configured_workspace_package_cargo_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            release=ReleaseConfig(version_files=["../Cargo.toml"]),
+        ),
+        changelog_dir / "config.yaml",
+    )
+
+    cargo_toml_path = project_dir / "Cargo.toml"
+    cargo_toml_path.write_text(
+        (
+            '[package]\nname = "workspace-root"\nversion.workspace = true\n\n'
+            '[workspace]\nmembers = ["crate-a"]\n\n'
+            '[workspace.package]\nversion = "0.1.0"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Configured workspace package bump",
+            "--type",
+            "feature",
+            "--description",
+            "Configured Cargo version file should use workspace.package.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v2.3.4",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    updated_cargo_toml = cargo_toml_path.read_text(encoding="utf-8")
+    package_section = updated_cargo_toml.split("[package]", maxsplit=1)[1].split(
+        "[workspace]", maxsplit=1
+    )[0]
+    workspace_package_section = updated_cargo_toml.split("[workspace.package]", maxsplit=1)[1]
+    assert "version.workspace = true" in package_section
+    assert 'version = "2.3.4"' in workspace_package_section
+
+
 def test_release_create_updates_detected_package_json_version(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"

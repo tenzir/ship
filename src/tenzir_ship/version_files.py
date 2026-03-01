@@ -251,27 +251,24 @@ def _update_cargo_toml(
     skip_if_missing_static_version: bool,
 ) -> tuple[str, str | None]:
     package_update = _replace_toml_table_version(content, "package", new_version)
-    if package_update.found_table:
-        if package_update.found_version:
-            return package_update.content, package_update.old_version
-        if skip_if_missing_static_version:
-            return content, None
-        raise click.ClickException(f"{path} has a [package] table but no static 'version' field.")
+    if package_update.found_table and package_update.found_version:
+        return package_update.content, package_update.old_version
 
     workspace_package_update = _replace_toml_table_version(
         content, "workspace.package", new_version
     )
-    if workspace_package_update.found_table:
-        if workspace_package_update.found_version:
-            return workspace_package_update.content, workspace_package_update.old_version
-        if skip_if_missing_static_version:
-            return content, None
-        raise click.ClickException(
-            f"{path} has a [workspace.package] table but no static 'version' field."
-        )
+    if workspace_package_update.found_table and workspace_package_update.found_version:
+        return workspace_package_update.content, workspace_package_update.old_version
 
     if skip_if_missing_static_version:
         return content, None
+
+    if package_update.found_table:
+        raise click.ClickException(f"{path} has a [package] table but no static 'version' field.")
+    if workspace_package_update.found_table:
+        raise click.ClickException(
+            f"{path} has a [workspace.package] table but no static 'version' field."
+        )
     raise click.ClickException(f"{path} is missing a [package] table.")
 
 
