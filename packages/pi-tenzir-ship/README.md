@@ -1,6 +1,7 @@
 # pi-tenzir-ship
 
-Pi skill package for tenzir-ship changelog and release workflows.
+Pi skill package for [tenzir-ship](https://github.com/tenzir/ship) changelog and
+release workflows.
 
 ## Install
 
@@ -20,7 +21,3 @@ Inside pi:
 
 - https://docs.tenzir.com/reference/ship-framework.md
 - https://docs.tenzir.com/guides/packages/maintain-a-changelog.md
-
-## Versioning
-
-`pi-tenzir-ship` uses independent package versioning based on skill/package changes.
