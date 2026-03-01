@@ -21,7 +21,7 @@ Map changed files to module `path` values.
 Release each module independently as follows:
 
 1. Change the working directory to the module directory
-2. [Create a release](create-release.md) without providing `--root` to
+2. [Create a release](create-standard-release.md) without providing `--root` to
    `tenzir-ship`.
 
 ## 2. Release parent project

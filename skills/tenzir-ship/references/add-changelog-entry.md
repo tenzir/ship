@@ -96,7 +96,7 @@ uvx tenzir-ship add \
 
 Notes:
 
-- Pass `--root <path/to/changelog>` to `tenzir-changelog` when the changelog is
+- Pass `--root <path/to/changelog>` to `tenzir-ship` when the changelog is
   not in the top-level directory.
 - In CI, include `--pr <number>` when PR number is known from `$GITHUB_EVENT_PATH`.
 - Locally, omit `--pr` when auto-inference via `gh` context is available.

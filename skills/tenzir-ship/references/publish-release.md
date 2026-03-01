@@ -22,8 +22,8 @@ uvx tenzir-ship release publish \
 
 Notes:
 
-- The`--commit` falg commits the changes of the release creation
+- The `--commit` flag commits the changes of the release creation
 - The `--tag` option creates an annotated tag (that gets pushed automatically)
 - Add `--draft` if the user requested a draft release
 - Add `--prerelease` if the user requested marking the release as prerelease
-- Add `--nolatest` if the user requested marking the release as prerelease
+- Add `--no-latest` if the user requested that the release must not be marked as latest
