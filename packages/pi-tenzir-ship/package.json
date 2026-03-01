@@ -1,0 +1,36 @@
+{
+  "name": "pi-tenzir-ship",
+  "version": "0.1.0",
+  "description": "Pi skill for tenzir-ship changelog and release workflows",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "skill",
+    "tenzir",
+    "tenzir-ship"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tenzir/ship",
+    "directory": "packages/pi-tenzir-ship"
+  },
+  "homepage": "https://github.com/tenzir/ship/tree/main/packages/pi-tenzir-ship",
+  "bugs": "https://github.com/tenzir/ship/issues",
+  "files": [
+    "skills/**",
+    "README.md"
+  ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "sync:skill": "rm -rf skills && mkdir -p skills && cp -R ../../skill ./skills/tenzir-ship",
+    "prepack": "rm -rf skills && mkdir -p skills && cp -R ../../skill ./skills/tenzir-ship"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

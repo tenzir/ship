@@ -30,7 +30,7 @@ caches the result for snappy subsequent invocations.
 ## 📚 Documentation
 
 Consult our [user
-guide](https://docs.tenzir.com/guides/package-management/maintain-a-changelog)
+guide](https://docs.tenzir.com/guides/packages/maintain-a-changelog)
 for an end-to-end walkthrough of maintaining changelogs.
 
 We also provide a dense
