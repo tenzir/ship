@@ -193,6 +193,11 @@ jobs:
         if: ${{ !inputs['skip-publish'] }}
         run: |
           git add "$CHANGELOG_ROOT/changelog"
+
+          # Stage tracked updates outside changelog as well (for example
+          # auto-detected version files updated by `release create`).
+          git add -u
+
           if [ -n "$GIT_ADD_PATHS" ]; then
             # shellcheck disable=SC2086 # Intentional word splitting.
             git add $GIT_ADD_PATHS
