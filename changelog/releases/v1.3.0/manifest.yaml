@@ -1,0 +1,5 @@
+created: 2026-03-02
+title: Automate release metadata and unlock AI release tooling
+intro: >-
+  This release adds automatic version file updates during release creation and introduces
+  tooling to keep release manifests in sync across package types.
