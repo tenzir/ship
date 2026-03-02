@@ -34,7 +34,7 @@ day-to-day development.
 
 Instructions: `references/add-changelog-entry.md`
 
-## Trigger a GitHub Actions release workflow
+## Trigger a remote GitHub Actions release
 
 Cut a release by invoking an existing GitHub Actions workflow that performs
 release operations end-to-end.
