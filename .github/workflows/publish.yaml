@@ -94,29 +94,25 @@ jobs:
           echo "expected_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "expected_version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for package availability
+      - name: Wait for and verify published version
         env:
           EXPECTED_VERSION: ${{ steps.expected-version.outputs.expected_version }}
         run: |
-          echo "Waiting for version $EXPECTED_VERSION to appear on PyPI..."
+          echo "Waiting for tenzir-ship==$EXPECTED_VERSION to become installable from PyPI..."
+          installed_version=""
           for i in {1..30}; do
-            version=$(curl -sf https://pypi.org/pypi/tenzir-ship/json | jq -r '.info.version' || echo "")
-            if [ "$version" = "$EXPECTED_VERSION" ]; then
-              echo "Version $EXPECTED_VERSION is now available on PyPI"
-              exit 0
+            if installed_version="$(uvx --python 3.12 --no-cache "tenzir-ship==$EXPECTED_VERSION" --version 2>/dev/null)"; then
+              installed_version="${installed_version//$'\r'/}"
+              break
             fi
-            echo "Attempt $i: found version '$version', waiting 5s..."
-            sleep 5
+            echo "Attempt $i/30: package not yet installable, waiting 10s..."
+            sleep 10
           done
-          echo "Timeout waiting for version $EXPECTED_VERSION on PyPI" >&2
-          exit 1
-
-      - name: Verify published version
-        env:
-          EXPECTED_VERSION: ${{ steps.expected-version.outputs.expected_version }}
-        run: |
-          installed_version="$(uvx --python 3.12 --no-cache "tenzir-ship==$EXPECTED_VERSION" --version | tr -d '\r')"
+          if [ -z "$installed_version" ]; then
+            echo "Failed to install tenzir-ship==$EXPECTED_VERSION after 30 attempts." >&2
+            exit 1
+          fi
           if [ "$installed_version" != "$EXPECTED_VERSION" ]; then
-            echo "Expected version $EXPECTED_VERSION but received $installed_version." >&2
+            echo "Installed tenzir-ship==$EXPECTED_VERSION, but '--version' returned '$installed_version'." >&2
             exit 1
           fi
