@@ -9,7 +9,7 @@
 
 ## Documentation
 
-https://docs.tenzir.com/reference/ship-framework.md
+<https://docs.tenzir.com/reference/ship-framework.md>
 
 ## Repository Layout
 
@@ -39,3 +39,8 @@ https://docs.tenzir.com/reference/ship-framework.md
   - `uv run pytest`
 - Build package:
   - `uv build`
+
+## Pi Skill Package
+
+When modifying the skill under `packages/pi-tenzir-ship/skills/`, bump the
+version in `packages/pi-tenzir-ship/package.json` accordingly.
