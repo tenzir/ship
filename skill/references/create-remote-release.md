@@ -1,8 +1,11 @@
-# Create a release via GitHub Actions
+# Trigger a remote release
 
-Many projects have wrapped the release process into a deterministic GitHub
-Actions workflow. A **remote** release delegates the process of releasing to
-GitHub Actions CI, without the involvement of any local calls to `tenzir-ship`.
+Before triggering the workflow, verify release preconditions locally:
+
+1. Ensure the current branch is `main`.
+2. Ensure local `main` and `origin/main` are in sync (no ahead/behind commits).
+
+If either check fails, abort.
 
 ## Locate GitHub Actions workflow
 
@@ -10,7 +13,7 @@ Identify the CI release workflow file, e.g., `.github/workflows/release.yaml`.
 
 ## Determine release inputs
 
-Typical release inputs are:
+Inspect the workflow to understand its shape. Typical release inputs are:
 
 - **intro**: Summarize unreleased entries in `changelog/unreleased/` into 1–2
   sentences describing the release highlights.
@@ -26,20 +29,18 @@ Run the workflow via `gh`:
 ```sh
 gh workflow run release.yaml \
   -f intro="<intro text>" \
-  [-f title="<title>"] \
+  -f title="<title>" \
   [-f bump=<patch|minor|major>]
 ```
 
-The `title` and `bump` fields are optional.
-
-Manual bumping bypasses auto-detection of the next version. Do not specify
-it by default.
+Do not specify a version bump unless explicitly requested. The workflow will
+pick the appropriate bump according to the changelog entry types.
 
 ## Monitor the run
 
 Wait briefly for the run to register, find its ID, then watch it.
 
-## Verify
+Verify:
 
 - If the run succeeds, report the GitHub release URL.
 - If it fails, report the run URL so the user can inspect the logs.
