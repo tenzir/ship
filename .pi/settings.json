@@ -1,6 +1,5 @@
 {
   "packages": [
-    "npm:pi-formatter",
-    "npm:pi-tenzir-dev"
+    "npm:pi-formatter"
   ]
 }
