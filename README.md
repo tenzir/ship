@@ -27,6 +27,14 @@ uvx tenzir-ship --help
 `uvx` downloads the newest release, runs it in an isolated environment, and
 caches the result for snappy subsequent invocations.
 
+## 🤖 Agent Skill
+
+Install the skill via Vercel Skills:
+
+```sh
+npx skills add tenzir/ship
+```
+
 ## 📚 Documentation
 
 Consult our [user

@@ -40,7 +40,6 @@
 - Build package:
   - `uv build`
 
-## Pi Skill Package
+## Skills
 
-When modifying the skill under `packages/pi-tenzir-ship/skills/`, bump the
-version in `packages/pi-tenzir-ship/package.json` accordingly.
+The agent skill lives under `skills/tenzir-ship/`.
