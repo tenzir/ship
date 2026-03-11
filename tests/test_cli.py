@@ -892,6 +892,22 @@ def test_init_auto_detects_package_mode(tmp_path: Path) -> None:
     assert not (changelog_root / "config.yaml").exists()
 
 
+def test_init_auto_detects_package_mode_with_explicit_root(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "workspace"
+    package_dir.mkdir()
+    _write_package_metadata(package_dir / "package.yaml", package_id="workspace", name="Workspace")
+
+    result = runner.invoke(cli, ["--root", str(package_dir), "init", "--yes"])
+
+    assert result.exit_code == 0, result.output
+
+    changelog_root = package_dir / "changelog"
+    assert changelog_root.is_dir()
+    assert (changelog_root / "unreleased").is_dir()
+    assert not (changelog_root / "config.yaml").exists()
+
+
 def test_init_can_force_standalone_mode_in_package_root(tmp_path: Path) -> None:
     runner = CliRunner()
     package_dir = tmp_path / "workspace"
