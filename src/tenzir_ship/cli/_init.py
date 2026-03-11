@@ -93,6 +93,7 @@ def _validate_init_target(project_root: Path) -> None:
 
 
 def _confirm_initialization(message: str) -> None:
+    should_continue = False
     try:
         should_continue = click.confirm(message, default=True)
     except (click.exceptions.Abort, KeyboardInterrupt) as exc:
