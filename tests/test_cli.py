@@ -1005,6 +1005,33 @@ def test_init_with_explicit_nonexistent_root_creates_target(tmp_path: Path) -> N
     assert (target_root / "unreleased").is_dir()
 
 
+def test_non_init_commands_reject_nonexistent_root(tmp_path: Path) -> None:
+    runner = CliRunner()
+    missing_root = tmp_path / "missing"
+
+    show_result = runner.invoke(cli, ["--root", str(missing_root), "show"])
+    assert show_result.exit_code == 2
+    assert f"Directory '{missing_root}' does not exist." in show_result.output
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(missing_root),
+            "add",
+            "--title",
+            "First entry",
+            "--type",
+            "feature",
+            "--description",
+            "Body.",
+        ],
+    )
+    assert add_result.exit_code == 2
+    assert f"Directory '{missing_root}' does not exist." in add_result.output
+    assert not missing_root.exists()
+
+
 def test_bootstrap_creates_changelog_subdirectory(tmp_path: Path) -> None:
     """Running add in empty directory should create changelog/ subdirectory."""
     runner = CliRunner()

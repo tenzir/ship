@@ -499,6 +499,12 @@ def _create_cli_group() -> click.Group:
     ) -> None:
         """Manage changelog entries and release manifests."""
 
+        if root is not None and not root.exists() and ctx.invoked_subcommand != "init":
+            raise click.BadParameter(
+                f"Directory '{root}' does not exist.",
+                param_hint="--root",
+            )
+
         ctx.obj = create_cli_context(root=root, config=config, debug=debug)
 
         if ctx.invoked_subcommand is None:
