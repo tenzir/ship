@@ -67,6 +67,7 @@ printf '%s' "$private_key" >"$key_file"
 unsigned_token="$(printf '%s' "$header" | b64url).$(printf '%s' "$payload" | b64url)"
 signature="$(printf '%s' "$unsigned_token" | openssl dgst -binary -sha256 -sign "$key_file" | b64url)"
 jwt="$unsigned_token.$signature"
+echo "::add-mask::$jwt"
 
 api_headers=(
   -H "Authorization: Bearer $jwt"
