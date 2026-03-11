@@ -98,15 +98,22 @@ SCOPE_TOKENS: set[Scope] = {"all", "unreleased", "released", "latest"}
 
 
 def _get_known_release_versions(project_root: Path) -> dict[str, str]:
-    """Return mapping of lowercase version to original version string.
+    """Return mapping of lowercase version aliases to original version strings.
 
     Returns a dict for case-insensitive version lookups:
-    - Keys: lowercase version strings (use for matching user input)
+    - Keys: lowercase version strings (with and without a leading ``v``)
     - Values: original case-preserved versions (use for display and loading)
 
-    Example: {"v1.0.0": "v1.0.0", "v2.0.0-beta": "v2.0.0-Beta"}
+    Example: {"1.0.0": "1.0.0", "v1.0.0": "1.0.0"}
     """
-    return {m.version.lower(): m.version for m in iter_release_manifests(project_root)}
+    known_versions: dict[str, str] = {}
+    for manifest in iter_release_manifests(project_root):
+        original = manifest.version
+        normalized = original.lstrip("vV")
+        known_versions[original.lower()] = original
+        known_versions[normalized.lower()] = original
+        known_versions[f"v{normalized}".lower()] = original
+    return known_versions
 
 
 def _parse_scope_from_identifiers(
@@ -227,11 +234,11 @@ def _load_release_entries_for_display(
     entry_map: dict[str, Entry],
 ) -> tuple[ReleaseManifest, list[Entry]]:
     """Load entries for a specific release version."""
-    normalized_version = release_version.strip()
+    normalized_version = release_version.strip().lstrip("vV")
     manifests = [
         manifest
         for manifest in iter_release_manifests(project_root)
-        if manifest.version == normalized_version
+        if manifest.version.lstrip("vV") == normalized_version
     ]
     if not manifests:
         raise click.ClickException(f"Release '{release_version}' not found.")

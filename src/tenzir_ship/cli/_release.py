@@ -181,16 +181,35 @@ ReleaseBump = Literal["patch", "minor", "major"]
 ReleaseVersionSource = Literal["explicit", "manual", "auto"]
 
 
-def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
+def _normalize_release_version(version: str) -> str:
     normalized_version = version.strip()
+    if normalized_version.startswith(("v", "V")):
+        normalized_version = normalized_version[1:]
+    return normalized_version
+
+
+def _render_release_tag(version: str) -> str:
+    return f"v{_normalize_release_version(version)}"
+
+
+def _release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
+    if manifest.path is None:
+        return release_directory(project_root) / manifest.version
+    if manifest.path.is_dir():
+        return manifest.path
+    return manifest.path.parent
+
+
+def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
+    normalized_version = _normalize_release_version(version)
     for manifest in iter_release_manifests(project_root):
-        if manifest.version == normalized_version:
+        if _normalize_release_version(manifest.version) == normalized_version:
             return manifest
     return None
 
 
-def _github_release_exists(repository: str, version: str, gh_path: str) -> bool:
-    command = [gh_path, "release", "view", version, "--repo", repository]
+def _github_release_exists(repository: str, tag_name: str, gh_path: str) -> bool:
+    command = [gh_path, "release", "view", tag_name, "--repo", repository]
     try:
         subprocess.run(
             command,
@@ -205,23 +224,17 @@ def _github_release_exists(repository: str, version: str, gh_path: str) -> bool:
         return False
 
 
-def _latest_semver(project_root: Path) -> tuple[Version, str] | None:
-    versions: list[tuple[Version, str]] = []
+def _latest_semver(project_root: Path) -> Version | None:
+    versions: list[Version] = []
     for manifest in iter_release_manifests(project_root):
-        label = manifest.version
-        prefix = ""
-        value = label
-        if label.startswith(("v", "V")):
-            prefix = label[0]
-            value = label[1:]
         try:
-            parsed = Version(value)
+            parsed = Version(_normalize_release_version(manifest.version))
         except InvalidVersion:
             continue
-        versions.append((parsed, prefix))
+        versions.append(parsed)
     if not versions:
         return None
-    versions.sort(key=lambda item: item[0])
+    versions.sort()
     return versions[-1]
 
 
@@ -241,13 +254,9 @@ def _bump_version_value(base: Version, bump: str) -> Version:
 
 def _next_version_for_bump(project_root: Path, bump: ReleaseBump) -> str:
     latest = _latest_semver(project_root)
-    if latest is None:
-        base_version = Version("0.0.0")
-        prefix = ""
-    else:
-        base_version, prefix = latest
+    base_version = Version("0.0.0") if latest is None else latest
     next_version = _bump_version_value(base_version, bump)
-    return f"{prefix}{next_version}"
+    return str(next_version)
 
 
 def _infer_release_bump(unreleased_entries: list[Entry]) -> ReleaseBump | None:
@@ -268,9 +277,7 @@ def _infer_next_release_version(project_root: Path, unreleased_entries: list[Ent
 
 
 def _validate_semver_label(version: str) -> None:
-    value = version
-    if value.startswith(("v", "V")):
-        value = value[1:]
+    value = _normalize_release_version(version)
     try:
         Version(value)
     except InvalidVersion as exc:
@@ -284,13 +291,11 @@ def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
     if latest is None:
         return True
 
-    latest_version, _ = latest
-    normalized = version[1:] if version.startswith(("v", "V")) else version
     try:
-        target = Version(normalized)
+        target = Version(_normalize_release_version(version))
     except InvalidVersion:
         return False
-    return target >= latest_version
+    return target >= latest
 
 
 def _resolve_release_version(
@@ -307,7 +312,7 @@ def _resolve_release_version(
         if not value:
             raise click.ClickException("Release version cannot be empty.")
         _validate_semver_label(value)
-        return value, "explicit"
+        return _normalize_release_version(value), "explicit"
     if bump:
         return _next_version_for_bump(project_root, bump), "manual"
 
@@ -380,7 +385,11 @@ def create_release(
             else "Supply an explicit version or a manual bump flag."
         )
         raise click.ClickException(f"Release '{version}' already exists. {follow_up}")
-    release_dir = release_directory(project_root) / version
+    release_dir = (
+        _release_manifest_root(project_root, existing_manifest)
+        if existing_manifest is not None
+        else release_directory(project_root) / version
+    )
     manifest_path = release_dir / "manifest.yaml"
     notes_path = release_dir / NOTES_FILENAME
 
@@ -504,6 +513,7 @@ def create_release(
         entries=[entry.entry_id for entry in entries_sorted],
         title=release_title or "",
         intro=manifest_intro or None,
+        path=existing_manifest.path if existing_manifest is not None else None,
     )
 
     readme_content = _compose_release_document(manifest.intro, release_notes)
@@ -666,7 +676,9 @@ def publish_release(
     if manifest is None:
         raise click.ClickException(f"Release '{version}' not found.")
 
-    release_dir = release_directory(project_root) / manifest.version
+    release_version = _normalize_release_version(manifest.version)
+    tag_name = _render_release_tag(release_version)
+    release_dir = _release_manifest_root(project_root, manifest)
     notes_path = release_dir / NOTES_FILENAME
     if not notes_path.exists():
         relative_notes = notes_path.relative_to(project_root)
@@ -688,7 +700,7 @@ def publish_release(
                 "No staged changes to commit. Stage changes with 'git add' first."
             )
         final_commit_message = commit_message or config.release.commit_message.format(
-            version=manifest.version
+            version=release_version
         )
 
     # Initialize step tracker with all planned steps
@@ -708,10 +720,10 @@ def publish_release(
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
 
-        tracker.add("tag", f'git tag -a {manifest.version} -m "Release {manifest.version}"')
+        tracker.add("tag", f'git tag -a {tag_name} -m "Release {release_version}"')
         tracker.add("push_branch", f"git push {push_remote} {push_branch}:{push_remote_ref}")
-        tracker.add("push_tag", f"git push {push_remote} {manifest.version}")
-    tracker.add("publish", f"gh release create {manifest.version} --repo {config.repository} ...")
+        tracker.add("push_tag", f"git push {push_remote} {tag_name}")
+    tracker.add("publish", f"gh release create {tag_name} --repo {config.repository} ...")
 
     def _fail_step_and_raise(step_name: str, exc: Exception) -> NoReturn:
         """Mark step as failed, render progress, and re-raise the exception."""
@@ -731,16 +743,16 @@ def publish_release(
 
     # Execute tag and push steps
     if create_tag:
-        tag_message = f"Release {manifest.version}"
+        tag_message = f"Release {release_version}"
         try:
-            created = create_annotated_git_tag(project_root, manifest.version, tag_message)
+            created = create_annotated_git_tag(project_root, tag_name, tag_message)
         except RuntimeError as exc:
             _fail_step_and_raise("tag", exc)
         tracker.complete("tag")
         if created:
-            log_success(f"created git tag {manifest.version}.")
+            log_success(f"created git tag {tag_name}.")
         else:
-            log_warning(f"git tag {manifest.version} already exists; skipping creation.")
+            log_warning(f"git tag {tag_name} already exists; skipping creation.")
 
         try:
             push_current_branch(project_root, config.repository)
@@ -750,19 +762,19 @@ def publish_release(
         log_success(f"pushed branch {push_branch} to remote {push_remote}/{push_remote_ref}.")
 
         try:
-            remote_name = push_git_tag(project_root, manifest.version, config.repository)
+            remote_name = push_git_tag(project_root, tag_name, config.repository)
         except RuntimeError as exc:
             _fail_step_and_raise("push_tag", exc)
         tracker.complete("push_tag")
-        log_success(f"pushed git tag {manifest.version} to remote {remote_name}.")
+        log_success(f"pushed git tag {tag_name} to remote {remote_name}.")
 
-    release_exists = _github_release_exists(config.repository, manifest.version, gh_path)
+    release_exists = _github_release_exists(config.repository, tag_name, gh_path)
     if release_exists:
         command: list[str] = [
             gh_path,
             "release",
             "edit",
-            manifest.version,
+            tag_name,
             "--repo",
             config.repository,
             "--notes-file",
@@ -776,7 +788,7 @@ def publish_release(
             gh_path,
             "release",
             "create",
-            manifest.version,
+            tag_name,
             "--repo",
             config.repository,
             "--notes-file",
@@ -795,7 +807,10 @@ def publish_release(
     tracker.update_command("publish", shlex.join(command))
 
     if not assume_yes:
-        prompt_question = f"Publish {manifest.version} to GitHub repository {config.repository}?"
+        prompt_question = (
+            f"Publish release {release_version} with tag {tag_name} "
+            f"to GitHub repository {config.repository}?"
+        )
         log_info(prompt_question.lower())
         prompt_action = f"This will run {format_bold(confirmation_action)}."
         log_info(prompt_action.lower())
@@ -822,7 +837,7 @@ def publish_release(
         ) from exc
     tracker.complete("publish")
 
-    log_success(f"published {manifest.version} to GitHub repository {config.repository}.")
+    log_success(f"published {tag_name} to GitHub repository {config.repository}.")
 
 
 # Click commands - these use @click.command() and are registered in __init__.py
@@ -921,7 +936,7 @@ def release_create_cmd(
 @click.option(
     "--bare",
     is_flag=True,
-    help="Print version without 'v' prefix.",
+    help="Print the bare semantic version (default behavior).",
 )
 @click.pass_obj
 def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
@@ -934,9 +949,10 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
             "No releases found. Create a release first with 'release create'."
         )
 
-    version = manifest.version
+    version = _normalize_release_version(manifest.version)
     if bare:
-        version = version.lstrip("vV")
+        emit_output(version)
+        return
 
     emit_output(version)
 

@@ -181,7 +181,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
         ],
     )
     assert release_result.exit_code == 0, release_result.output
-    release_dir = project_dir / "releases" / "v1.0.0"
+    release_dir = project_dir / "releases" / "1.0.0"
     release_path = release_dir / "notes.md"
     manifest_path = release_dir / "manifest.yaml"
     assert release_path.exists()
@@ -211,7 +211,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "description" not in manifest_data
     assert manifest_data["intro"] == "Welcome to the release!\n\n![Image](assets/hero.png)"
     assert "entries" not in manifest_data
-    assert manifest_data.get("title", "").endswith("v1.0.0")
+    assert manifest_data.get("title", "").endswith("1.0.0")
 
     release_entries_dir = release_dir / "entries"
     assert release_entries_dir.is_dir()
@@ -246,7 +246,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "Name:" not in plain_list
     assert "Types:" not in plain_list
     assert "exciting-feature" in plain_list or "Exciting Feature" in plain_list
-    assert "v1.0.0" in plain_list
+    assert "1.0.0" in plain_list
 
     list_banner = runner.invoke(
         cli,
@@ -396,7 +396,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     )
     assert get_json.exit_code == 0, get_json.output
     payload = json.loads(get_json.output)
-    assert payload["version"] == "v1.0.0"
+    assert payload["version"] == "1.0.0"
     assert payload["project"] == "project"
     assert len(payload["entries"]) == 3
     breaking_entry = payload["entries"][0]
@@ -1233,7 +1233,7 @@ def test_compact_export_style_from_config(tmp_path: Path) -> None:
     )
     assert release_result.exit_code == 0, release_result.output
 
-    release_notes_path = project_dir / "releases" / "v0.1.0" / "notes.md"
+    release_notes_path = project_dir / "releases" / "0.1.0" / "notes.md"
     release_notes = release_notes_path.read_text(encoding="utf-8")
     assert "- Adds compact defaults." in release_notes
     assert "### Compact Feature" not in release_notes
@@ -1688,7 +1688,7 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
     )
     assert create_initial.exit_code == 0, create_initial.output
 
-    release_entries_dir = project_dir / "releases" / "v0.3.0" / "entries"
+    release_entries_dir = project_dir / "releases" / "0.3.0" / "entries"
     initial_entries = {path.stem for path in release_entries_dir.glob("*.md")}
     assert len(initial_entries) == 2
     unreleased_dir = project_dir / "unreleased"
@@ -1743,10 +1743,10 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
     assert gamma_entry in new_release_entries
     assert not any(unreleased_dir.iterdir())
 
-    manifest_path = project_dir / "releases" / "v0.3.0" / "manifest.yaml"
+    manifest_path = project_dir / "releases" / "0.3.0" / "manifest.yaml"
     manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert "entries" not in manifest_data
-    notes_text = (project_dir / "releases" / "v0.3.0" / "notes.md").read_text(encoding="utf-8")
+    notes_text = (project_dir / "releases" / "0.3.0" / "notes.md").read_text(encoding="utf-8")
     assert "Gamma Change" in notes_text
 
 
@@ -1783,7 +1783,7 @@ def test_release_notes_collapse_soft_breaks(tmp_path: Path) -> None:
     )
     assert create_result.exit_code == 0, create_result.output
 
-    notes_path = project_dir / "releases" / "v0.1.0" / "notes.md"
+    notes_path = project_dir / "releases" / "0.1.0" / "notes.md"
     assert notes_path.exists()
     notes_text = notes_path.read_text(encoding="utf-8")
     assert "table with backward-counting row numbers" in notes_text
@@ -1858,7 +1858,7 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
         ],
     )
     assert patch_release.exit_code == 0, patch_release.output
-    assert (project_dir / "releases" / "v1.2.4").exists()
+    assert (project_dir / "releases" / "1.2.4").exists()
 
     # Minor bump should reuse prefix and reset patch component.
     add_gamma = runner.invoke(
@@ -1891,7 +1891,7 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
         ],
     )
     assert minor_release.exit_code == 0, minor_release.output
-    assert (project_dir / "releases" / "v1.3.0").exists()
+    assert (project_dir / "releases" / "1.3.0").exists()
 
     # Major bump.
     add_delta = runner.invoke(
@@ -1924,7 +1924,7 @@ def test_release_create_semver_bumps(tmp_path: Path) -> None:
         ],
     )
     assert major_release.exit_code == 0, major_release.output
-    assert (project_dir / "releases" / "v2.0.0").exists()
+    assert (project_dir / "releases" / "2.0.0").exists()
 
     # Bump flags should work with implicit 0.0.0 base when no baseline exists.
     empty_dir = tmp_path / "another"
@@ -2015,7 +2015,7 @@ def test_release_create_implicit_auto_bump_uses_entry_types(tmp_path: Path) -> N
         ["--root", str(project_dir), "release", "create", "--yes"],
     )
     assert patch_release.exit_code == 0, patch_release.output
-    assert patch_release.stdout.strip() == "v1.2.4"
+    assert patch_release.stdout.strip() == "1.2.4"
 
     add_change = runner.invoke(
         cli,
@@ -2040,7 +2040,7 @@ def test_release_create_implicit_auto_bump_uses_entry_types(tmp_path: Path) -> N
         ["--root", str(project_dir), "release", "create", "--yes"],
     )
     assert minor_release.exit_code == 0, minor_release.output
-    assert minor_release.stdout.strip() == "v1.3.0"
+    assert minor_release.stdout.strip() == "1.3.0"
 
     add_breaking = runner.invoke(
         cli,
@@ -2065,7 +2065,7 @@ def test_release_create_implicit_auto_bump_uses_entry_types(tmp_path: Path) -> N
         ["--root", str(project_dir), "release", "create", "--yes"],
     )
     assert major_release.exit_code == 0, major_release.output
-    assert major_release.stdout.strip() == "v2.0.0"
+    assert major_release.stdout.strip() == "2.0.0"
 
 
 def test_release_create_implicit_auto_bump_uses_highest_severity(tmp_path: Path) -> None:
@@ -2137,7 +2137,7 @@ def test_release_create_implicit_auto_bump_uses_highest_severity(tmp_path: Path)
         ["--root", str(project_dir), "release", "create", "--yes"],
     )
     assert minor_release.exit_code == 0, minor_release.output
-    assert minor_release.stdout.strip() == "v1.1.0"
+    assert minor_release.stdout.strip() == "1.1.0"
 
     add_bugfix_2 = runner.invoke(
         cli,
@@ -2179,7 +2179,7 @@ def test_release_create_implicit_auto_bump_uses_highest_severity(tmp_path: Path)
         ["--root", str(project_dir), "release", "create", "--yes"],
     )
     assert major_release.exit_code == 0, major_release.output
-    assert major_release.stdout.strip() == "v2.0.0"
+    assert major_release.stdout.strip() == "2.0.0"
 
 
 def test_release_create_implicit_auto_bump_requires_entries(tmp_path: Path) -> None:
@@ -3038,7 +3038,7 @@ def test_release_create_fails_for_unsupported_configured_version_file(tmp_path: 
     )
     assert create_result.exit_code != 0
     assert "Unsupported version file" in create_result.output
-    assert not (changelog_dir / "releases" / "v1.0.0").exists()
+    assert not (changelog_dir / "releases" / "1.0.0").exists()
 
 
 def test_release_create_bump_from_implicit_zero(tmp_path: Path) -> None:
@@ -3165,9 +3165,9 @@ def test_release_create_patch_bump_allows_intro_only_release(tmp_path: Path) -> 
         ],
     )
     assert patch_release.exit_code == 0, patch_release.output
-    assert patch_release.stdout.strip() == "v1.0.1"
+    assert patch_release.stdout.strip() == "1.0.1"
 
-    release_dir = project_dir / "releases" / "v1.0.1"
+    release_dir = project_dir / "releases" / "1.0.1"
     assert release_dir.exists()
 
     manifest_data = yaml.safe_load((release_dir / "manifest.yaml").read_text(encoding="utf-8"))
@@ -3233,9 +3233,9 @@ def test_release_create_explicit_version_allows_intro_only_release(tmp_path: Pat
         ],
     )
     assert next_release.exit_code == 0, next_release.output
-    assert next_release.stdout.strip() == "v2.0.1"
+    assert next_release.stdout.strip() == "2.0.1"
 
-    release_dir = project_dir / "releases" / "v2.0.1"
+    release_dir = project_dir / "releases" / "2.0.1"
     manifest_data = yaml.safe_load((release_dir / "manifest.yaml").read_text(encoding="utf-8"))
     assert manifest_data["intro"] == intro_text
     assert "entries" not in manifest_data
@@ -3385,7 +3385,7 @@ def test_show_release_mode(tmp_path: Path) -> None:
     # With --release, output is always an array
     assert isinstance(payload, list)
     assert len(payload) == 1
-    assert payload[0]["version"] == "v2.0.0"
+    assert payload[0]["version"] == "2.0.0"
     assert payload[0]["entries"][0]["title"] == "Delta Feature"
 
     # Test show unreleased -m (shows unreleased entries in markdown)
@@ -4563,7 +4563,7 @@ def test_release_create_emits_only_version_to_stdout(tmp_path: Path) -> None:
     assert release_result.exit_code == 0, release_result.output
 
     # stdout must contain ONLY the version string (with trailing newline).
-    assert release_result.stdout.strip() == "v1.0.0"
+    assert release_result.stdout.strip() == "1.0.0"
 
     # stderr must contain the status messages.
     assert "release manifest written" in release_result.stderr
@@ -4682,7 +4682,7 @@ def test_release_create_fails_on_structure_violation(tmp_path: Path) -> None:
     assert release_result.exit_code != 0
     assert "Cannot create a release: changelog structure is invalid." in release_result.output
     assert "Unexpected item in changelog root: 'next'" in release_result.output
-    assert not (project_dir / "releases" / "v1.0.0").exists()
+    assert not (project_dir / "releases" / "1.0.0").exists()
 
 
 def test_release_publish_fails_on_structure_violation(tmp_path: Path) -> None:
@@ -4811,7 +4811,7 @@ def test_stats_json_includes_next_version(tmp_path: Path) -> None:
     )
     assert stats_json.exit_code == 0, stats_json.output
     payload = json.loads(stats_json.output)
-    assert payload["parent"]["releases"]["next"] == "v1.3.0"
+    assert payload["parent"]["releases"]["next"] == "1.3.0"
 
 
 def test_stats_json_next_version_is_null_without_unreleased_entries(tmp_path: Path) -> None:
@@ -4884,7 +4884,7 @@ def test_release_version_warns_on_structure_violation(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "v1.2.3"
+    assert result.stdout.strip() == "1.2.3"
     assert "changelog structure issues detected; release commands may fail." in result.output
     assert "Unexpected item in changelog root: 'next'" in result.output
 
@@ -4950,7 +4950,7 @@ def test_release_version_command(tmp_path: Path) -> None:
         ],
     )
     assert version_result.exit_code == 0, version_result.output
-    assert version_result.stdout.strip() == "v2.0.0"
+    assert version_result.stdout.strip() == "2.0.0"
 
 
 def test_release_version_bare_flag(tmp_path: Path) -> None:

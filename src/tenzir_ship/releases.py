@@ -167,7 +167,7 @@ def write_release_manifest(
     """Serialize and store a release manifest alongside release notes."""
     directory = release_directory(project_root)
     directory.mkdir(parents=True, exist_ok=True)
-    release_dir = directory / manifest.version
+    release_dir = _manifest_root(project_root, manifest)
     if not release_dir.exists():
         release_dir.mkdir(parents=True, exist_ok=False)
     manifest_path = release_dir / "manifest.yaml"

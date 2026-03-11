@@ -26,22 +26,17 @@ __all__ = [
 
 def _get_module_latest_version(module_root: Path) -> str | None:
     """Get the latest release version for a module."""
-    versions: list[tuple[Version, str]] = []
+    versions: list[Version] = []
     for manifest in iter_release_manifests(module_root):
-        label = manifest.version
-        prefix = ""
-        if label.startswith("v"):
-            prefix = "v"
-            label = label[1:]
+        label = manifest.version.lstrip("vV")
         try:
-            versions.append((Version(label), prefix))
+            versions.append(Version(label))
         except InvalidVersion:
             continue
     if not versions:
         return None
-    versions.sort(key=lambda x: x[0], reverse=True)
-    latest_version, prefix = versions[0]
-    return f"{prefix}{latest_version}"
+    versions.sort(reverse=True)
+    return str(versions[0])
 
 
 def _get_sorted_release_manifests(project_root: Path) -> list[tuple[Version, ReleaseManifest]]:

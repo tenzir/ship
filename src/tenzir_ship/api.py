@@ -145,10 +145,11 @@ class Changelog:
         )
 
     def release_version(self, *, bare: bool = False) -> str:
-        """Get the latest released version.
+        """Get the latest released semantic version.
 
         Args:
-            bare: If True, strip the 'v' prefix from the version.
+            bare: Retained for compatibility. Versions are returned without a
+                leading tag prefix by default.
 
         Returns:
             The latest released version string.
@@ -160,9 +161,9 @@ class Changelog:
         if manifest is None:
             raise ValueError("No releases found. Create a release first with 'release create'.")
 
-        version = manifest.version
+        version = manifest.version.lstrip("vV")
         if bare:
-            version = version.lstrip("vV")
+            return version
 
         return version
 

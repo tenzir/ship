@@ -11,6 +11,9 @@ changelogs, generate release notes, and publish GitHub releases.
   for documentation pipelines or direct publishing.
 - 🚀 **GitHub releases**: Publish releases directly to GitHub with generated
   notes and assets.
+- 🔖 **Opinionated versioning**: Release manifests and package files use bare
+  semantic versions such as `1.2.3`, while Git and GitHub releases are tagged
+  as `v1.2.3`.
 - 🔧 **CLI and Python API**: Use the command line for interactive workflows or
   the Python API for automation.
 
