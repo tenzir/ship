@@ -126,7 +126,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
 
         title_value = str(data.get("title", ""))
         if not title_value:
-            title_value = str(version_value)
+            title_value = normalize_release_version(str(version_value))
 
         entry_values = data.get("entries")
         raw_modules = data.get("modules")
@@ -249,10 +249,11 @@ def build_entry_release_index(
     """Return a mapping from entry id to associated release versions."""
     index: dict[str, list[str]] = {}
     for manifest in iter_release_manifests(project_root):
+        version = normalize_release_version(manifest.version)
         for entry_id in manifest.entries:
             versions = index.setdefault(entry_id, [])
-            if manifest.version not in versions:
-                versions.append(manifest.version)
+            if version not in versions:
+                versions.append(version)
     for versions in index.values():
         versions.sort()
     return index

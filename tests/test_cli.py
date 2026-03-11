@@ -3403,6 +3403,47 @@ def test_show_release_mode(tmp_path: Path) -> None:
     assert "Epsilon Fix" in show_unreleased.output
 
 
+def test_show_release_mode_normalizes_legacy_manifest_versions(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+
+    release_dir = project_dir / "releases" / "v1.2.3"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text("created: 2024-01-01\n", encoding="utf-8")
+    (entries_dir / "legacy-feature.md").write_text(
+        "---\n"
+        "title: Legacy Feature\n"
+        "type: feature\n"
+        "authors:\n"
+        "  - codex\n"
+        "created: 2024-01-01T00:00:00Z\n"
+        "---\n\n"
+        "Ships a legacy feature.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "legacy-feature",
+            "--release",
+            "-j",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert payload[0]["version"] == "1.2.3"
+    assert payload[0]["title"] == "1.2.3"
+    assert payload[0]["entries"][0]["id"] == "legacy-feature"
+
+
 def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
