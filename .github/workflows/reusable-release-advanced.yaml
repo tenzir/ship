@@ -110,31 +110,12 @@ jobs:
       - name: Install tenzir-ship
         run: uv tool install tenzir-ship
 
-      - name: Checkout workflow tools
-        uses: actions/checkout@v5
-        with:
-          repository: tenzir/ship
-          ref: ${{ github.workflow_sha }}
-          sparse-checkout: |
-            .github/scripts
-          path: .github/tenzir-ship-workflow-tools
-          persist-credentials: false
-
       - name: Generate app token
         id: app-token
-        env:
-          APP_ID: ${{ vars.TENZIR_GITHUB_APP_ID }}
-          PRIVATE_KEY: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
-          TARGET_REPOSITORY: ${{ github.repository }}
-        run: |
-          TOOLS_DIR=.github/tenzir-ship-workflow-tools
-          cleanup() {
-            rm -rf "$TOOLS_DIR"
-          }
-          trap cleanup EXIT
-          "$TOOLS_DIR"/.github/scripts/create-app-token.sh \
-            --app-id "$APP_ID" \
-            --repository "$TARGET_REPOSITORY"
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+          private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
 
       - name: Set up GPG signing
         uses: crazy-max/ghaction-import-gpg@v7
