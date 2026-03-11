@@ -14,6 +14,7 @@ from ..releases import (
     iter_release_manifests,
     load_release_entry,
     normalize_release_version,
+    render_release_tag,
 )
 
 __all__ = [
@@ -37,7 +38,7 @@ def _get_module_latest_version(module_root: Path) -> str | None:
     if not versions:
         return None
     versions.sort(reverse=True)
-    return str(versions[0])
+    return render_release_tag(str(versions[0]))
 
 
 def _get_sorted_release_manifests(project_root: Path) -> list[tuple[Version, ReleaseManifest]]:

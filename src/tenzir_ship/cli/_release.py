@@ -361,6 +361,7 @@ def create_release(
         unreleased_entries=unused_entries,
     )
 
+    tag_version = render_release_tag(version)
     existing_manifest = _find_release_manifest(project_root, version)
     if version_source in {"manual", "auto"} and existing_manifest is not None:
         follow_up = (
@@ -368,11 +369,11 @@ def create_release(
             if version_source == "manual"
             else "Supply an explicit version or a manual bump flag."
         )
-        raise click.ClickException(f"Release '{version}' already exists. {follow_up}")
+        raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
     release_dir = (
         release_manifest_root(project_root, existing_manifest)
         if existing_manifest is not None
-        else release_directory(project_root) / version
+        else release_directory(project_root) / tag_version
     )
     manifest_path = release_dir / "manifest.yaml"
     notes_path = release_dir / NOTES_FILENAME
@@ -406,7 +407,7 @@ def create_release(
         if title_explicit
         else existing_manifest.title
         if existing_manifest
-        else f"{config.name} {version}"
+        else f"{config.name} {tag_version}"
     )
     # Validate mutually exclusive intro sources and resolve intro.
     if intro_text and intro_file:
@@ -492,7 +493,7 @@ def create_release(
     release_notes = release_notes_compact if compact_flag else release_notes_standard
 
     manifest = ReleaseManifest(
-        version=version,
+        version=tag_version,
         created=release_dt,
         entries=[entry.entry_id for entry in entries_sorted],
         title=release_title or "",
@@ -577,11 +578,11 @@ def create_release(
         change_reasons.append(f"update {count} version file{plural}")
 
     if not changes_required:
-        log_success(f"release '{version}' is already up to date.")
+        log_success(f"release '{tag_version}' is already up to date.")
         return
 
     if not assume_yes:
-        log_info(f"changes for release {format_bold(version)}:")
+        log_info(f"changes for release {format_bold(tag_version)}:")
         for reason in change_reasons:
             log_success(reason)
         log_info(f"re-run with {format_bold('--yes')} to apply these updates.")
@@ -623,10 +624,10 @@ def create_release(
         relative_release_dir = release_entries_dir.relative_to(project_root)
         log_success(f"appended {len(new_entries)} entries to: {relative_release_dir}")
     else:
-        log_success(f"updated release metadata for {version}.")
+        log_success(f"updated release metadata for {tag_version}.")
 
     # Output version to stdout for scripting (e.g., VERSION=$(tenzir-ship release create ...))
-    click.echo(version)
+    click.echo(tag_version)
 
 
 def publish_release(
@@ -917,8 +918,13 @@ def release_create_cmd(
 
 
 @release_group.command("version")
+@click.option(
+    "--bare",
+    is_flag=True,
+    help="Print version without 'v' prefix.",
+)
 @click.pass_obj
-def release_version_cmd(ctx: CLIContext) -> None:
+def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
     """Print the latest released version."""
 
     _warn_on_structure_issues(ctx)
@@ -928,8 +934,10 @@ def release_version_cmd(ctx: CLIContext) -> None:
             "No releases found. Create a release first with 'release create'."
         )
 
-    version = normalize_release_version(manifest.version)
-    emit_output(version)
+    if bare:
+        emit_output(normalize_release_version(manifest.version))
+        return
+    emit_output(render_release_tag(manifest.version))
 
 
 @release_group.command("publish")

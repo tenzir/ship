@@ -92,7 +92,7 @@ def render_release_tag(version: str) -> str:
 def release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
     """Return the base directory for a release manifest."""
     if manifest.path is None:
-        return release_directory(project_root) / normalize_release_version(manifest.version)
+        return release_directory(project_root) / render_release_tag(manifest.version)
     path = manifest.path
     if path.is_dir():
         return path
@@ -126,7 +126,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
 
         title_value = str(data.get("title", ""))
         if not title_value:
-            title_value = normalize_release_version(str(version_value))
+            title_value = render_release_tag(str(version_value))
 
         entry_values = data.get("entries")
         raw_modules = data.get("modules")
@@ -249,7 +249,7 @@ def build_entry_release_index(
     """Return a mapping from entry id to associated release versions."""
     index: dict[str, list[str]] = {}
     for manifest in iter_release_manifests(project_root):
-        version = normalize_release_version(manifest.version)
+        version = render_release_tag(manifest.version)
         for entry_id in manifest.entries:
             versions = index.setdefault(entry_id, [])
             if version not in versions:

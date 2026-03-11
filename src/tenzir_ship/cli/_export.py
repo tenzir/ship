@@ -7,7 +7,7 @@ from typing import Optional
 
 from ..config import Config
 from ..entries import Entry
-from ..releases import ReleaseManifest, normalize_release_version
+from ..releases import ReleaseManifest, render_release_tag
 from ..utils import extract_excerpt, normalize_markdown
 from ._core import (
     DEFAULT_ENTRY_TYPE,
@@ -76,7 +76,7 @@ def _build_release_payload(
         ordered_entries.extend(remaining)
 
     if manifest:
-        version = normalize_release_version(manifest.version)
+        version = render_release_tag(manifest.version)
         data: dict[str, object] = {
             "version": version,
             "title": manifest.title or version,
@@ -114,7 +114,7 @@ def _render_markdown_release_block(
     lines: list[str] = []
 
     if manifest:
-        title = manifest.title or normalize_release_version(manifest.version)
+        title = manifest.title or render_release_tag(manifest.version)
     else:
         title = "Unreleased Changes"
     lines.append(f"# {title}")
@@ -313,7 +313,7 @@ def _export_json_payload(
 
     data: dict[str, object] = {}
     if manifest:
-        version = normalize_release_version(manifest.version)
+        version = render_release_tag(manifest.version)
         data.update(
             {
                 "version": version,

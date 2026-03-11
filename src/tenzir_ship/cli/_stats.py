@@ -11,7 +11,7 @@ import click
 from ._core import CLIContext, _warn_on_structure_issues
 from ._rendering import create_table
 from ..entries import iter_entries
-from ..releases import collect_release_entries, iter_release_manifests
+from ..releases import collect_release_entries, iter_release_manifests, render_release_tag
 from ..utils import console
 from ._manifests import _get_latest_release_manifest
 from ._release import _infer_next_release_version
@@ -50,7 +50,7 @@ def _collect_project_stats(project_root: Path) -> dict:
         last_str = latest.created.isoformat()
         age_days = (date.today() - latest.created).days
         age_str = _format_age(age_days)
-        version_str = latest.version
+        version_str = render_release_tag(latest.version)
         latest_entry_count = len(latest.entries)
     else:
         last_date = None
@@ -126,6 +126,8 @@ def _collect_project_stats(project_root: Path) -> dict:
         unreleased_types[entry.type] += 1
     unreleased_count = len(unreleased_entries)
     next_version = _infer_next_release_version(project_root, unreleased_entries)
+    if next_version is not None:
+        next_version = render_release_tag(next_version)
 
     # Combine type counts (all entries)
     all_types = released_types + unreleased_types

@@ -124,3 +124,19 @@ def test_python_api_add_defaults_entry_type(tmp_path: Path) -> None:
 
     entry = read_entry(path)
     assert entry.metadata.get("type") == "feature"
+
+
+def test_python_api_release_version_defaults_to_tag(tmp_path: Path) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    client.add(
+        title="Release me",
+        entry_type="feature",
+        authors=["codex"],
+        description="Body",
+    )
+    client.release_create(version="v1.2.3", assume_yes=True)
+
+    assert client.release_version() == "v1.2.3"
+    assert client.release_version(bare=True) == "1.2.3"

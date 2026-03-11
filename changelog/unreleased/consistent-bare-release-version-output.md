@@ -1,5 +1,5 @@
 ---
-title: Consistent bare release version output
+title: More robust release version normalization
 type: bugfix
 authors:
   - mavam
@@ -10,4 +10,4 @@ components:
 created: 2026-03-11T19:14:56.715613Z
 ---
 
-The `release version` command and Python `Changelog.release_version()` now consistently return bare semantic versions such as `1.2.3`, even when older release manifests or directories still use `v`-prefixed names. Git tags and GitHub releases continue to use tags such as `v1.2.3`.
+Release commands and the Python API now handle release versions more consistently when changelog data mixes tag-style versions such as `v1.2.3` with bare semantic versions such as `1.2.3`. This improves compatibility with existing changelog histories and makes release automation more reliable across commands that inspect, create, show, and publish releases.
