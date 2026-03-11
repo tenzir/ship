@@ -94,31 +94,36 @@ jobs:
           esac
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
 
       - name: Install tenzir-ship
         run: uv tool install tenzir-ship
 
       - name: Generate app token
         id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
-          private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+        env:
+          APP_ID: ${{ vars.TENZIR_GITHUB_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+        run: |
+          ./.github/scripts/create-app-token.sh \
+            --app-id "$APP_ID" \
+            --private-key "$PRIVATE_KEY" \
+            --repository "$TARGET_REPOSITORY"
 
       - name: Set up GPG signing
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}
           git_user_signingkey: true
