@@ -43,3 +43,6 @@
 ## Skills
 
 The agent skill lives under `skills/tenzir-ship/`.
+Keep the skill and its reference files in sync with key user-facing workflows,
+especially when changing bootstrap/setup, changelog entry, release, or publish
+behavior.
