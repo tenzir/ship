@@ -4994,60 +4994,6 @@ def test_release_version_command(tmp_path: Path) -> None:
     assert version_result.stdout.strip() == "2.0.0"
 
 
-def test_release_version_bare_flag(tmp_path: Path) -> None:
-    """Test the deprecated --bare flag still returns the bare version."""
-    runner = CliRunner()
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-
-    # Create an entry and release.
-    add_result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "add",
-            "--title",
-            "Test Feature",
-            "--type",
-            "feature",
-            "--description",
-            "A test feature.",
-            "--author",
-            "tester",
-        ],
-    )
-    assert add_result.exit_code == 0, add_result.output
-
-    release_result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v3.1.4",
-            "--yes",
-        ],
-    )
-    assert release_result.exit_code == 0, release_result.output
-
-    # Get the version with --bare.
-    version_result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "version",
-            "--bare",
-        ],
-    )
-    assert version_result.exit_code == 0, version_result.output
-    assert version_result.stdout.strip() == "3.1.4"
-    assert "--bare is deprecated" in version_result.stderr
-
-
 def test_release_version_no_releases(tmp_path: Path) -> None:
     """Test the release version command fails when no releases exist."""
     runner = CliRunner()

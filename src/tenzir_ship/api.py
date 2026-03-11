@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
-import warnings
 
 from .cli import (
     CLIContext,
@@ -146,12 +145,8 @@ class Changelog:
             compact_explicit=compact is not None,
         )
 
-    def release_version(self, *, bare: bool = False) -> str:
+    def release_version(self) -> str:
         """Get the latest released semantic version.
-
-        Args:
-            bare: Deprecated compatibility flag. Release versions are returned
-                without a leading tag prefix by default.
 
         Returns:
             The latest released version string.
@@ -163,13 +158,6 @@ class Changelog:
         if manifest is None:
             raise ValueError("No releases found. Create a release first with 'release create'.")
 
-        if bare:
-            warnings.warn(
-                "The 'bare' parameter is deprecated and no longer changes the output; "
-                "release versions are bare by default.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
         return normalize_release_version(manifest.version)
 
     def release_publish(

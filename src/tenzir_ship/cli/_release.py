@@ -917,13 +917,8 @@ def release_create_cmd(
 
 
 @release_group.command("version")
-@click.option(
-    "--bare",
-    is_flag=True,
-    help="Deprecated: bare semantic versions are now the default output.",
-)
 @click.pass_obj
-def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
+def release_version_cmd(ctx: CLIContext) -> None:
     """Print the latest released version."""
 
     _warn_on_structure_issues(ctx)
@@ -934,10 +929,6 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
         )
 
     version = normalize_release_version(manifest.version)
-    if bare:
-        log_warning(
-            "--bare is deprecated and no longer changes the output; release versions are bare by default."
-        )
     emit_output(version)
 
 
