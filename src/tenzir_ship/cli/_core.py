@@ -382,7 +382,11 @@ def _resolve_project_root(value: Path, *, bootstrap_in_subdir: bool = False) -> 
 
     # No existing project found. When bootstrapping without explicit --root,
     # default to changelog/ subdirectory for consistency with package mode.
+    # If the current directory is already named changelog/, use it directly
+    # instead of creating a nested changelog/changelog scaffold.
     if bootstrap_in_subdir:
+        if resolved.name == CHANGELOG_DIRECTORY_NAME:
+            return resolved
         return (resolved / CHANGELOG_DIRECTORY_NAME).resolve()
     return resolved
 

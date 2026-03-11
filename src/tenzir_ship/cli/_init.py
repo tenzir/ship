@@ -8,6 +8,7 @@ from typing import Optional
 import click
 
 from ..config import (
+    CHANGELOG_DIRECTORY_NAME,
     Config,
     default_config_path,
     load_package_config,
@@ -48,10 +49,14 @@ def _current_cli_config_param() -> Path | None:
     return None
 
 
-def _resolve_workspace_root() -> Path:
+def _resolve_workspace_root(project_root: Path) -> Path:
     explicit_root = _current_cli_root_param()
     if explicit_root is not None:
+        if explicit_root.name == CHANGELOG_DIRECTORY_NAME:
+            return explicit_root.parent
         return explicit_root
+    if project_root.name == CHANGELOG_DIRECTORY_NAME:
+        return project_root.parent
     return Path.cwd().resolve()
 
 
@@ -208,8 +213,8 @@ def init_cmd(
             "--config is not supported with 'init'; tenzir-ship projects always use config.yaml."
         )
 
-    workspace_root = _resolve_workspace_root()
     project_root = ctx.project_root
+    workspace_root = _resolve_workspace_root(project_root)
     project_mode = _resolve_package_mode(project_root, package_mode)
     _validate_init_target(project_root)
 

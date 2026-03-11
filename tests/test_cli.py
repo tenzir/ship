@@ -917,6 +917,48 @@ def test_init_can_force_standalone_mode_in_package_root(tmp_path: Path) -> None:
     assert config.name == "Workspace"
 
 
+def test_init_from_empty_changelog_directory_uses_current_directory(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "myproject"
+    changelog_root = project_dir / "changelog"
+    changelog_root.mkdir(parents=True)
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(changelog_root)
+        result = runner.invoke(cli, ["init", "--yes", "--id", "myproject"])
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+    assert (changelog_root / "config.yaml").exists()
+    assert (changelog_root / "unreleased").is_dir()
+    assert not (changelog_root / "changelog").exists()
+
+
+def test_init_root_changelog_uses_parent_for_default_metadata(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "my-project"
+    changelog_root = project_dir / "changelog"
+    changelog_root.mkdir(parents=True)
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = runner.invoke(
+            cli,
+            ["--root", "changelog", "init", "--standalone"],
+            input="\n\n\n\ny\n",
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+    config = load_config(changelog_root / "config.yaml")
+    assert config.id == "my-project"
+    assert config.name == "My Project"
+
+
 def test_init_errors_when_project_already_exists(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "existing"
