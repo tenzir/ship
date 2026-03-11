@@ -976,6 +976,35 @@ def test_init_errors_when_project_already_exists(tmp_path: Path) -> None:
     assert f"A tenzir-ship project already exists at {changelog_root.resolve()}." in result.output
 
 
+def test_init_with_explicit_nonexistent_root_creates_target(tmp_path: Path) -> None:
+    runner = CliRunner()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(workspace)
+        result = runner.invoke(
+            cli,
+            [
+                "--root",
+                "nested/changelog",
+                "init",
+                "--standalone",
+                "--yes",
+                "--id",
+                "workspace",
+            ],
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+    target_root = workspace / "nested" / "changelog"
+    assert (target_root / "config.yaml").exists()
+    assert (target_root / "unreleased").is_dir()
+
+
 def test_bootstrap_creates_changelog_subdirectory(tmp_path: Path) -> None:
     """Running add in empty directory should create changelog/ subdirectory."""
     runner = CliRunner()

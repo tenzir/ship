@@ -453,8 +453,9 @@ def create_cli_context(
         # No explicit --root: bootstrap into changelog/ subdirectory if needed.
         resolved_root = _resolve_project_root(Path("."), bootstrap_in_subdir=True)
     else:
-        # Explicit --root: use that directory as-is for bootstrapping.
-        resolved_root = _resolve_project_root(root)
+        # Explicit --root: use that directory as-is for bootstrapping, even when
+        # it does not exist yet.
+        resolved_root = root.resolve() if not root.exists() else _resolve_project_root(root)
 
     config_path = config.resolve() if config else default_config_path(resolved_root)
     log_debug(f"resolved project root: {resolved_root}")
@@ -475,7 +476,7 @@ def _create_cli_group() -> click.Group:
     )
     @click.option(
         "--root",
-        type=click.Path(path_type=Path, exists=True, file_okay=False),
+        type=click.Path(path_type=Path, file_okay=False),
         help="Project root containing config and changelog files.",
     )
     @click.option(
