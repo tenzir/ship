@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
+import warnings
 
 from .cli import (
     CLIContext,
@@ -17,6 +18,7 @@ from .cli import (
     run_show_entries,
     run_validate,
 )
+from .releases import normalize_release_version
 
 LiteralMarkdownJson = Literal["markdown", "json"]
 
@@ -148,8 +150,8 @@ class Changelog:
         """Get the latest released semantic version.
 
         Args:
-            bare: Retained for compatibility. Versions are returned without a
-                leading tag prefix by default.
+            bare: Deprecated compatibility flag. Release versions are returned
+                without a leading tag prefix by default.
 
         Returns:
             The latest released version string.
@@ -161,11 +163,14 @@ class Changelog:
         if manifest is None:
             raise ValueError("No releases found. Create a release first with 'release create'.")
 
-        version = manifest.version.lstrip("vV")
         if bare:
-            return version
-
-        return version
+            warnings.warn(
+                "The 'bare' parameter is deprecated and no longer changes the output; "
+                "release versions are bare by default.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return normalize_release_version(manifest.version)
 
     def release_publish(
         self,

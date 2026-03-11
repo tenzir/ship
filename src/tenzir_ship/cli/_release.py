@@ -22,11 +22,14 @@ from rich.text import Text
 from ..config import EXPORT_STYLE_COMPACT
 from ..entries import Entry
 from ..releases import (
-    ReleaseManifest,
     NOTES_FILENAME,
+    ReleaseManifest,
     iter_release_manifests,
     load_release_entry,
+    normalize_release_version,
     release_directory,
+    release_manifest_root,
+    render_release_tag,
     serialize_release_manifest,
     write_release_manifest,
 )
@@ -181,29 +184,10 @@ ReleaseBump = Literal["patch", "minor", "major"]
 ReleaseVersionSource = Literal["explicit", "manual", "auto"]
 
 
-def _normalize_release_version(version: str) -> str:
-    normalized_version = version.strip()
-    if normalized_version.startswith(("v", "V")):
-        normalized_version = normalized_version[1:]
-    return normalized_version
-
-
-def _render_release_tag(version: str) -> str:
-    return f"v{_normalize_release_version(version)}"
-
-
-def _release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
-    if manifest.path is None:
-        return release_directory(project_root) / manifest.version
-    if manifest.path.is_dir():
-        return manifest.path
-    return manifest.path.parent
-
-
 def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
-    normalized_version = _normalize_release_version(version)
+    normalized_version = normalize_release_version(version)
     for manifest in iter_release_manifests(project_root):
-        if _normalize_release_version(manifest.version) == normalized_version:
+        if normalize_release_version(manifest.version) == normalized_version:
             return manifest
     return None
 
@@ -228,7 +212,7 @@ def _latest_semver(project_root: Path) -> Version | None:
     versions: list[Version] = []
     for manifest in iter_release_manifests(project_root):
         try:
-            parsed = Version(_normalize_release_version(manifest.version))
+            parsed = Version(normalize_release_version(manifest.version))
         except InvalidVersion:
             continue
         versions.append(parsed)
@@ -277,7 +261,7 @@ def _infer_next_release_version(project_root: Path, unreleased_entries: list[Ent
 
 
 def _validate_semver_label(version: str) -> None:
-    value = _normalize_release_version(version)
+    value = normalize_release_version(version)
     try:
         Version(value)
     except InvalidVersion as exc:
@@ -292,7 +276,7 @@ def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
         return True
 
     try:
-        target = Version(_normalize_release_version(version))
+        target = Version(normalize_release_version(version))
     except InvalidVersion:
         return False
     return target >= latest
@@ -312,7 +296,7 @@ def _resolve_release_version(
         if not value:
             raise click.ClickException("Release version cannot be empty.")
         _validate_semver_label(value)
-        return _normalize_release_version(value), "explicit"
+        return normalize_release_version(value), "explicit"
     if bump:
         return _next_version_for_bump(project_root, bump), "manual"
 
@@ -386,7 +370,7 @@ def create_release(
         )
         raise click.ClickException(f"Release '{version}' already exists. {follow_up}")
     release_dir = (
-        _release_manifest_root(project_root, existing_manifest)
+        release_manifest_root(project_root, existing_manifest)
         if existing_manifest is not None
         else release_directory(project_root) / version
     )
@@ -676,9 +660,9 @@ def publish_release(
     if manifest is None:
         raise click.ClickException(f"Release '{version}' not found.")
 
-    release_version = _normalize_release_version(manifest.version)
-    tag_name = _render_release_tag(release_version)
-    release_dir = _release_manifest_root(project_root, manifest)
+    release_version = normalize_release_version(manifest.version)
+    tag_name = render_release_tag(release_version)
+    release_dir = release_manifest_root(project_root, manifest)
     notes_path = release_dir / NOTES_FILENAME
     if not notes_path.exists():
         relative_notes = notes_path.relative_to(project_root)
@@ -936,7 +920,7 @@ def release_create_cmd(
 @click.option(
     "--bare",
     is_flag=True,
-    help="Print the bare semantic version (default behavior).",
+    help="Deprecated: bare semantic versions are now the default output.",
 )
 @click.pass_obj
 def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
@@ -949,11 +933,11 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
             "No releases found. Create a release first with 'release create'."
         )
 
-    version = _normalize_release_version(manifest.version)
+    version = normalize_release_version(manifest.version)
     if bare:
-        emit_output(version)
-        return
-
+        log_warning(
+            "--bare is deprecated and no longer changes the output; release versions are bare by default."
+        )
     emit_output(version)
 
 

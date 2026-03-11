@@ -35,6 +35,7 @@ from ..releases import (
     collect_release_entries,
     iter_release_manifests,
     load_release_entry,
+    normalize_release_version,
     unused_entries,
     used_entry_ids,
 )
@@ -109,7 +110,7 @@ def _get_known_release_versions(project_root: Path) -> dict[str, str]:
     known_versions: dict[str, str] = {}
     for manifest in iter_release_manifests(project_root):
         original = manifest.version
-        normalized = original.lstrip("vV")
+        normalized = normalize_release_version(original)
         known_versions[original.lower()] = original
         known_versions[normalized.lower()] = original
         known_versions[f"v{normalized}".lower()] = original
@@ -234,11 +235,11 @@ def _load_release_entries_for_display(
     entry_map: dict[str, Entry],
 ) -> tuple[ReleaseManifest, list[Entry]]:
     """Load entries for a specific release version."""
-    normalized_version = release_version.strip().lstrip("vV")
+    normalized_version = normalize_release_version(release_version)
     manifests = [
         manifest
         for manifest in iter_release_manifests(project_root)
-        if manifest.version.lstrip("vV") == normalized_version
+        if normalize_release_version(manifest.version) == normalized_version
     ]
     if not manifests:
         raise click.ClickException(f"Release '{release_version}' not found.")

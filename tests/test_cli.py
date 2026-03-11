@@ -4954,7 +4954,7 @@ def test_release_version_command(tmp_path: Path) -> None:
 
 
 def test_release_version_bare_flag(tmp_path: Path) -> None:
-    """Test the release version --bare flag strips the v prefix."""
+    """Test the deprecated --bare flag still returns the bare version."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -5004,6 +5004,7 @@ def test_release_version_bare_flag(tmp_path: Path) -> None:
     )
     assert version_result.exit_code == 0, version_result.output
     assert version_result.stdout.strip() == "3.1.4"
+    assert "--bare is deprecated" in version_result.stderr
 
 
 def test_release_version_no_releases(tmp_path: Path) -> None:

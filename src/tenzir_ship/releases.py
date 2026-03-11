@@ -76,6 +76,29 @@ def release_directory(project_root: Path) -> Path:
     return project_root / RELEASE_DIR
 
 
+def normalize_release_version(version: str) -> str:
+    """Return a bare semantic version string without a leading tag prefix."""
+    normalized_version = version.strip()
+    if normalized_version.startswith(("v", "V")):
+        normalized_version = normalized_version[1:]
+    return normalized_version
+
+
+def render_release_tag(version: str) -> str:
+    """Return the Git tag name for a release version."""
+    return f"v{normalize_release_version(version)}"
+
+
+def release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
+    """Return the base directory for a release manifest."""
+    if manifest.path is None:
+        return release_directory(project_root) / normalize_release_version(manifest.version)
+    path = manifest.path
+    if path.is_dir():
+        return path
+    return path.parent
+
+
 def _parse_created_date(raw_value: object | None) -> date:
     if raw_value is None:
         return date.today()
@@ -167,7 +190,7 @@ def write_release_manifest(
     """Serialize and store a release manifest alongside release notes."""
     directory = release_directory(project_root)
     directory.mkdir(parents=True, exist_ok=True)
-    release_dir = _manifest_root(project_root, manifest)
+    release_dir = release_manifest_root(project_root, manifest)
     if not release_dir.exists():
         release_dir.mkdir(parents=True, exist_ok=False)
     manifest_path = release_dir / "manifest.yaml"
@@ -186,23 +209,11 @@ def write_release_manifest(
     return manifest_path
 
 
-def _manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
-    """Return the base directory for a release manifest."""
-    if manifest.path is None:
-        return release_directory(project_root) / manifest.version
-    path = manifest.path
-    if path.is_dir():
-        return path
-    if path.name.lower() == "manifest.yaml":
-        return path.parent
-    return path.parent
-
-
 def resolve_release_entry_path(
     project_root: Path, manifest: ReleaseManifest, entry_id: str
 ) -> Path | None:
     """Return the path to an entry file belonging to a release, if present."""
-    root = _manifest_root(project_root, manifest)
+    root = release_manifest_root(project_root, manifest)
     entry_path = root / "entries" / f"{entry_id}.md"
     if entry_path.exists():
         return entry_path

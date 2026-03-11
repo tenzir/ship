@@ -13,6 +13,7 @@ from ..releases import (
     ReleaseManifest,
     iter_release_manifests,
     load_release_entry,
+    normalize_release_version,
 )
 
 __all__ = [
@@ -28,7 +29,7 @@ def _get_module_latest_version(module_root: Path) -> str | None:
     """Get the latest release version for a module."""
     versions: list[Version] = []
     for manifest in iter_release_manifests(module_root):
-        label = manifest.version.lstrip("vV")
+        label = normalize_release_version(manifest.version)
         try:
             versions.append(Version(label))
         except InvalidVersion:
@@ -43,7 +44,7 @@ def _get_sorted_release_manifests(project_root: Path) -> list[tuple[Version, Rel
     """Get release manifests sorted by version number."""
     manifests: list[tuple[Version, ReleaseManifest]] = []
     for manifest in iter_release_manifests(project_root):
-        version_str = manifest.version.lstrip("vV")
+        version_str = normalize_release_version(manifest.version)
         try:
             parsed = Version(version_str)
         except InvalidVersion:
@@ -55,7 +56,7 @@ def _get_sorted_release_manifests(project_root: Path) -> list[tuple[Version, Rel
 
 def _get_release_manifest_before(project_root: Path, target_version: str) -> ReleaseManifest | None:
     """Get the release manifest immediately before the target version."""
-    target_value = target_version.lstrip("vV")
+    target_value = normalize_release_version(target_version)
     try:
         target_parsed = Version(target_value)
     except InvalidVersion:
