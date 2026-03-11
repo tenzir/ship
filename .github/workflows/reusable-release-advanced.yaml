@@ -116,7 +116,7 @@ jobs:
           repository: tenzir/ship
           ref: ${{ github.workflow_sha }}
           sparse-checkout: |
-            .github/scripts/create-app-token.sh
+            .github/scripts
           path: .github/tenzir-ship-workflow-tools
           persist-credentials: false
 
