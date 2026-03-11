@@ -10,6 +10,8 @@ from typing import Literal, Sequence
 
 import click
 
+from .releases import normalize_release_version
+
 SUPPORTED_AUTO_VERSION_FILES: tuple[str, ...] = (
     "package.json",
     "pyproject.toml",
@@ -139,9 +141,7 @@ class _ResolvedVersionFileTarget:
 def _strip_release_prefix(version: str) -> str:
     """Convert release labels like v1.2.3 into package-manager version strings."""
 
-    if version.startswith(("v", "V")):
-        return version[1:]
-    return version
+    return normalize_release_version(version)
 
 
 def _resolve_explicit_version_file_path(project_root: Path, raw_path: str) -> Path:

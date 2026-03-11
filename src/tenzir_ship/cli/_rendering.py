@@ -32,6 +32,7 @@ from ..releases import (
     build_entry_release_index,
     iter_release_manifests,
     load_release_entry,
+    normalize_release_version,
 )
 from ..utils import (
     console,
@@ -325,7 +326,7 @@ def _build_release_sort_order(project_root: Path) -> dict[str, int]:
     """Build a mapping from version to sort order (newest = highest)."""
     manifests = list(iter_release_manifests(project_root))
     manifests.sort(key=lambda m: m.created)
-    return {m.version: i for i, m in enumerate(manifests)}
+    return {normalize_release_version(m.version): i for i, m in enumerate(manifests)}
 
 
 def _sort_entries_for_display(
@@ -558,10 +559,11 @@ def _render_release(
     *,
     project_id: str,
 ) -> None:
-    _print_renderable(Rule(f"Release {manifest.version}"))
+    version = normalize_release_version(manifest.version)
+    _print_renderable(Rule(f"Release {version}"))
     header = Text.assemble(
         ("Title: ", "bold"),
-        manifest.title or manifest.version or "—",
+        manifest.title or version or "—",
         ("\nIntro: ", "bold"),
         ("present" if (manifest.intro and manifest.intro.strip()) else "—"),
         ("\nCreated: ", "bold"),

@@ -134,7 +134,7 @@ def _command_help_text(
         f"- {row_hint}",
         "- Entry IDs, partial or full (e.g., configure,",
         "  configure-export-style-defaults)",
-        f"- Version numbers (e.g., v0.2.0) {version_hint}",
+        f"- Version numbers (e.g., 0.2.0 or v0.2.0) {version_hint}",
     ]
     if include_scope:
         identifier_items.append("- Scope: all, unreleased, released, latest")
@@ -145,7 +145,7 @@ def _command_help_text(
         f"  tenzir-ship {command_name} 1           # {verb.capitalize()} entry #1",
         f"  tenzir-ship {command_name} 1 2 3       # {verb.capitalize()} entries #1, #2, and #3",
         f"  tenzir-ship {command_name} configure   # {verb.capitalize()} entry matching 'configure'",
-        f"  tenzir-ship {command_name} v0.2.0      # {verb.capitalize()} all entries in v0.2.0",
+        f"  tenzir-ship {command_name} 0.2.0       # {verb.capitalize()} all entries in 0.2.0",
     ]
     if include_scope:
         example_lines.extend(

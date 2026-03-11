@@ -35,6 +35,7 @@ from ..releases import (
     collect_release_entries,
     iter_release_manifests,
     load_release_entry,
+    normalize_release_version,
     unused_entries,
     used_entry_ids,
 )
@@ -98,15 +99,22 @@ SCOPE_TOKENS: set[Scope] = {"all", "unreleased", "released", "latest"}
 
 
 def _get_known_release_versions(project_root: Path) -> dict[str, str]:
-    """Return mapping of lowercase version to original version string.
+    """Return mapping of lowercase version aliases to original version strings.
 
     Returns a dict for case-insensitive version lookups:
-    - Keys: lowercase version strings (use for matching user input)
+    - Keys: lowercase version strings (with and without a leading ``v``)
     - Values: original case-preserved versions (use for display and loading)
 
-    Example: {"v1.0.0": "v1.0.0", "v2.0.0-beta": "v2.0.0-Beta"}
+    Example: {"1.0.0": "1.0.0", "v1.0.0": "1.0.0"}
     """
-    return {m.version.lower(): m.version for m in iter_release_manifests(project_root)}
+    known_versions: dict[str, str] = {}
+    for manifest in iter_release_manifests(project_root):
+        original = manifest.version
+        normalized = normalize_release_version(original)
+        known_versions[original.lower()] = original
+        known_versions[normalized.lower()] = original
+        known_versions[f"v{normalized}".lower()] = original
+    return known_versions
 
 
 def _parse_scope_from_identifiers(
@@ -189,8 +197,8 @@ def _render_release_header(
 ) -> None:
     """Render a release header with title and intro."""
     if manifest:
-        version = manifest.version
-        title = manifest.title or manifest.version
+        version = normalize_release_version(manifest.version)
+        title = manifest.title or version
         created = manifest.created.isoformat()
         intro = manifest.intro
     else:
@@ -227,11 +235,11 @@ def _load_release_entries_for_display(
     entry_map: dict[str, Entry],
 ) -> tuple[ReleaseManifest, list[Entry]]:
     """Load entries for a specific release version."""
-    normalized_version = release_version.strip()
+    normalized_version = normalize_release_version(release_version)
     manifests = [
         manifest
         for manifest in iter_release_manifests(project_root)
-        if manifest.version == normalized_version
+        if normalize_release_version(manifest.version) == normalized_version
     ]
     if not manifests:
         raise click.ClickException(f"Release '{release_version}' not found.")
@@ -250,7 +258,7 @@ def _load_release_entries_for_display(
     if missing_entries:
         missing_list = ", ".join(sorted(missing_entries))
         raise click.ClickException(
-            f"Release '{manifest.version}' is missing entry files for: {missing_list}"
+            f"Release '{normalize_release_version(manifest.version)}' is missing entry files for: {missing_list}"
         )
     return manifest, release_entries
 
@@ -415,8 +423,8 @@ def _render_release_card(
 ) -> None:
     """Render a release as a card with header and entries."""
     if manifest:
-        title = manifest.title or manifest.version
-        version = manifest.version
+        version = normalize_release_version(manifest.version)
+        title = manifest.title or version
         created = manifest.created.isoformat()
         intro = manifest.intro
     else:
@@ -525,7 +533,7 @@ def _show_entries_table_all(
                         release_entries.append(entry)
                 filtered = _filter_entries_by_component(release_entries, components)
                 for entry in filtered:
-                    release_versions[entry.entry_id] = manifest.version
+                    release_versions[entry.entry_id] = normalize_release_version(manifest.version)
                     all_entries.append(entry)
 
         # Add unreleased entries last (they are the "newest" release)
@@ -604,11 +612,13 @@ def _show_entries_table_release_mode(
             for entry in filtered:
                 versions = release_index.get(entry.entry_id, [])
                 if versions:
+                    target_version = versions[0]
                     for release_manifest in iter_release_manifests(project_root):
-                        if release_manifest.version == versions[0]:
+                        release_version = normalize_release_version(release_manifest.version)
+                        if release_version == target_version:
                             found = False
                             for i, (m, entries) in enumerate(release_groups):
-                                if m and m.version == release_manifest.version:
+                                if m and normalize_release_version(m.version) == release_version:
                                     if entry not in entries:
                                         release_groups[i] = (m, entries + [entry])
                                     found = True
@@ -634,7 +644,9 @@ def _show_entries_table_release_mode(
     release_versions: dict[str, str] = {}
     all_entries: list[Entry] = []
     for manifest, entries in release_groups:
-        version_label = manifest.version if manifest else UNRELEASED_LABEL
+        version_label = (
+            normalize_release_version(manifest.version) if manifest else UNRELEASED_LABEL
+        )
         for entry in entries:
             release_versions[entry.entry_id] = version_label
             all_entries.append(entry)
@@ -891,13 +903,16 @@ def _show_entries_card(
                 for entry in filtered:
                     versions = release_index_all.get(entry.entry_id, [])
                     if versions:
+                        target_version = versions[0]
                         for release_manifest in iter_release_manifests(project_root):
-                            if release_manifest.version == versions[0]:
+                            release_version = normalize_release_version(release_manifest.version)
+                            if release_version == target_version:
                                 found = False
                                 for i, (grp_manifest, entries) in enumerate(release_groups):
                                     if (
                                         grp_manifest
-                                        and grp_manifest.version == release_manifest.version
+                                        and normalize_release_version(grp_manifest.version)
+                                        == release_version
                                     ):
                                         if entry not in entries:
                                             release_groups[i] = (grp_manifest, entries + [entry])
@@ -979,7 +994,7 @@ def _show_entries_card(
         for entry in filtered_entries:
             versions = release_index.get(entry.entry_id, [])
             if resolution.kind == "release" and resolution.manifest:
-                version = resolution.manifest.version
+                version = normalize_release_version(resolution.manifest.version)
                 if version and version not in versions:
                     versions = versions + [version]
             _render_single_entry(entry, versions, include_emoji=include_emoji)
@@ -1263,7 +1278,7 @@ def _show_entries_export_release_mode(
                 entries_for_output = sorted(resolution.entries, key=_release_entry_sort_key)
 
                 if manifest:
-                    title = manifest.title or manifest.version
+                    title = manifest.title or normalize_release_version(manifest.version)
                 else:
                     title = "Unreleased Changes"
 
@@ -1373,11 +1388,13 @@ def _show_entries_export_release_mode(
             for entry in filtered:
                 versions = release_index.get(entry.entry_id, [])
                 if versions:
+                    target_version = versions[0]
                     for manifest in iter_release_manifests(project_root):
-                        if manifest.version == versions[0]:
+                        release_version = normalize_release_version(manifest.version)
+                        if release_version == target_version:
                             found = False
                             for i, (m, entries) in enumerate(release_groups):
-                                if m and m.version == manifest.version:
+                                if m and normalize_release_version(m.version) == release_version:
                                     if entry not in entries:
                                         release_groups[i] = (m, entries + [entry])
                                     found = True

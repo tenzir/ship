@@ -17,6 +17,7 @@ from .cli import (
     run_show_entries,
     run_validate,
 )
+from .releases import normalize_release_version
 
 LiteralMarkdownJson = Literal["markdown", "json"]
 
@@ -144,11 +145,8 @@ class Changelog:
             compact_explicit=compact is not None,
         )
 
-    def release_version(self, *, bare: bool = False) -> str:
-        """Get the latest released version.
-
-        Args:
-            bare: If True, strip the 'v' prefix from the version.
+    def release_version(self) -> str:
+        """Get the latest released semantic version.
 
         Returns:
             The latest released version string.
@@ -160,11 +158,7 @@ class Changelog:
         if manifest is None:
             raise ValueError("No releases found. Create a release first with 'release create'.")
 
-        version = manifest.version
-        if bare:
-            version = version.lstrip("vV")
-
-        return version
+        return normalize_release_version(manifest.version)
 
     def release_publish(
         self,
