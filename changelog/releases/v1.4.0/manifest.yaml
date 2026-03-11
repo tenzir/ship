@@ -1,0 +1,6 @@
+created: 2026-03-11
+title: Initialize changelog projects with a new command
+intro: >-
+  The new `init` command scaffolds changelog projects interactively or non-interactively,
+  so you can set up a standalone or package-based project in less time. It also protects
+  existing projects from accidental overwrites.
