@@ -101,6 +101,9 @@ from ._add import (
     add,
 )
 
+# Re-export init command
+from ._init import init_cmd
+
 # Re-export validate command
 from ._validate import (
     run_validate,
@@ -126,6 +129,7 @@ cli = _create_cli_group()
 # Register all commands with the cli group
 cli.add_command(show_entries)
 cli.add_command(add)
+cli.add_command(init_cmd)
 cli.add_command(validate_cmd)
 cli.add_command(release_group)
 cli.add_command(stats_cmd)
@@ -172,6 +176,8 @@ __all__ = [
     "create_release",
     "publish_release",
     "release_group",
+    # Init
+    "init_cmd",
     # Validate
     "run_validate",
     "validate_cmd",

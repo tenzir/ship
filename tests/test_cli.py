@@ -16,7 +16,7 @@ from click.testing import CliRunner
 from tenzir_ship import __version__
 from tenzir_ship.cli import INFO_PREFIX, cli, main
 from tenzir_ship.cli._core import create_cli_context
-from tenzir_ship.config import Config, ReleaseConfig, save_config
+from tenzir_ship.config import Config, ReleaseConfig, load_config, save_config
 from tenzir_ship.entries import read_entry, write_entry
 
 
@@ -786,6 +786,152 @@ def test_package_mode_bootstraps_changelog_from_package_root(tmp_path: Path) -> 
 
     assert not (package_dir / "config.yaml").exists()
     assert not (changelog_root / "config.yaml").exists()
+
+
+def test_init_creates_standalone_changelog_subdirectory(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = runner.invoke(
+            cli,
+            [
+                "init",
+                "--yes",
+                "--id",
+                "myproject",
+                "--name",
+                "My Project",
+                "--description",
+                "Test project.",
+                "--repository",
+                "owner/repo",
+            ],
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+
+    changelog_root = project_dir / "changelog"
+    config_path = changelog_root / "config.yaml"
+    assert changelog_root.is_dir()
+    assert config_path.exists()
+    assert (changelog_root / "unreleased").is_dir()
+    assert not (changelog_root / "releases").exists()
+
+    config = load_config(config_path)
+    assert config.id == "myproject"
+    assert config.name == "My Project"
+    assert config.description == "Test project."
+    assert config.repository == "owner/repo"
+
+
+def test_init_interactive_prompts_for_standalone_metadata(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "interactive"
+    project_dir.mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = runner.invoke(
+            cli,
+            ["init"],
+            input="interactive\nInteractive Project\nInteractive description.\nowner/repo\ny\n",
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+
+    config = load_config(project_dir / "changelog" / "config.yaml")
+    assert config.id == "interactive"
+    assert config.name == "Interactive Project"
+    assert config.description == "Interactive description."
+    assert config.repository == "owner/repo"
+
+
+def test_init_yes_requires_id_in_standalone_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "missing-id"
+    project_dir.mkdir()
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = runner.invoke(cli, ["init", "--yes"])
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 1
+    assert "--id is required when using --yes in standalone mode." in result.output
+
+
+def test_init_auto_detects_package_mode(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "workspace"
+    package_dir.mkdir()
+    _write_package_metadata(package_dir / "package.yaml", package_id="workspace", name="Workspace")
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(package_dir)
+        result = runner.invoke(cli, ["init", "--yes"])
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+
+    changelog_root = package_dir / "changelog"
+    assert changelog_root.is_dir()
+    assert (changelog_root / "unreleased").is_dir()
+    assert not (changelog_root / "config.yaml").exists()
+
+
+def test_init_can_force_standalone_mode_in_package_root(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "workspace"
+    package_dir.mkdir()
+    _write_package_metadata(package_dir / "package.yaml", package_id="workspace", name="Workspace")
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(package_dir)
+        result = runner.invoke(
+            cli,
+            ["init", "--standalone", "--yes", "--id", "workspace"],
+        )
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 0, result.output
+
+    changelog_root = package_dir / "changelog"
+    assert (changelog_root / "config.yaml").exists()
+    config = load_config(changelog_root / "config.yaml")
+    assert config.id == "workspace"
+    assert config.name == "Workspace"
+
+
+def test_init_errors_when_project_already_exists(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "existing"
+    changelog_root = project_dir / "changelog"
+    _bootstrap_changelog_project(changelog_root)
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = runner.invoke(cli, ["init", "--yes", "--id", "existing"])
+    finally:
+        os.chdir(original_cwd)
+
+    assert result.exit_code == 1
+    assert f"A tenzir-ship project already exists at {changelog_root.resolve()}." in result.output
 
 
 def test_bootstrap_creates_changelog_subdirectory(tmp_path: Path) -> None:
