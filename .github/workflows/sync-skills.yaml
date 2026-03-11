@@ -27,7 +27,6 @@ jobs:
         run: |
           ./.github/scripts/create-app-token.sh \
             --app-id "$APP_ID" \
-            --private-key "$PRIVATE_KEY" \
             --repository "$TARGET_REPOSITORY"
 
       - name: Trigger sync workflow

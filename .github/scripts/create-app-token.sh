@@ -4,7 +4,7 @@ set -euo pipefail
 # Mint a GitHub App installation token without relying on a JavaScript action.
 
 app_id=""
-private_key=""
+private_key="${PRIVATE_KEY:-}"
 repository=""
 api_url="${GITHUB_API_URL:-https://api.github.com}"
 
@@ -12,10 +12,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --app-id)
       app_id="$2"
-      shift 2
-      ;;
-    --private-key)
-      private_key="$2"
       shift 2
       ;;
     --repository)
@@ -33,8 +29,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$app_id" || -z "$private_key" || -z "$repository" ]]; then
-  echo "Usage: $0 --app-id <id> --private-key <pem> --repository <owner/repo> [--api-url <url>]" >&2
+if [[ -z "$app_id" || -z "$repository" ]]; then
+  echo "Usage: $0 --app-id <id> --repository <owner/repo> [--api-url <url>]" >&2
+  exit 1
+fi
+
+if [[ -z "$private_key" ]]; then
+  echo "PRIVATE_KEY environment variable must be set" >&2
   exit 1
 fi
 
