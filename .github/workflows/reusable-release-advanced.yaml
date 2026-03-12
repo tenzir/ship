@@ -77,6 +77,38 @@ on:
         required: false
         default: false
         type: boolean
+      github_app_id:
+        description: "Optional GitHub App ID used to mint a repository-scoped token"
+        required: false
+        default: ""
+        type: string
+      git_user_name:
+        description: "Git author name used for release commits"
+        required: false
+        default: "github-actions[bot]"
+        type: string
+      git_user_email:
+        description: "Git author email used for release commits"
+        required: false
+        default: "41898282+github-actions[bot]@users.noreply.github.com"
+        type: string
+      sign_commits:
+        description: "Whether to sign commits when a GPG key is provided"
+        required: false
+        default: true
+        type: boolean
+      sign_tags:
+        description: "Whether to sign tags when a GPG key is provided"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      push_token:
+        required: false
+      github_app_private_key:
+        required: false
+      gpg_private_key:
+        required: false
     outputs:
       version:
         description: "Created release version tag (for example v1.2.3)"
@@ -97,10 +129,19 @@ jobs:
 
     steps:
       - name: Validate release inputs
+        env:
+          RELEASE_BUMP: ${{ inputs.bump }}
+          GITHUB_APP_ID: ${{ inputs.github_app_id }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.github_app_private_key }}
+          GIT_USER_NAME: ${{ inputs.git_user_name }}
+          GIT_USER_EMAIL: ${{ inputs.git_user_email }}
         run: |
-          case "${{ inputs.bump }}" in
+          case "$RELEASE_BUMP" in
             ""|auto|major|minor|patch) ;;
-            *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Use empty, auto, major, minor, or patch." && exit 1 ;;
+            *)
+              echo "::error::Invalid bump value '$RELEASE_BUMP'. Use empty, auto, major, minor, or patch."
+              exit 1
+              ;;
           esac
 
           if [ -n "${{ inputs.version }}" ] && [ -n "${{ inputs.bump }}" ] && [ "${{ inputs.bump }}" != "auto" ]; then
@@ -111,6 +152,32 @@ jobs:
           if [ "${{ inputs.rc }}" = "true" ] && [[ "${{ inputs.version }}" == *-* ]]; then
             echo "::error::rc expects a stable base version like v1.2.3, not a prerelease version."
             exit 1
+          fi
+
+          if [ -n "$GITHUB_APP_ID" ] && [ -z "$GITHUB_APP_PRIVATE_KEY" ]; then
+            echo "::error::Input 'github_app_id' requires secret 'github_app_private_key'."
+            exit 1
+          fi
+
+          if [ -z "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
+            echo "::error::Secret 'github_app_private_key' requires input 'github_app_id'."
+            exit 1
+          fi
+
+          if [ -z "$GIT_USER_NAME" ] || [ -z "$GIT_USER_EMAIL" ]; then
+            echo "::error::Both 'git_user_name' and 'git_user_email' must be non-empty."
+            exit 1
+          fi
+
+      - name: Resolve optional credentials
+        id: optional-credentials
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "has_gpg_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_gpg_key=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout
@@ -132,26 +199,51 @@ jobs:
 
       - name: Generate app token
         id: app-token
+        if: ${{ inputs.github_app_id != '' }}
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
-          private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ inputs.github_app_id }}
+          private-key: ${{ secrets.github_app_private_key }}
+
+      - name: Resolve auth token
+        id: auth-token
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          PUSH_TOKEN: ${{ secrets.push_token }}
+          DEFAULT_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$APP_TOKEN" ]; then
+            TOKEN="$APP_TOKEN"
+            SOURCE="github-app"
+          elif [ -n "$PUSH_TOKEN" ]; then
+            TOKEN="$PUSH_TOKEN"
+            SOURCE="push-token"
+          else
+            TOKEN="$DEFAULT_TOKEN"
+            SOURCE="github-token"
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
 
       - name: Set up GPG signing
+        if: ${{ steps.optional-credentials.outputs.has_gpg_key == 'true' }}
         uses: crazy-max/ghaction-import-gpg@v7
         with:
-          gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}
+          gpg_private_key: ${{ secrets.gpg_private_key }}
           git_user_signingkey: true
-          git_commit_gpgsign: true
-          git_tag_gpgsign: true
+          git_commit_gpgsign: ${{ inputs.sign_commits }}
+          git_tag_gpgsign: ${{ inputs.sign_tags }}
 
       - name: Configure Git
         env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          AUTH_TOKEN: ${{ steps.auth-token.outputs.token }}
+          GIT_USER_NAME: ${{ inputs.git_user_name }}
+          GIT_USER_EMAIL: ${{ inputs.git_user_email }}
         run: |
-          git config --global user.name "tenzir-bot"
-          git config --global user.email "engineering@tenzir.com"
-          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}.git"
+          git config --global user.name "$GIT_USER_NAME"
+          git config --global user.email "$GIT_USER_EMAIL"
+          git remote set-url origin "https://x-access-token:${AUTH_TOKEN}@github.com/${{ github.repository }}.git"
 
       - name: Determine release branch
         id: release-type
@@ -233,7 +325,7 @@ jobs:
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.auth-token.outputs.token }}
 
       - name: Stage and publish
         if: ${{ !inputs['skip-publish'] }}
@@ -260,7 +352,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
           IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           NO_LATEST_NON_MAIN: ${{ inputs.publish-no-latest-on-non-main }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.auth-token.outputs.token }}
 
       - name: Copy release to main branch (non-main release)
         if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.branch != 'main' }}
@@ -296,12 +388,23 @@ jobs:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
           IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.auth-token.outputs.token }}
 
       - name: Summary
+        env:
+          GPG_ENABLED: ${{ steps.optional-credentials.outputs.has_gpg_key }}
+          SIGN_COMMITS: ${{ inputs.sign_commits }}
+          SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
           VERSION="${{ steps.create-release.outputs.version }}"
           IS_LATEST="${{ steps.determine-latest.outputs.is_latest }}"
+          AUTH_SOURCE="${{ steps.auth-token.outputs.source }}"
+          COMMIT_SIGNING=false
+          TAG_SIGNING=false
+          if [ "$GPG_ENABLED" = "true" ]; then
+            COMMIT_SIGNING="$SIGN_COMMITS"
+            TAG_SIGNING="$SIGN_TAGS"
+          fi
           {
             echo "## Release ${VERSION}"
             echo ""
@@ -310,4 +413,7 @@ jobs:
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
             echo "- Latest release: \`${IS_LATEST}\`"
             echo "- Publish skipped: \`${{ inputs['skip-publish'] }}\`"
+            echo "- Auth mode: \`${AUTH_SOURCE}\`"
+            echo "- Commit signing: \`${COMMIT_SIGNING}\`"
+            echo "- Tag signing: \`${TAG_SIGNING}\`"
           } >> "$GITHUB_STEP_SUMMARY"
