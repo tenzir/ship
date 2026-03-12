@@ -215,14 +215,15 @@ jobs:
           if [ -n "$APP_TOKEN" ]; then
             TOKEN="$APP_TOKEN"
             SOURCE="github-app"
+            echo "::add-mask::$TOKEN"
           elif [ -n "$PUSH_TOKEN" ]; then
             TOKEN="$PUSH_TOKEN"
             SOURCE="push-token"
+            echo "::add-mask::$TOKEN"
           else
             TOKEN="$DEFAULT_TOKEN"
             SOURCE="github-token"
           fi
-          echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
 
@@ -241,6 +242,8 @@ jobs:
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
         run: |
+          # Keep this after optional GPG setup so explicit workflow inputs win
+          # over any identity inferred from the imported signing key.
           git config --global user.name "$GIT_USER_NAME"
           git config --global user.email "$GIT_USER_EMAIL"
           git remote set-url origin "https://x-access-token:${AUTH_TOKEN}@github.com/${{ github.repository }}.git"
