@@ -11,9 +11,10 @@ from ..entries import Entry
 from ..config import Config
 from ..releases import (
     ReleaseManifest,
+    is_release_candidate,
     iter_release_manifests,
     load_release_entry,
-    normalize_release_version,
+    parse_release_version,
     render_release_tag,
 )
 
@@ -27,12 +28,13 @@ __all__ = [
 
 
 def _get_module_latest_version(module_root: Path) -> str | None:
-    """Get the latest release version for a module."""
+    """Get the latest stable release version for a module."""
     versions: list[Version] = []
     for manifest in iter_release_manifests(module_root):
-        label = normalize_release_version(manifest.version)
+        if is_release_candidate(manifest.version):
+            continue
         try:
-            versions.append(Version(label))
+            versions.append(parse_release_version(manifest.version))
         except InvalidVersion:
             continue
     if not versions:
@@ -41,13 +43,16 @@ def _get_module_latest_version(module_root: Path) -> str | None:
     return render_release_tag(str(versions[0]))
 
 
-def _get_sorted_release_manifests(project_root: Path) -> list[tuple[Version, ReleaseManifest]]:
+def _get_sorted_release_manifests(
+    project_root: Path, *, stable_only: bool = False
+) -> list[tuple[Version, ReleaseManifest]]:
     """Get release manifests sorted by version number."""
     manifests: list[tuple[Version, ReleaseManifest]] = []
     for manifest in iter_release_manifests(project_root):
-        version_str = normalize_release_version(manifest.version)
+        if stable_only and is_release_candidate(manifest.version):
+            continue
         try:
-            parsed = Version(version_str)
+            parsed = parse_release_version(manifest.version)
         except InvalidVersion:
             continue
         manifests.append((parsed, manifest))
@@ -57,9 +62,8 @@ def _get_sorted_release_manifests(project_root: Path) -> list[tuple[Version, Rel
 
 def _get_release_manifest_before(project_root: Path, target_version: str) -> ReleaseManifest | None:
     """Get the release manifest immediately before the target version."""
-    target_value = normalize_release_version(target_version)
     try:
-        target_parsed = Version(target_value)
+        target_parsed = parse_release_version(target_version)
     except InvalidVersion:
         return None
     manifests = _get_sorted_release_manifests(project_root)
@@ -71,9 +75,11 @@ def _get_release_manifest_before(project_root: Path, target_version: str) -> Rel
     return previous
 
 
-def _get_latest_release_manifest(project_root: Path) -> ReleaseManifest | None:
+def _get_latest_release_manifest(
+    project_root: Path, *, stable_only: bool = True
+) -> ReleaseManifest | None:
     """Get the most recent release manifest by version."""
-    manifests = _get_sorted_release_manifests(project_root)
+    manifests = _get_sorted_release_manifests(project_root, stable_only=stable_only)
     if not manifests:
         return None
     return manifests[-1][1]

@@ -172,10 +172,15 @@ def _parse_scope_from_identifiers(
     return scope, tuple(remaining)
 
 
-def _collect_unused_entries_for_release(project_root: Path, config: Config) -> list[Entry]:
-    """Collect unreleased entries that haven't been included in any release."""
+def _collect_unused_entries_for_release(
+    project_root: Path,
+    config: Config,
+    *,
+    include_prereleases: bool = True,
+) -> list[Entry]:
+    """Collect unreleased entries that haven't been included in matching releases."""
     all_entries = list(iter_entries(project_root))
-    used = used_entry_ids(project_root)
+    used = used_entry_ids(project_root, include_prereleases=include_prereleases)
     unused = unused_entries(all_entries, used)
     filtered = [entry for entry in unused if entry.project is None or entry.project == config.id]
     return filtered
@@ -506,11 +511,12 @@ def _show_entries_table_all(
     include_unreleased = scope in ("all", "unreleased")
     include_released = scope in ("all", "released", "latest")
 
-    # For "latest" scope, filter manifests to only the latest one
+    # For "latest" scope, filter manifests to only the latest stable release.
     if scope == "latest":
-        if not manifests:
-            raise click.ClickException("No releases found.")
-        manifests = [manifests[-1]]  # Latest release is last after sorting by created
+        latest_manifest = _get_latest_release_manifest(project_root)
+        if latest_manifest is None:
+            raise click.ClickException("No stable releases found.")
+        manifests = [latest_manifest]
 
     unreleased_entries: list[Entry] = []
     if include_unreleased:
@@ -817,11 +823,12 @@ def _show_entries_card(
         include_unreleased = scope in ("all", "unreleased")
         include_released = scope in ("all", "released", "latest")
 
-        # For "latest" scope, filter manifests to only the latest one
+        # For "latest" scope, filter manifests to only the latest stable release.
         if scope == "latest":
-            if not manifests:
-                raise click.ClickException("No releases found.")
-            manifests = [manifests[-1]]
+            latest_manifest = _get_latest_release_manifest(project_root)
+            if latest_manifest is None:
+                raise click.ClickException("No stable releases found.")
+            manifests = [latest_manifest]
 
         unreleased_entries: list[Entry] = []
         if include_unreleased:
@@ -1027,11 +1034,12 @@ def _show_entries_export_all(
     include_unreleased = scope in ("all", "unreleased")
     include_released = scope in ("all", "released", "latest")
 
-    # For "latest" scope, filter manifests to only the latest one
+    # For "latest" scope, filter manifests to only the latest stable release.
     if scope == "latest":
-        if not manifests:
-            raise click.ClickException("No releases found.")
-        manifests = [manifests[-1]]
+        latest_manifest = _get_latest_release_manifest(project_root)
+        if latest_manifest is None:
+            raise click.ClickException("No stable releases found.")
+        manifests = [latest_manifest]
 
     unreleased_entries: list[Entry] = []
     if include_unreleased:

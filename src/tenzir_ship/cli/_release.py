@@ -19,18 +19,23 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..config import EXPORT_STYLE_COMPACT
-from ..entries import Entry
+from ..config import EXPORT_STYLE_COMPACT, Config
+from ..entries import Entry, iter_entries
 from ..releases import (
     NOTES_FILENAME,
     ReleaseManifest,
+    is_release_candidate,
+    is_stable_release,
+    is_valid_release_version,
     iter_release_manifests,
     load_release_entry,
     normalize_release_version,
+    parse_release_version,
     release_directory,
     release_manifest_root,
     render_release_tag,
     serialize_release_manifest,
+    stable_release_version,
     write_release_manifest,
 )
 from ..utils import (
@@ -208,11 +213,13 @@ def _github_release_exists(repository: str, tag_name: str, gh_path: str) -> bool
         return False
 
 
-def _latest_semver(project_root: Path) -> Version | None:
+def _latest_semver(project_root: Path, *, stable_only: bool = True) -> Version | None:
     versions: list[Version] = []
     for manifest in iter_release_manifests(project_root):
+        if stable_only and is_release_candidate(manifest.version):
+            continue
         try:
-            parsed = Version(normalize_release_version(manifest.version))
+            parsed = parse_release_version(manifest.version)
         except InvalidVersion:
             continue
         versions.append(parsed)
@@ -262,12 +269,11 @@ def _infer_next_release_version(project_root: Path, unreleased_entries: list[Ent
 
 def _validate_semver_label(version: str) -> None:
     value = normalize_release_version(version)
-    try:
-        Version(value)
-    except InvalidVersion as exc:
-        raise click.ClickException(
-            "Release version must be a valid semantic version (e.g. 1.2.3 or v1.2.3)."
-        ) from exc
+    if is_valid_release_version(value):
+        return
+    raise click.ClickException(
+        "Release version must use X.Y.Z or X.Y.Z-rc.N (for example 1.2.3, v1.2.3, or 1.2.3-rc.1)."
+    )
 
 
 def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
@@ -276,7 +282,7 @@ def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
         return True
 
     try:
-        target = Version(normalize_release_version(version))
+        target = parse_release_version(version)
     except InvalidVersion:
         return False
     return target >= latest
@@ -331,6 +337,41 @@ def _coerce_release_bump(value: Optional[str]) -> ReleaseBump | None:
     return cast(ReleaseBump, normalized)
 
 
+def _collect_current_unreleased_entries(project_root: Path, config: Config) -> list[Entry]:
+    all_entries = list(iter_entries(project_root))
+    return [entry for entry in all_entries if entry.project is None or entry.project == config.id]
+
+
+def _load_manifest_entries(project_root: Path, manifest: ReleaseManifest) -> list[Entry]:
+    entries: list[Entry] = []
+    for entry_id in manifest.entries:
+        entry = load_release_entry(project_root, manifest, entry_id)
+        if entry is None:
+            raise click.ClickException(
+                f"Release '{manifest.version}' is missing entry file for '{entry_id}'. "
+                "Recreate or repair the release before reusing it."
+            )
+        entries.append(entry)
+    return entries
+
+
+def _find_release_candidates_for_base(project_root: Path, version: str) -> list[ReleaseManifest]:
+    base_version = stable_release_version(version)
+    candidates: list[tuple[Version, ReleaseManifest]] = []
+    for manifest in iter_release_manifests(project_root):
+        if not is_release_candidate(manifest.version):
+            continue
+        if stable_release_version(manifest.version) != base_version:
+            continue
+        try:
+            parsed = parse_release_version(manifest.version)
+        except InvalidVersion:
+            continue
+        candidates.append((parsed, manifest))
+    candidates.sort(key=lambda item: item[0])
+    return [manifest for _, manifest in candidates]
+
+
 def create_release(
     ctx: CLIContext,
     *,
@@ -343,6 +384,8 @@ def create_release(
     explicit_links: bool = False,
     assume_yes: bool,
     version_bump: Optional[str],
+    source_release: Optional[str],
+    current_unreleased: bool,
     title_explicit: bool,
     compact_explicit: bool,
 ) -> None:
@@ -353,7 +396,11 @@ def create_release(
     project_root = ctx.project_root
     normalized_bump = _coerce_release_bump(version_bump)
 
-    unused_entries = _collect_unused_entries_for_release(project_root, config)
+    unused_entries = _collect_unused_entries_for_release(
+        project_root,
+        config,
+        include_prereleases=False,
+    )
     version, version_source = _resolve_release_version(
         project_root,
         version,
@@ -361,7 +408,21 @@ def create_release(
         unreleased_entries=unused_entries,
     )
 
+    if source_release and current_unreleased:
+        raise click.ClickException("Use only one of --from or --current-unreleased.")
+    if source_release and version_source != "explicit":
+        raise click.ClickException("Provide an explicit stable version when using --from.")
+
     tag_version = render_release_tag(version)
+    is_rc_release = is_release_candidate(version)
+    if is_rc_release and source_release:
+        raise click.ClickException("--from can only be used when creating a stable release.")
+    if is_rc_release and current_unreleased:
+        raise click.ClickException(
+            "Release candidates already snapshot the current unreleased queue; "
+            "--current-unreleased is only for stable releases."
+        )
+
     existing_manifest = _find_release_manifest(project_root, version)
     if version_source in {"manual", "auto"} and existing_manifest is not None:
         follow_up = (
@@ -381,20 +442,56 @@ def create_release(
     existing_entries: list[Entry] = []
     existing_entry_ids: set[str] = set()
     if existing_manifest:
-        for entry_id in existing_manifest.entries:
-            entry = load_release_entry(project_root, existing_manifest, entry_id)
-            if entry is None:
-                raise click.ClickException(
-                    f"Release '{version}' is missing entry file for '{entry_id}'. "
-                    "Recreate or repair the release before appending new entries."
-                )
-            existing_entries.append(entry)
-            existing_entry_ids.add(entry.entry_id)
+        existing_entries = _load_manifest_entries(project_root, existing_manifest)
+        existing_entry_ids = {entry.entry_id for entry in existing_entries}
 
-    new_entries = [entry for entry in unused_entries if entry.entry_id not in existing_entry_ids]
+    source_manifest: ReleaseManifest | None = None
+    cleanup_unreleased_entry_ids: set[str] = set()
+    copy_entries = is_rc_release
+
+    if is_rc_release:
+        selected_entries = _collect_current_unreleased_entries(project_root, config)
+    elif source_release is not None:
+        source_manifest = _find_release_manifest(project_root, source_release)
+        if source_manifest is None:
+            raise click.ClickException(f"Source release '{source_release}' not found.")
+        if not is_release_candidate(source_manifest.version):
+            raise click.ClickException(
+                "--from currently only supports promoting release candidates."
+            )
+        if not is_stable_release(version):
+            raise click.ClickException("--from requires a stable target version like 1.2.3.")
+        if stable_release_version(source_manifest.version) != stable_release_version(version):
+            raise click.ClickException(
+                f"Source release '{render_release_tag(source_manifest.version)}' does not match "
+                f"target stable version '{tag_version}'."
+            )
+        source_entries = _load_manifest_entries(project_root, source_manifest)
+        source_entry_ids = {entry.entry_id for entry in source_entries}
+        if existing_manifest is not None and existing_entry_ids != source_entry_ids:
+            raise click.ClickException(
+                f"Release '{tag_version}' already exists with a different entry set. "
+                "Delete or repair it before recreating it from --from."
+            )
+        selected_entries = source_entries
+        cleanup_unreleased_entry_ids = source_entry_ids
+        copy_entries = True
+    else:
+        candidate_manifests = _find_release_candidates_for_base(project_root, version)
+        if candidate_manifests and existing_manifest is None and not current_unreleased:
+            latest_candidate = render_release_tag(candidate_manifests[-1].version)
+            raise click.ClickException(
+                f"Release candidates already exist for '{stable_release_version(version)}'. "
+                f"Use --from {latest_candidate} to promote the latest candidate exactly, "
+                "or pass --current-unreleased to create the stable release from the current "
+                "unreleased queue."
+            )
+        selected_entries = unused_entries
+
+    new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
 
     combined_entries: dict[str, Entry] = {entry.entry_id: entry for entry in existing_entries}
-    for entry in new_entries:
+    for entry in selected_entries:
         combined_entries[entry.entry_id] = entry
 
     entries_sorted = sorted(combined_entries.values(), key=_release_entry_sort_key)
@@ -418,6 +515,8 @@ def create_release(
         manifest_intro = intro_file.read_text(encoding="utf-8").strip() or None
     elif existing_manifest and existing_manifest.intro:
         manifest_intro = existing_manifest.intro.strip() or None
+    elif source_manifest and source_manifest.intro:
+        manifest_intro = source_manifest.intro.strip() or None
     else:
         manifest_intro = None
 
@@ -548,6 +647,14 @@ def create_release(
     def _normalize_block(value: Optional[str]) -> str:
         return (value or "").rstrip("\n")
 
+    current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
+    unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
+    cleanup_unreleased_paths = [
+        unreleased_entries_by_id[entry_id].path
+        for entry_id in sorted(cleanup_unreleased_entry_ids)
+        if entry_id in unreleased_entries_by_id
+    ]
+
     changes_required = False
     change_reasons: list[str] = []
     if not release_dir.exists():
@@ -556,6 +663,11 @@ def create_release(
     if new_entries:
         changes_required = True
         change_reasons.append(f"append {len(new_entries)} new entries")
+    if cleanup_unreleased_paths:
+        changes_required = True
+        change_reasons.append(
+            f"consume {len(cleanup_unreleased_paths)} promoted unreleased entries"
+        )
     if _normalize_block(manifest_payload) != _normalize_block(existing_manifest_payload):
         changes_required = True
         change_reasons.append("update manifest metadata")
@@ -564,7 +676,7 @@ def create_release(
         change_reasons.append("refresh release notes")
 
     version_file_updates = []
-    if _is_current_or_newer_release(project_root, version):
+    if not is_rc_release and _is_current_or_newer_release(project_root, version):
         version_file_updates = plan_version_file_updates(
             project_root,
             version,
@@ -605,12 +717,23 @@ def create_release(
         source_path = entry.path
         destination_path = release_entries_dir / source_path.name
         if not source_path.exists():
+            action = "copy" if copy_entries else "move"
             raise click.ClickException(
-                f"Cannot move entry '{entry.entry_id}' because {source_path} is missing."
+                f"Cannot {action} entry '{entry.entry_id}' because {source_path} is missing."
             )
         if destination_path.exists():
             continue
-        source_path.rename(destination_path)
+        if copy_entries:
+            shutil.copy2(source_path, destination_path)
+        else:
+            source_path.rename(destination_path)
+
+    removed_unreleased_count = 0
+    for unreleased_path in cleanup_unreleased_paths:
+        if not unreleased_path.exists():
+            continue
+        unreleased_path.unlink()
+        removed_unreleased_count += 1
 
     manifest_path_result = write_release_manifest(
         project_root,
@@ -625,6 +748,8 @@ def create_release(
         log_success(f"appended {len(new_entries)} entries to: {relative_release_dir}")
     else:
         log_success(f"updated release metadata for {tag_version}.")
+    if removed_unreleased_count:
+        log_success(f"consumed {removed_unreleased_count} unreleased entries for {tag_version}.")
 
     # Output version to stdout for scripting (e.g., VERSION=$(tenzir-ship release create ...))
     click.echo(tag_version)
@@ -674,6 +799,10 @@ def publish_release(
     notes_content = notes_path.read_text(encoding="utf-8").strip()
     if not notes_content:
         raise click.ClickException("Release notes are empty; aborting publish.")
+
+    inferred_prerelease = is_release_candidate(release_version)
+    resolved_prerelease = prerelease or inferred_prerelease
+    resolved_no_latest = no_latest or inferred_prerelease
 
     # Determine commit message early for step tracking display
     final_commit_message: str | None = None
@@ -767,6 +896,10 @@ def publish_release(
         ]
         if manifest.title:
             command.extend(["--title", manifest.title])
+        if resolved_prerelease:
+            command.append("--prerelease")
+        if resolved_no_latest:
+            command.append("--latest=false")
         confirmation_action = "gh release edit"
     else:
         command = [
@@ -783,9 +916,9 @@ def publish_release(
             command.extend(["--title", manifest.title])
         if draft:
             command.append("--draft")
-        if prerelease:
+        if resolved_prerelease:
             command.append("--prerelease")
-        if no_latest:
+        if resolved_no_latest:
             command.append("--latest=false")
         confirmation_action = "gh release create"
 
@@ -863,19 +996,29 @@ def release_group(ctx: CLIContext) -> None:
     "--patch",
     "patch",
     is_flag=True,
-    help="Bump the patch segment from the latest release.",
+    help="Bump the patch segment from the latest stable release.",
 )
 @click.option(
     "--minor",
     "minor",
     is_flag=True,
-    help="Bump the minor segment from the latest release.",
+    help="Bump the minor segment from the latest stable release.",
 )
 @click.option(
     "--major",
     "major",
     is_flag=True,
-    help="Bump the major segment from the latest release.",
+    help="Bump the major segment from the latest stable release.",
+)
+@click.option(
+    "--from",
+    "source_release",
+    help="Promote the specified release candidate into the target stable release.",
+)
+@click.option(
+    "--current-unreleased",
+    is_flag=True,
+    help="Create the stable release from the current unreleased queue even if RCs exist.",
 )
 @click.pass_obj
 def release_create_cmd(
@@ -891,6 +1034,8 @@ def release_create_cmd(
     patch: bool,
     minor: bool,
     major: bool,
+    source_release: Optional[str],
+    current_unreleased: bool,
 ) -> None:
     """Create or update a release manifest from changelog entries and intro text."""
 
@@ -912,6 +1057,8 @@ def release_create_cmd(
         explicit_links=resolved_explicit_links,
         assume_yes=assume_yes,
         version_bump=version_bump,
+        source_release=source_release,
+        current_unreleased=current_unreleased,
         title_explicit=title_explicit,
         compact_explicit=compact_explicit,
     )
@@ -925,13 +1072,13 @@ def release_create_cmd(
 )
 @click.pass_obj
 def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
-    """Print the latest released version."""
+    """Print the latest stable released version."""
 
     _warn_on_structure_issues(ctx)
     manifest = _get_latest_release_manifest(ctx.project_root)
     if manifest is None:
         raise click.ClickException(
-            "No releases found. Create a release first with 'release create'."
+            "No stable releases found. Create a stable release first with 'release create'."
         )
 
     if bare:
@@ -993,7 +1140,7 @@ def release_publish_cmd(
 ) -> None:
     """Publish a release to GitHub using the gh CLI.
 
-    If no version is provided, defaults to the latest release.
+    If no version is provided, defaults to the latest stable release.
     """
 
     resolved_version = version
@@ -1001,7 +1148,7 @@ def release_publish_cmd(
         manifest = _get_latest_release_manifest(ctx.project_root)
         if manifest is None:
             raise click.ClickException(
-                "No releases found. Create a release first with 'release create'."
+                "No stable releases found. Create a stable release first with 'release create'."
             )
         resolved_version = manifest.version
 

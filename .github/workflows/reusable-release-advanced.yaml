@@ -206,10 +206,11 @@ jobs:
           if [ "$IS_LATEST" != "true" ] && [ "$NO_LATEST_NON_MAIN" = "true" ]; then
             PUBLISH_ARGS+=(--no-latest)
           fi
-          tenzir-ship --root "$CHANGELOG_ROOT" release publish "${PUBLISH_ARGS[@]}"
+          tenzir-ship --root "$CHANGELOG_ROOT" release publish "$RELEASE_VERSION" "${PUBLISH_ARGS[@]}"
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
           IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
           NO_LATEST_NON_MAIN: ${{ inputs.publish-no-latest-on-non-main }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}

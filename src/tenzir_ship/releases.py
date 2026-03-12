@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
+import re
 from typing import Iterable, Optional
 
+from packaging.version import InvalidVersion, Version
 import yaml
 from yaml.nodes import Node
 
@@ -47,6 +49,10 @@ yaml.SafeDumper.add_representer(_FoldedString, _represent_folded_string)
 
 NOTES_FILENAME = "notes.md"
 RELEASE_DIR = Path("releases")
+_RELEASE_VERSION_PATTERN = re.compile(
+    r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
+    r"(?:-rc\.(?P<rc>0|[1-9]\d*))?$"
+)
 
 
 @dataclass
@@ -87,6 +93,41 @@ def normalize_release_version(version: str) -> str:
 def render_release_tag(version: str) -> str:
     """Return the Git tag name for a release version."""
     return f"v{normalize_release_version(version)}"
+
+
+def is_valid_release_version(version: str) -> bool:
+    """Return whether *version* matches the supported release formats."""
+    normalized = normalize_release_version(version)
+    return _RELEASE_VERSION_PATTERN.fullmatch(normalized) is not None
+
+
+def is_release_candidate(version: str) -> bool:
+    """Return whether *version* identifies an ``-rc.N`` prerelease."""
+    normalized = normalize_release_version(version)
+    match = _RELEASE_VERSION_PATTERN.fullmatch(normalized)
+    return bool(match and match.group("rc") is not None)
+
+
+def is_stable_release(version: str) -> bool:
+    """Return whether *version* identifies a stable release."""
+    return is_valid_release_version(version) and not is_release_candidate(version)
+
+
+def stable_release_version(version: str) -> str:
+    """Return the ``X.Y.Z`` base version for a stable release or release candidate."""
+    normalized = normalize_release_version(version)
+    match = _RELEASE_VERSION_PATTERN.fullmatch(normalized)
+    if match is None:
+        raise ValueError(f"Invalid release version: {version!r}")
+    return f"{match.group('major')}.{match.group('minor')}.{match.group('patch')}"
+
+
+def parse_release_version(version: str) -> Version:
+    """Parse *version* into a :class:`packaging.version.Version`."""
+    normalized = normalize_release_version(version)
+    if not is_valid_release_version(normalized):
+        raise InvalidVersion(f"Invalid release version: {version!r}")
+    return Version(normalized)
 
 
 def release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
@@ -151,10 +192,16 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         yield manifest
 
 
-def used_entry_ids(project_root: Path) -> set[str]:
-    """Return a set containing entry IDs that already belong to a release."""
+def used_entry_ids(project_root: Path, *, include_prereleases: bool = True) -> set[str]:
+    """Return entry IDs that already belong to releases.
+
+    By default, prerelease manifests are included. Pass ``include_prereleases=False``
+    when computing which entries have been consumed by stable releases.
+    """
     used = set()
     for manifest in iter_release_manifests(project_root):
+        if not include_prereleases and is_release_candidate(manifest.version):
+            continue
         used.update(manifest.entries)
     return used
 
@@ -254,6 +301,13 @@ def build_entry_release_index(
             versions = index.setdefault(entry_id, [])
             if version not in versions:
                 versions.append(version)
+
+    def _version_sort_key(version: str) -> tuple[int, Version | str]:
+        try:
+            return (0, parse_release_version(version))
+        except InvalidVersion:
+            return (1, version)
+
     for versions in index.values():
-        versions.sort()
+        versions.sort(key=_version_sort_key)
     return index
