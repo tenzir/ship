@@ -55,6 +55,8 @@ on:
 
 jobs:
   release:
+    permissions:
+      contents: write
     uses: ./.github/workflows/reusable-release.yaml
     with:
       bump: ${{ inputs.bump }}
