@@ -1,0 +1,6 @@
+created: 2026-03-12
+title: Improved release automation reliability
+intro: >-
+  Release commands now handle mixed version formats consistently, making changelog
+  automation more robust. The bundled GitHub Actions workflows are updated to Node
+  24-compatible action versions, keeping CI aligned with GitHub's runtime transition.
