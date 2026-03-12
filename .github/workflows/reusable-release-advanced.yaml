@@ -215,15 +215,14 @@ jobs:
           if [ -n "$APP_TOKEN" ]; then
             TOKEN="$APP_TOKEN"
             SOURCE="github-app"
-            echo "::add-mask::$TOKEN"
           elif [ -n "$PUSH_TOKEN" ]; then
             TOKEN="$PUSH_TOKEN"
             SOURCE="push-token"
-            echo "::add-mask::$TOKEN"
           else
             TOKEN="$DEFAULT_TOKEN"
             SOURCE="github-token"
           fi
+          echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
 
