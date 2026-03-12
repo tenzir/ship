@@ -72,4 +72,9 @@ jobs:
         uv build
       post-create: |
         uv lock
-    secrets: inherit
+      github_app_id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+      git_user_name: tenzir-bot
+      git_user_email: engineering@tenzir.com
+    secrets:
+      github_app_private_key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+      gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}

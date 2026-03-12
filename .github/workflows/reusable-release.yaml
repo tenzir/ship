@@ -47,6 +47,38 @@ on:
         required: false
         default: ""
         type: string
+      github_app_id:
+        description: "Optional GitHub App ID used to mint a repository-scoped token"
+        required: false
+        default: ""
+        type: string
+      git_user_name:
+        description: "Git author name used for release commits"
+        required: false
+        default: "github-actions[bot]"
+        type: string
+      git_user_email:
+        description: "Git author email used for release commits"
+        required: false
+        default: "41898282+github-actions[bot]@users.noreply.github.com"
+        type: string
+      sign_commits:
+        description: "Whether to sign commits when a GPG key is provided"
+        required: false
+        default: true
+        type: boolean
+      sign_tags:
+        description: "Whether to sign tags when a GPG key is provided"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      push_token:
+        required: false
+      github_app_private_key:
+        required: false
+      gpg_private_key:
+        required: false
     outputs:
       version:
         description: "Created release version tag (for example v1.2.3)"
@@ -74,4 +106,12 @@ jobs:
       publish-no-latest-on-non-main: false
       copy-release-to-main-on-non-main: false
       update-latest-branch-on-main: false
-    secrets: inherit
+      github_app_id: ${{ inputs.github_app_id }}
+      git_user_name: ${{ inputs.git_user_name }}
+      git_user_email: ${{ inputs.git_user_email }}
+      sign_commits: ${{ inputs.sign_commits }}
+      sign_tags: ${{ inputs.sign_tags }}
+    secrets:
+      push_token: ${{ secrets.push_token }}
+      github_app_private_key: ${{ secrets.github_app_private_key }}
+      gpg_private_key: ${{ secrets.gpg_private_key }}

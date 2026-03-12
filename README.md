@@ -38,6 +38,59 @@ Install the skill via Vercel Skills:
 npx skills add tenzir/ship
 ```
 
+## 🛠️ Reusable GitHub Actions workflow
+
+This repository ships reusable release workflows under `.github/workflows/`.
+External repositories can call them directly.
+
+### Default mode: use the caller repo token
+
+By default, `reusable-release.yaml` and `reusable-release-advanced.yaml` use the
+caller repository's built-in `GITHUB_TOKEN`. No Tenzir-specific secrets are
+required.
+
+```yaml
+jobs:
+  release:
+    uses: tenzir/ship/.github/workflows/reusable-release.yaml@main
+    permissions:
+      contents: write
+    with:
+      intro: This release improves parser coverage and fixes packaging.
+      bump: auto
+```
+
+### Advanced mode: bring your own auth and signing
+
+The advanced workflow also supports optional overrides for:
+
+- `github_app_id` + `github_app_private_key` to mint a GitHub App token
+- `push_token` to override the default `GITHUB_TOKEN`
+- `git_user_name` and `git_user_email` to customize the git author identity
+- `gpg_private_key` to sign commits and tags
+
+```yaml
+jobs:
+  release:
+    uses: tenzir/ship/.github/workflows/reusable-release-advanced.yaml@main
+    permissions:
+      contents: write
+    with:
+      intro: This release improves parser coverage and fixes packaging.
+      github_app_id: ${{ vars.MY_GITHUB_APP_ID }}
+      git_user_name: release-bot
+      git_user_email: release-bot@example.com
+    secrets:
+      github_app_private_key: ${{ secrets.MY_GITHUB_APP_PRIVATE_KEY }}
+      gpg_private_key: ${{ secrets.MY_GPG_PRIVATE_KEY }}
+```
+
+Auth precedence is:
+
+1. GitHub App token, when `github_app_id` and `github_app_private_key` are set
+2. `push_token`, when provided
+3. the caller repo's default `GITHUB_TOKEN`
+
 ## 📚 Documentation
 
 Consult our [user
