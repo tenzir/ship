@@ -27,20 +27,21 @@ __all__ = [
 ]
 
 
-def _get_module_latest_version(module_root: Path) -> str | None:
-    """Get the latest stable release version for a module."""
-    versions: list[Version] = []
+def _get_module_latest_version(module_root: Path, *, stable_only: bool = True) -> str | None:
+    """Get the latest release version for a module."""
+    versions: list[tuple[Version, str]] = []
     for manifest in iter_release_manifests(module_root):
-        if is_release_candidate(manifest.version):
+        if stable_only and is_release_candidate(manifest.version):
             continue
         try:
-            versions.append(parse_release_version(manifest.version))
+            parsed = parse_release_version(manifest.version)
         except InvalidVersion:
             continue
+        versions.append((parsed, manifest.version))
     if not versions:
         return None
-    versions.sort(reverse=True)
-    return render_release_tag(str(versions[0]))
+    versions.sort(key=lambda item: item[0], reverse=True)
+    return render_release_tag(versions[0][1])
 
 
 def _get_sorted_release_manifests(
@@ -105,7 +106,10 @@ def _gather_module_released_entries(
         previous_version_str = previous_versions.get(module_id)
         target_version_str = target_versions.get(module_id)
 
-        latest_version = _get_module_latest_version(module.root)
+        latest_version = _get_module_latest_version(
+            module.root,
+            stable_only=not include_prereleases,
+        )
         if latest_version:
             current_versions[module_id] = latest_version
 

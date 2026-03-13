@@ -263,6 +263,15 @@ def _preferred_release_version(versions: Sequence[str]) -> str | None:
     return candidates[-1][1]
 
 
+def _release_uses_prerelease_modules(manifest: ReleaseManifest | None) -> bool:
+    """Return whether module rendering must include prerelease snapshots."""
+    if manifest is None:
+        return False
+    if is_release_candidate(manifest.version):
+        return True
+    return any(is_release_candidate(version) for version in manifest.modules.values())
+
+
 def _load_release_entries_for_display(
     project_root: Path,
     release_version: str,
@@ -1293,6 +1302,7 @@ def _show_entries_export_release_mode(
                         modules,
                         previous_module_versions,
                         target_module_versions,
+                        include_prereleases=_release_uses_prerelease_modules(manifest),
                     )
                     if module_entries:
                         modules_data: list[dict[str, object]] = []
@@ -1384,6 +1394,7 @@ def _show_entries_export_release_mode(
                         modules,
                         previous_module_versions,
                         target_module_versions,
+                        include_prereleases=_release_uses_prerelease_modules(manifest),
                     )
                     version_map = target_module_versions or current_versions
                     if module_entries:

@@ -4615,6 +4615,60 @@ def test_release_create_emits_only_version_to_stdout(tmp_path: Path) -> None:
     assert "\033[" not in release_result.stdout
 
 
+def test_release_create_idempotent_run_still_emits_version_to_stdout(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    first_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+    assert first_result.exit_code == 0, first_result.output
+
+    rerun_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+    assert rerun_result.exit_code == 0, rerun_result.output
+    assert rerun_result.stdout.strip() == "v1.0.0"
+    assert "already up to date" in rerun_result.stderr
+
+
 def test_release_create_rejects_non_supported_version(tmp_path: Path) -> None:
     """Test release create enforces the supported release version formats."""
     runner = CliRunner()

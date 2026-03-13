@@ -667,11 +667,13 @@ def create_release(
         module_entries: dict[str, tuple[Config, list[Entry]]] = {}
         module_version_map: dict[str, str] = {}
         if source_manifest is not None:
+            include_module_prereleases = is_release_candidate(source_manifest.version)
             if source_manifest.modules:
                 module_entries, _ = _gather_module_released_entries(
                     modules,
                     previous_module_versions,
                     source_manifest.modules,
+                    include_prereleases=include_module_prereleases,
                 )
                 manifest.modules = dict(source_manifest.modules)
                 module_version_map = dict(source_manifest.modules)
@@ -679,6 +681,7 @@ def create_release(
             module_entries, current_module_versions = _gather_module_released_entries(
                 modules,
                 previous_module_versions,
+                include_prereleases=is_rc_release,
             )
             if current_module_versions:
                 manifest.modules = current_module_versions
@@ -783,6 +786,7 @@ def create_release(
 
     if not changes_required:
         log_success(f"release '{tag_version}' is already up to date.")
+        click.echo(tag_version)
         return
 
     if not assume_yes:
