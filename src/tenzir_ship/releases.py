@@ -51,7 +51,7 @@ NOTES_FILENAME = "notes.md"
 RELEASE_DIR = Path("releases")
 _RELEASE_VERSION_PATTERN = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
-    r"(?:-rc\.(?P<rc>0|[1-9]\d*))?$"
+    r"(?:-rc\.(?P<rc>[1-9]\d*))?$"
 )
 
 

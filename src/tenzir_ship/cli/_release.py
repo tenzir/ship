@@ -338,6 +338,12 @@ def _coerce_release_bump(value: Optional[str]) -> ReleaseBump | None:
 
 
 def _collect_current_unreleased_entries(project_root: Path, config: Config) -> list[Entry]:
+    """Return all entries currently present in ``unreleased/`` for this project.
+
+    Unlike ``_collect_unused_entries_for_release``, this intentionally keeps
+    entries that already appear in release candidates because RC creation
+    snapshots by copying entries instead of consuming them.
+    """
     all_entries = list(iter_entries(project_root))
     return [entry for entry in all_entries if entry.project is None or entry.project == config.id]
 
@@ -471,7 +477,8 @@ def create_release(
         if existing_manifest is not None and existing_entry_ids != source_entry_ids:
             raise click.ClickException(
                 f"Release '{tag_version}' already exists with a different entry set. "
-                "Delete or repair it before recreating it from --from."
+                "Delete the existing release directory or use --current-unreleased to "
+                "create the stable release from the current unreleased queue instead."
             )
         selected_entries = source_entries
         cleanup_unreleased_entry_ids = source_entry_ids
@@ -491,7 +498,7 @@ def create_release(
     new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
 
     combined_entries: dict[str, Entry] = {entry.entry_id: entry for entry in existing_entries}
-    for entry in selected_entries:
+    for entry in new_entries:
         combined_entries[entry.entry_id] = entry
 
     entries_sorted = sorted(combined_entries.values(), key=_release_entry_sort_key)
@@ -663,6 +670,12 @@ def create_release(
 
     current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
     unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
+    missing_cleanup_entry_ids = sorted(cleanup_unreleased_entry_ids - set(unreleased_entries_by_id))
+    if missing_cleanup_entry_ids:
+        log_warning(
+            f"{len(missing_cleanup_entry_ids)} promoted entry file(s) were not found in "
+            f"unreleased/ and could not be cleaned up: {', '.join(missing_cleanup_entry_ids)}"
+        )
     cleanup_unreleased_paths = [
         unreleased_entries_by_id[entry_id].path
         for entry_id in sorted(cleanup_unreleased_entry_ids)

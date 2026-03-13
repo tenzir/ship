@@ -4691,6 +4691,44 @@ def test_release_create_rejects_unsupported_prerelease_channel(tmp_path: Path) -
     assert "must use X.Y.Z or X.Y.Z-rc.N" in release_result.output
 
 
+def test_release_create_rejects_release_candidate_zero(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "1.2.3-rc.0",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code != 0
+    assert "must use X.Y.Z or X.Y.Z-rc.N" in release_result.output
+
+
 def test_release_create_rejects_empty_explicit_version_argument(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -5063,6 +5101,89 @@ def test_release_create_release_candidate_keeps_unreleased_entries(tmp_path: Pat
     ).exists()
 
 
+def test_release_create_existing_release_candidate_preserves_snapshotted_entries(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    entry_path = project_dir / "unreleased" / "rc-feature.md"
+
+    rc_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    entry_path.write_text(
+        entry_path.read_text(encoding="utf-8").replace("Snapshot me.", "Edited after snapshot."),
+        encoding="utf-8",
+    )
+
+    rerun_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert rerun_result.exit_code == 0, rerun_result.output
+    assert "already up to date" in rerun_result.output
+
+    rc_notes = (project_dir / "releases" / "v1.2.3-rc.1" / "notes.md").read_text(encoding="utf-8")
+    assert "Snapshot me." in rc_notes
+    assert "Edited after snapshot." not in rc_notes
+
+    promote_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--from",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+
+    stable_notes = (project_dir / "releases" / "v1.2.3" / "notes.md").read_text(encoding="utf-8")
+    assert "Snapshot me." in stable_notes
+    assert "Edited after snapshot." not in stable_notes
+
+
 def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -5144,6 +5265,156 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
     assert show_result.exit_code == 0, show_result.output
     assert "v1.2.3" in show_result.output
     assert "v1.2.3-rc.1" not in show_result.output
+
+
+def test_release_create_warns_when_promoted_entries_are_missing_from_unreleased(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    entry_path = project_dir / "unreleased" / "rc-feature.md"
+
+    rc_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    entry_path.unlink()
+
+    promote_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--from",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+    assert "could not be cleaned up: rc-feature" in promote_result.stderr
+    assert (project_dir / "releases" / "v1.2.3" / "entries" / "rc-feature.md").exists()
+
+
+def test_release_create_rejects_existing_stable_with_mismatched_promoted_entries(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    first_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert first_add.exit_code == 0, first_add.output
+
+    rc_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    second_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Late Fix",
+            "--type",
+            "bugfix",
+            "--description",
+            "Added after the RC.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert second_add.exit_code == 0, second_add.output
+
+    stable_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--current-unreleased",
+            "--yes",
+        ],
+    )
+    assert stable_result.exit_code == 0, stable_result.output
+
+    mismatch_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--from",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert mismatch_result.exit_code != 0
+    assert "Delete the existing release directory or use --current-unreleased" in (
+        mismatch_result.output
+    )
+    assert "repair" not in mismatch_result.output
 
 
 def test_release_create_rejects_from_with_current_unreleased(tmp_path: Path) -> None:
