@@ -43,8 +43,10 @@ def _format_age(days: int) -> str:
 
 def _collect_project_stats(project_root: Path) -> dict:
     """Collect statistics for a single project/module."""
-    # Get latest release info
-    latest = _get_latest_release_manifest(project_root)
+    # Get latest release info. Stats should reflect the newest manifest even if
+    # the project only has release candidates so release counts and latest stay
+    # internally consistent.
+    latest = _get_latest_release_manifest(project_root, stable_only=False)
     if latest:
         last_date = latest.created
         last_str = latest.created.isoformat()

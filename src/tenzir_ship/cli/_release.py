@@ -458,7 +458,12 @@ def create_release(
     if is_rc_release:
         selected_entries = _collect_current_unreleased_entries(project_root, config)
     elif source_release is not None:
-        source_manifest = _find_release_manifest(project_root, source_release)
+        normalized_source_release = normalize_release_version(source_release)
+        if not is_valid_release_version(normalized_source_release):
+            raise click.ClickException(
+                "Source release version must use X.Y.Z or X.Y.Z-rc.N (for example v1.2.3-rc.1)."
+            )
+        source_manifest = _find_release_manifest(project_root, normalized_source_release)
         if source_manifest is None:
             raise click.ClickException(f"Source release '{source_release}' not found.")
         if not is_release_candidate(source_manifest.version):
@@ -498,8 +503,11 @@ def create_release(
     new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
 
     combined_entries: dict[str, Entry] = {entry.entry_id: entry for entry in existing_entries}
-    for entry in new_entries:
-        combined_entries[entry.entry_id] = entry
+    if source_manifest is not None:
+        combined_entries.update({entry.entry_id: entry for entry in selected_entries})
+    else:
+        for entry in new_entries:
+            combined_entries[entry.entry_id] = entry
 
     entries_sorted = sorted(combined_entries.values(), key=_release_entry_sort_key)
 
@@ -682,6 +690,20 @@ def create_release(
         if entry_id in unreleased_entries_by_id
     ]
 
+    promoted_entry_snapshot_updates: list[Entry] = []
+    if source_manifest is not None and existing_manifest is not None:
+        existing_snapshot_ids = set(existing_entry_ids)
+        release_entries_dir = release_dir / "entries"
+        for entry in selected_entries:
+            if entry.entry_id not in existing_snapshot_ids:
+                continue
+            destination_path = release_entries_dir / entry.path.name
+            if (
+                not destination_path.exists()
+                or destination_path.read_bytes() != entry.path.read_bytes()
+            ):
+                promoted_entry_snapshot_updates.append(entry)
+
     changes_required = False
     change_reasons: list[str] = []
     if not release_dir.exists():
@@ -694,6 +716,11 @@ def create_release(
         changes_required = True
         change_reasons.append(
             f"consume {len(cleanup_unreleased_paths)} promoted unreleased entries"
+        )
+    if promoted_entry_snapshot_updates:
+        changes_required = True
+        change_reasons.append(
+            f"refresh {len(promoted_entry_snapshot_updates)} promoted entry snapshot(s)"
         )
     if _normalize_block(manifest_payload) != _normalize_block(existing_manifest_payload):
         changes_required = True
@@ -740,7 +767,8 @@ def create_release(
                 display_path = update.path
             log_success(f"updated version file: {display_path}")
 
-    for entry in new_entries:
+    entries_to_sync = selected_entries if source_manifest is not None else new_entries
+    for entry in entries_to_sync:
         source_path = entry.path
         destination_path = release_entries_dir / source_path.name
         if not source_path.exists():
@@ -748,7 +776,7 @@ def create_release(
             raise click.ClickException(
                 f"Cannot {action} entry '{entry.entry_id}' because {source_path} is missing."
             )
-        if destination_path.exists():
+        if destination_path.exists() and source_manifest is None:
             continue
         if copy_entries:
             shutil.copy2(source_path, destination_path)
@@ -770,8 +798,12 @@ def create_release(
     )
 
     log_success(f"release manifest written: {manifest_path_result.relative_to(project_root)}")
-    if new_entries:
-        relative_release_dir = release_entries_dir.relative_to(project_root)
+    relative_release_dir = release_entries_dir.relative_to(project_root)
+    if source_manifest is not None:
+        log_success(
+            f"synchronized {len(entries_to_sync)} promoted entries in: {relative_release_dir}"
+        )
+    elif new_entries:
         log_success(f"appended {len(new_entries)} entries to: {relative_release_dir}")
     else:
         log_success(f"updated release metadata for {tag_version}.")

@@ -179,7 +179,7 @@ def _collect_unused_entries_for_release(
     project_root: Path,
     config: Config,
     *,
-    include_prereleases: bool = True,
+    include_prereleases: bool = False,
 ) -> list[Entry]:
     """Collect unreleased entries that haven't been included in matching releases."""
     all_entries = list(iter_entries(project_root))
