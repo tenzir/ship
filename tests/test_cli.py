@@ -5919,6 +5919,91 @@ def test_release_create_stable_from_current_unreleased_with_existing_rc(tmp_path
     assert not any((project_dir / "unreleased").glob("*.md"))
 
 
+def test_release_create_rejects_outstanding_rc_on_other_base_without_override(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_entry.exit_code == 0, stable_entry.output
+
+    stable_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.5.0",
+            "--yes",
+        ],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Queued for a later stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_entry.exit_code == 0, rc_entry.output
+
+    rc_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.0-rc.1",
+            "--yes",
+        ],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--yes",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Outstanding release candidates already exist: v2.0.0-rc.1" in result.output
+    assert "--current-unreleased" in result.output
+    assert not (project_dir / "releases" / "v1.6.0").exists()
+
+
 def test_release_version_command(tmp_path: Path) -> None:
     """Test the release version command outputs the latest stable version."""
     runner = CliRunner()

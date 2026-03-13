@@ -378,6 +378,32 @@ def _find_release_candidates_for_base(project_root: Path, version: str) -> list[
     return [manifest for _, manifest in candidates]
 
 
+def _find_outstanding_release_candidates(
+    project_root: Path,
+) -> dict[str, list[ReleaseManifest]]:
+    """Return RC series whose stable release has not been cut yet."""
+    stable_versions: set[str] = set()
+    candidates_by_base: dict[str, list[tuple[Version, ReleaseManifest]]] = {}
+    for manifest in iter_release_manifests(project_root):
+        try:
+            parsed = parse_release_version(manifest.version)
+        except InvalidVersion:
+            continue
+        base_version = stable_release_version(manifest.version)
+        if is_release_candidate(manifest.version):
+            candidates_by_base.setdefault(base_version, []).append((parsed, manifest))
+        else:
+            stable_versions.add(base_version)
+
+    outstanding: dict[str, list[ReleaseManifest]] = {}
+    for base_version, candidates in candidates_by_base.items():
+        if base_version in stable_versions:
+            continue
+        candidates.sort(key=lambda item: item[0])
+        outstanding[base_version] = [manifest for _, manifest in candidates]
+    return outstanding
+
+
 def create_release(
     ctx: CLIContext,
     *,
@@ -489,14 +515,26 @@ def create_release(
         cleanup_unreleased_entry_ids = source_entry_ids
         copy_entries = True
     else:
-        candidate_manifests = _find_release_candidates_for_base(project_root, version)
-        if candidate_manifests and existing_manifest is None and not current_unreleased:
-            latest_candidate = render_release_tag(candidate_manifests[-1].version)
+        outstanding_candidates = _find_outstanding_release_candidates(project_root)
+        if outstanding_candidates and existing_manifest is None and not current_unreleased:
+            matching_candidates = outstanding_candidates.get(stable_release_version(version))
+            if matching_candidates:
+                latest_candidate = render_release_tag(matching_candidates[-1].version)
+                raise click.ClickException(
+                    f"Release candidates already exist for '{stable_release_version(version)}'. "
+                    f"Use --from {latest_candidate} to promote the latest candidate exactly, "
+                    "or pass --current-unreleased to create the stable release from the current "
+                    "unreleased queue."
+                )
+            latest_candidates = ", ".join(
+                render_release_tag(candidates[-1].version)
+                for _, candidates in sorted(outstanding_candidates.items())
+            )
             raise click.ClickException(
-                f"Release candidates already exist for '{stable_release_version(version)}'. "
-                f"Use --from {latest_candidate} to promote the latest candidate exactly, "
-                "or pass --current-unreleased to create the stable release from the current "
-                "unreleased queue."
+                "Outstanding release candidates already exist: "
+                f"{latest_candidates}. Promote one with --from <candidate>, or pass "
+                f"--current-unreleased to create {tag_version} from the current unreleased "
+                "queue."
             )
         selected_entries = unused_entries
 
