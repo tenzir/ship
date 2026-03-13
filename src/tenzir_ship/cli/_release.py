@@ -243,8 +243,20 @@ def _bump_version_value(base: Version, bump: str) -> Version:
     return Version(f"{major}.{minor}.{micro}")
 
 
+def _latest_bump_base_semver(project_root: Path) -> Version | None:
+    """Return the semantic version used as the base for the next bump.
+
+    Prefer the latest stable release. If the project only has release
+    candidates so far, fall back to the newest candidate's base version.
+    """
+    latest_stable = _latest_semver(project_root)
+    if latest_stable is not None:
+        return latest_stable
+    return _latest_semver(project_root, stable_only=False)
+
+
 def _next_version_for_bump(project_root: Path, bump: ReleaseBump) -> str:
-    latest = _latest_semver(project_root)
+    latest = _latest_bump_base_semver(project_root)
     base_version = Version("0.0.0") if latest is None else latest
     next_version = _bump_version_value(base_version, bump)
     return str(next_version)
@@ -480,6 +492,7 @@ def create_release(
     source_manifest: ReleaseManifest | None = None
     cleanup_unreleased_entry_ids: set[str] = set()
     copy_entries = is_rc_release
+    replace_existing_entries = False
 
     if is_rc_release:
         selected_entries = _collect_current_unreleased_entries(project_root, config)
@@ -536,14 +549,19 @@ def create_release(
                 f"--current-unreleased to create {tag_version} from the current unreleased "
                 "queue."
             )
-        selected_entries = unused_entries
+        if current_unreleased:
+            selected_entries = _collect_current_unreleased_entries(project_root, config)
+            cleanup_unreleased_entry_ids = {entry.entry_id for entry in selected_entries}
+            replace_existing_entries = existing_manifest is not None
+        else:
+            selected_entries = unused_entries
 
     new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
 
-    combined_entries: dict[str, Entry] = {entry.entry_id: entry for entry in existing_entries}
-    if source_manifest is not None:
-        combined_entries.update({entry.entry_id: entry for entry in selected_entries})
+    if source_manifest is not None or replace_existing_entries:
+        combined_entries = {entry.entry_id: entry for entry in selected_entries}
     else:
+        combined_entries = {entry.entry_id: entry for entry in existing_entries}
         for entry in new_entries:
             combined_entries[entry.entry_id] = entry
 
@@ -552,12 +570,22 @@ def create_release(
     if title is not None and not title_explicit:
         # Treat explicitly provided empty strings as intentional overrides.
         title_explicit = True
+    default_release_title = f"{config.name} {tag_version}"
+    source_release_title = None
+    if source_manifest is not None:
+        source_tag = render_release_tag(source_manifest.version)
+        if source_manifest.title in {source_tag, f"{config.name} {source_tag}"}:
+            source_release_title = default_release_title
+        else:
+            source_release_title = source_manifest.title
     release_title = (
         title
         if title_explicit
+        else source_release_title
+        if source_release_title is not None
         else existing_manifest.title
         if existing_manifest
-        else f"{config.name} {tag_version}"
+        else default_release_title
     )
     # Validate mutually exclusive intro sources and resolve intro.
     if intro_text and intro_file:
@@ -566,10 +594,10 @@ def create_release(
         manifest_intro: Optional[str] = intro_text.strip() or None
     elif intro_file:
         manifest_intro = intro_file.read_text(encoding="utf-8").strip() or None
+    elif source_manifest is not None:
+        manifest_intro = source_manifest.intro.strip() if source_manifest.intro else None
     elif existing_manifest and existing_manifest.intro:
         manifest_intro = existing_manifest.intro.strip() or None
-    elif source_manifest and source_manifest.intro:
-        manifest_intro = source_manifest.intro.strip() or None
     else:
         manifest_intro = None
 
@@ -731,19 +759,25 @@ def create_release(
         if entry_id in unreleased_entries_by_id
     ]
 
-    promoted_entry_snapshot_updates: list[Entry] = []
-    if source_manifest is not None and existing_manifest is not None:
-        existing_snapshot_ids = set(existing_entry_ids)
+    stale_release_entry_paths: list[Path] = []
+    if replace_existing_entries:
+        existing_entries_by_id = {entry.entry_id: entry for entry in existing_entries}
+        stale_release_entry_paths = [
+            existing_entries_by_id[entry_id].path
+            for entry_id in sorted(existing_entry_ids - set(combined_entries))
+            if entry_id in existing_entries_by_id
+        ]
+
+    entry_snapshot_updates: list[Entry] = []
+    if (source_manifest is not None or replace_existing_entries) and existing_manifest is not None:
         release_entries_dir = release_dir / "entries"
         for entry in selected_entries:
-            if entry.entry_id not in existing_snapshot_ids:
-                continue
             destination_path = release_entries_dir / entry.path.name
             if (
                 not destination_path.exists()
                 or destination_path.read_bytes() != entry.path.read_bytes()
             ):
-                promoted_entry_snapshot_updates.append(entry)
+                entry_snapshot_updates.append(entry)
 
     changes_required = False
     change_reasons: list[str] = []
@@ -758,11 +792,14 @@ def create_release(
         change_reasons.append(
             f"consume {len(cleanup_unreleased_paths)} promoted unreleased entries"
         )
-    if promoted_entry_snapshot_updates:
+    if stale_release_entry_paths:
         changes_required = True
         change_reasons.append(
-            f"refresh {len(promoted_entry_snapshot_updates)} promoted entry snapshot(s)"
+            f"remove {len(stale_release_entry_paths)} stale released entry snapshot(s)"
         )
+    if entry_snapshot_updates:
+        changes_required = True
+        change_reasons.append(f"refresh {len(entry_snapshot_updates)} release entry snapshot(s)")
     if _normalize_block(manifest_payload) != _normalize_block(existing_manifest_payload):
         changes_required = True
         change_reasons.append("update manifest metadata")
@@ -809,7 +846,13 @@ def create_release(
                 display_path = update.path
             log_success(f"updated version file: {display_path}")
 
-    entries_to_sync = selected_entries if source_manifest is not None else new_entries
+    for stale_entry_path in stale_release_entry_paths:
+        if stale_entry_path.exists():
+            stale_entry_path.unlink()
+
+    entries_to_sync = (
+        selected_entries if source_manifest is not None or replace_existing_entries else new_entries
+    )
     for entry in entries_to_sync:
         source_path = entry.path
         destination_path = release_entries_dir / source_path.name
@@ -818,8 +861,10 @@ def create_release(
             raise click.ClickException(
                 f"Cannot {action} entry '{entry.entry_id}' because {source_path} is missing."
             )
-        if destination_path.exists() and source_manifest is None:
-            continue
+        if destination_path.exists():
+            if source_manifest is None and not replace_existing_entries:
+                continue
+            destination_path.unlink()
         if copy_entries:
             shutil.copy2(source_path, destination_path)
         else:
