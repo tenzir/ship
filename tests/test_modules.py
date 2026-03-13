@@ -525,6 +525,102 @@ def test_show_release_excludes_unreleased_module_entries(tmp_path: Path) -> None
     assert "Unreleased Module Feature" not in result.output
 
 
+def test_release_create_from_release_candidate_preserves_module_snapshot(tmp_path: Path) -> None:
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Stable One", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    rc_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v2.0.0-rc.1", "--yes"],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    create_released_entry(mod_root, "Module Stable Two", "v1.1.0", "feature")
+
+    promote_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.0",
+            "--from",
+            "v2.0.0-rc.1",
+            "--yes",
+        ],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+
+    manifest_data = yaml.safe_load(
+        (project_dir / "releases" / "v2.0.0" / "manifest.yaml").read_text(encoding="utf-8")
+    )
+    assert manifest_data["modules"] == {"mymod": "v1.0.0"}
+
+    notes = (project_dir / "releases" / "v2.0.0" / "notes.md").read_text(encoding="utf-8")
+    assert "## My Module v1.0.0" in notes
+    assert "## My Module v1.1.0" not in notes
+    assert "Module Stable One" in notes
+    assert "Module Stable Two" not in notes
+
+    show_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "v2.0.0", "--release", "-m"],
+    )
+    assert show_result.exit_code == 0, show_result.output
+    assert "## My Module v1.0.0" in show_result.output
+    assert "Module Stable One" in show_result.output
+    assert "Module Stable Two" not in show_result.output
+
+
+def test_release_create_ignores_module_release_candidates_for_stable_parent(tmp_path: Path) -> None:
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Stable Module Feature", "v1.0.0", "feature")
+    create_released_entry(mod_root, "RC Module Feature", "v1.1.0-rc.1", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    notes = (project_dir / "releases" / "v2.0.0" / "notes.md").read_text(encoding="utf-8")
+    assert "## My Module v1.0.0" in notes
+    assert "Stable Module Feature" in notes
+    assert "RC Module Feature" not in notes
+
+    show_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "v2.0.0", "--release", "-m"],
+    )
+    assert show_result.exit_code == 0, show_result.output
+    assert "## My Module v1.0.0" in show_result.output
+    assert "Stable Module Feature" in show_result.output
+    assert "RC Module Feature" not in show_result.output
+
+
 def test_show_release_json_includes_modules(tmp_path: Path) -> None:
     """JSON output includes modules array with released entries."""
     import json

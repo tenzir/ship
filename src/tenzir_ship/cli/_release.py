@@ -605,17 +605,31 @@ def create_release(
     # Append module summaries to static release notes
     modules = ctx.get_modules()
     if modules:
-        # Get previous release to determine which module entries are new
+        # Compare against the latest stable parent release so RCs and promoted
+        # stable releases both render cumulative module notes from the previous
+        # stable baseline.
         previous_release = _get_latest_release_manifest(project_root)
         previous_module_versions = previous_release.modules if previous_release else None
 
-        module_entries, current_module_versions = _gather_module_released_entries(
-            modules, previous_module_versions
-        )
-
-        # Record current module versions in manifest
-        if current_module_versions:
-            manifest.modules = current_module_versions
+        module_entries: dict[str, tuple[Config, list[Entry]]] = {}
+        module_version_map: dict[str, str] = {}
+        if source_manifest is not None:
+            if source_manifest.modules:
+                module_entries, _ = _gather_module_released_entries(
+                    modules,
+                    previous_module_versions,
+                    source_manifest.modules,
+                )
+                manifest.modules = dict(source_manifest.modules)
+                module_version_map = dict(source_manifest.modules)
+        else:
+            module_entries, current_module_versions = _gather_module_released_entries(
+                modules,
+                previous_module_versions,
+            )
+            if current_module_versions:
+                manifest.modules = current_module_versions
+                module_version_map = current_module_versions
 
         if module_entries:
             module_sections: list[str] = []
@@ -628,7 +642,7 @@ def create_release(
                     explicit_links=explicit_links,
                 )
                 if module_body:
-                    version_str = current_module_versions.get(module_id, "")
+                    version_str = module_version_map.get(module_id, "")
                     header = (
                         f"## {module_config.name} {version_str}"
                         if version_str

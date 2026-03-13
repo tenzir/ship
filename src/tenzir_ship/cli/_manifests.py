@@ -60,13 +60,15 @@ def _get_sorted_release_manifests(
     return manifests
 
 
-def _get_release_manifest_before(project_root: Path, target_version: str) -> ReleaseManifest | None:
+def _get_release_manifest_before(
+    project_root: Path, target_version: str, *, stable_only: bool = False
+) -> ReleaseManifest | None:
     """Get the release manifest immediately before the target version."""
     try:
         target_parsed = parse_release_version(target_version)
     except InvalidVersion:
         return None
-    manifests = _get_sorted_release_manifests(project_root)
+    manifests = _get_sorted_release_manifests(project_root, stable_only=stable_only)
     previous: ReleaseManifest | None = None
     for parsed, manifest in manifests:
         if parsed >= target_parsed:
@@ -89,6 +91,8 @@ def _gather_module_released_entries(
     modules: list[Module],
     previous_module_versions: dict[str, str] | None = None,
     target_module_versions: dict[str, str] | None = None,
+    *,
+    include_prereleases: bool = False,
 ) -> tuple[dict[str, tuple[Config, list[Entry]]], dict[str, str]]:
     """Gather released entries from all modules, keyed by module ID."""
     result: dict[str, tuple[Config, list[Entry]]] = {}
@@ -107,25 +111,24 @@ def _gather_module_released_entries(
 
         previous_version: Version | None = None
         if previous_version_str:
-            version_str = previous_version_str.lstrip("v")
             try:
-                previous_version = Version(version_str)
+                previous_version = parse_release_version(previous_version_str)
             except InvalidVersion:
                 pass
 
         target_version: Version | None = None
         if target_version_str:
-            version_str = target_version_str.lstrip("v")
             try:
-                target_version = Version(version_str)
+                target_version = parse_release_version(target_version_str)
             except InvalidVersion:
                 pass
 
         new_entries: list[Entry] = []
         for manifest in iter_release_manifests(module.root):
-            release_version_str = manifest.version.lstrip("v")
+            if not include_prereleases and is_release_candidate(manifest.version):
+                continue
             try:
-                release_version = Version(release_version_str)
+                release_version = parse_release_version(manifest.version)
             except InvalidVersion:
                 continue
 

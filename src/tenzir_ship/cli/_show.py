@@ -14,6 +14,7 @@ from typing import (
 )
 
 import click
+from packaging.version import InvalidVersion, Version
 from rich.console import RenderableType, Group
 from rich.panel import Panel
 from rich.text import Text
@@ -33,9 +34,11 @@ from ..releases import (
     ReleaseManifest,
     build_entry_release_index,
     collect_release_entries,
+    is_release_candidate,
     iter_release_manifests,
     load_release_entry,
     normalize_release_version,
+    parse_release_version,
     render_release_tag,
     unused_entries,
     used_entry_ids,
@@ -233,6 +236,31 @@ def _render_release_header(
                 expand=False,
             )
         )
+
+
+def _preferred_release_version(versions: Sequence[str]) -> str | None:
+    """Choose the best release version for display.
+
+    Prefer the newest stable release when an entry appears in both prerelease
+    and stable releases. Fall back to the newest prerelease if no stable
+    release exists.
+    """
+    parsed_versions: list[tuple[Version, str]] = []
+    stable_versions: list[tuple[Version, str]] = []
+    for version in versions:
+        try:
+            parsed = parse_release_version(version)
+        except InvalidVersion:
+            continue
+        item = (parsed, version)
+        parsed_versions.append(item)
+        if not is_release_candidate(version):
+            stable_versions.append(item)
+    candidates = stable_versions or parsed_versions
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[-1][1]
 
 
 def _load_release_entries_for_display(
@@ -618,8 +646,8 @@ def _show_entries_table_release_mode(
         else:
             for entry in filtered:
                 versions = release_index.get(entry.entry_id, [])
-                if versions:
-                    target_version = versions[0]
+                target_version = _preferred_release_version(versions)
+                if target_version:
                     for release_manifest in iter_release_manifests(project_root):
                         release_version = render_release_tag(release_manifest.version)
                         if release_version == target_version:
@@ -908,8 +936,8 @@ def _show_entries_card(
             else:
                 for entry in filtered:
                     versions = release_index_all.get(entry.entry_id, [])
-                    if versions:
-                        target_version = versions[0]
+                    target_version = _preferred_release_version(versions)
+                    if target_version:
                         for release_manifest in iter_release_manifests(project_root):
                             release_version = render_release_tag(release_manifest.version)
                             if release_version == target_version:
@@ -1250,7 +1278,9 @@ def _show_entries_export_release_mode(
                 if modules:
                     if manifest:
                         previous_release = _get_release_manifest_before(
-                            project_root, manifest.version
+                            project_root,
+                            manifest.version,
+                            stable_only=True,
                         )
                         target_module_versions = manifest.modules or None
                     else:
@@ -1260,7 +1290,9 @@ def _show_entries_export_release_mode(
                         previous_release.modules if previous_release else None
                     )
                     module_entries, _ = _gather_module_released_entries(
-                        modules, previous_module_versions, target_module_versions
+                        modules,
+                        previous_module_versions,
+                        target_module_versions,
                     )
                     if module_entries:
                         modules_data: list[dict[str, object]] = []
@@ -1337,7 +1369,9 @@ def _show_entries_export_release_mode(
                 if modules:
                     if manifest:
                         previous_release = _get_release_manifest_before(
-                            project_root, manifest.version
+                            project_root,
+                            manifest.version,
+                            stable_only=True,
                         )
                         target_module_versions = manifest.modules or None
                     else:
@@ -1347,7 +1381,9 @@ def _show_entries_export_release_mode(
                         previous_release.modules if previous_release else None
                     )
                     module_entries, current_versions = _gather_module_released_entries(
-                        modules, previous_module_versions, target_module_versions
+                        modules,
+                        previous_module_versions,
+                        target_module_versions,
                     )
                     version_map = target_module_versions or current_versions
                     if module_entries:
@@ -1394,8 +1430,8 @@ def _show_entries_export_release_mode(
         else:
             for entry in filtered:
                 versions = release_index.get(entry.entry_id, [])
-                if versions:
-                    target_version = versions[0]
+                target_version = _preferred_release_version(versions)
+                if target_version:
                     for manifest in iter_release_manifests(project_root):
                         release_version = render_release_tag(manifest.version)
                         if release_version == target_version:
