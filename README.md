@@ -49,10 +49,13 @@ By default, `reusable-release.yaml` and `reusable-release-advanced.yaml` use the
 caller repository's built-in `GITHUB_TOKEN`. No Tenzir-specific secrets are
 required.
 
+Pin the workflow to a released tag or full commit SHA instead of a moving branch
+name. Replace `<pinned-ref>` below with the immutable ref you want to consume.
+
 ```yaml
 jobs:
   release:
-    uses: tenzir/ship/.github/workflows/reusable-release.yaml@main
+    uses: tenzir/ship/.github/workflows/reusable-release.yaml@<pinned-ref>
     permissions:
       contents: write
     with:
@@ -60,19 +63,25 @@ jobs:
       bump: auto
 ```
 
-### Advanced mode: bring your own auth and signing
+### Auth and signing overrides
 
-The advanced workflow also supports optional overrides for:
+Both `reusable-release.yaml` and `reusable-release-advanced.yaml` support
+optional overrides for:
 
 - `github_app_id` + `github_app_private_key` to mint a GitHub App token
 - `push_token` to override the default `GITHUB_TOKEN`
 - `git_user_name` and `git_user_email` to customize the git author identity
 - `gpg_private_key` to sign commits and tags
+- `sign_commits` and `sign_tags` to control which Git objects are signed when a
+  GPG key is provided
+
+Use `reusable-release-advanced.yaml` when you also need the extra hooks and
+release controls it exposes.
 
 ```yaml
 jobs:
   release:
-    uses: tenzir/ship/.github/workflows/reusable-release-advanced.yaml@main
+    uses: tenzir/ship/.github/workflows/reusable-release-advanced.yaml@<pinned-ref>
     permissions:
       contents: write
     with:
@@ -80,6 +89,8 @@ jobs:
       github_app_id: ${{ vars.MY_GITHUB_APP_ID }}
       git_user_name: release-bot
       git_user_email: release-bot@example.com
+      sign_commits: true
+      sign_tags: true
     secrets:
       github_app_private_key: ${{ secrets.MY_GITHUB_APP_PRIVATE_KEY }}
       gpg_private_key: ${{ secrets.MY_GPG_PRIVATE_KEY }}
