@@ -182,23 +182,6 @@ jobs:
             echo "has_gpg_key=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.x"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Install tenzir-ship
-        run: uv tool install tenzir-ship
-
       - name: Generate app token
         id: app-token
         if: ${{ inputs.github_app_id != '' }}
@@ -227,6 +210,24 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ steps.auth-token.outputs.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install tenzir-ship
+        run: uv tool install tenzir-ship
 
       - name: Set up GPG signing
         if: ${{ steps.optional-credentials.outputs.has_gpg_key == 'true' }}
