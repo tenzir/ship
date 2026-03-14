@@ -80,7 +80,10 @@ optional overrides for:
   GPG key is provided
 
 Use `reusable-release-advanced.yaml` when you also need the extra hooks and
-release controls it exposes.
+release controls it exposes. The simpler `reusable-release.yaml` wrapper keeps
+`pre-create`, `post-create`, and `skip-publish` for common release automation
+and CI smoke tests, while preserving inherited caller secrets for
+secret-backed hook scripts.
 
 ```yaml
 jobs:
