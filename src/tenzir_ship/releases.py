@@ -56,6 +56,15 @@ _RELEASE_VERSION_PATTERN = re.compile(
 
 
 @dataclass
+class ReleaseSource:
+    """Provenance metadata describing how a release snapshot was assembled."""
+
+    mode: str
+    source_release: str | None = None
+    previous_stable: str | None = None
+
+
+@dataclass
 class ReleaseManifest:
     """Representation of a release manifest.
 
@@ -66,6 +75,9 @@ class ReleaseManifest:
 
     For projects with modules, `modules` tracks which version of each
     module was current at release time, enabling incremental module summaries.
+    ``source`` persists provenance so later edits and rendering can preserve
+    the original release baseline instead of re-inferring it from current repo
+    state.
     """
 
     version: str
@@ -74,6 +86,7 @@ class ReleaseManifest:
     title: str = ""
     intro: str | None = None
     modules: dict[str, str] = field(default_factory=dict)
+    source: ReleaseSource | None = None
     path: Path | None = None
 
 
@@ -146,6 +159,21 @@ def _parse_created_date(raw_value: object | None) -> date:
     return date.fromisoformat(str(raw_value))
 
 
+def _parse_release_source(raw_value: object | None) -> ReleaseSource | None:
+    if not isinstance(raw_value, dict):
+        return None
+    mode = str(raw_value.get("mode", "") or "").strip()
+    source_release = str(raw_value.get("source_release", "") or "").strip() or None
+    previous_stable = str(raw_value.get("previous_stable", "") or "").strip() or None
+    if not mode and source_release is None and previous_stable is None:
+        return None
+    return ReleaseSource(
+        mode=mode or "unknown",
+        source_release=source_release,
+        previous_stable=previous_stable,
+    )
+
+
 def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
     """Yield release manifests from disk."""
     directory = release_directory(project_root)
@@ -174,6 +202,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         modules: dict[str, str] = {}
         if isinstance(raw_modules, dict):
             modules = {str(k): str(v) for k, v in raw_modules.items()}
+        source = _parse_release_source(data.get("source"))
 
         manifest = ReleaseManifest(
             version=str(version_value),
@@ -181,6 +210,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
             title=title_value,
             intro=raw_intro or None,
             modules=modules,
+            source=source,
             path=path,
         )
         if isinstance(entry_values, list) and entry_values:
@@ -223,6 +253,16 @@ def serialize_release_manifest(manifest: ReleaseManifest) -> str:
         payload["intro"] = _FoldedString(manifest.intro)
     if manifest.modules:
         payload["modules"] = manifest.modules
+    if manifest.source is not None:
+        source_payload: dict[str, str] = {}
+        if manifest.source.mode:
+            source_payload["mode"] = manifest.source.mode
+        if manifest.source.source_release:
+            source_payload["source_release"] = manifest.source.source_release
+        if manifest.source.previous_stable:
+            source_payload["previous_stable"] = manifest.source.previous_stable
+        if source_payload:
+            payload["source"] = source_payload
     # Use default wrapping width for readability; preserve key order.
     return yaml.safe_dump(payload, sort_keys=False)
 

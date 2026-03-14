@@ -6566,6 +6566,99 @@ def test_show_latest_ignores_release_candidates(tmp_path: Path) -> None:
     assert "v1.5.0" in show_result.output
 
 
+def test_release_create_edit_existing_stable_ignores_rc_snapshots(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_entry.exit_code == 0, stable_entry.output
+
+    stable_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.5.0",
+            "--yes",
+        ],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships later.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_entry.exit_code == 0, rc_entry.output
+
+    rc_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.0-rc.1",
+            "--yes",
+        ],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    edit_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.5.0",
+            "--intro",
+            "Updated stable intro.",
+            "--yes",
+        ],
+    )
+    assert edit_release.exit_code == 0, edit_release.output
+
+    release_entries = {
+        path.stem for path in (project_dir / "releases" / "v1.5.0" / "entries").glob("*.md")
+    }
+    assert release_entries == {"stable-feature"}
+
+    stable_notes = (project_dir / "releases" / "v1.5.0" / "notes.md").read_text(encoding="utf-8")
+    assert stable_notes.startswith("Updated stable intro.")
+    assert "Stable Feature" in stable_notes
+    assert "Preview Feature" not in stable_notes
+
+
 def test_release_version_bare_flag(tmp_path: Path) -> None:
     """Test the release version --bare flag strips the v prefix."""
     runner = CliRunner()

@@ -24,6 +24,7 @@ from ..entries import Entry, iter_entries
 from ..releases import (
     NOTES_FILENAME,
     ReleaseManifest,
+    ReleaseSource,
     is_release_candidate,
     is_stable_release,
     is_valid_release_version,
@@ -70,6 +71,7 @@ from ._rendering import (
     _render_module_entries_compact,
     _release_entry_sort_key,
 )
+from ._manifests import _get_previous_stable_manifest, _get_release_manifest_before
 from ._show import (
     _collect_unused_entries_for_release,
     _gather_module_released_entries,
@@ -187,6 +189,54 @@ STATUS_TABLE_CELLS = {
 
 ReleaseBump = Literal["patch", "minor", "major"]
 ReleaseVersionSource = Literal["explicit", "manual", "auto"]
+
+
+class ReleaseMode(Enum):
+    """High-level release workflows with distinct invariants."""
+
+    SNAPSHOT_PRERELEASE = "snapshot-prerelease"
+    PROMOTE_PRERELEASE = "promote-prerelease"
+    SYNC_STABLE_QUEUE = "sync-stable-queue"
+    REPLACE_WITH_CURRENT_UNRELEASED = "replace-with-current-unreleased"
+
+
+@dataclass(frozen=True)
+class ReleaseIntent:
+    """Normalized release workflow intent derived from CLI/API inputs."""
+
+    mode: ReleaseMode
+    version: str
+    tag_version: str
+    version_source: ReleaseVersionSource
+    existing_manifest: ReleaseManifest | None
+    source_manifest: ReleaseManifest | None = None
+
+    @property
+    def is_prerelease(self) -> bool:
+        """Return whether the target release is a prerelease."""
+        return self.mode is ReleaseMode.SNAPSHOT_PRERELEASE
+
+
+@dataclass
+class ReleaseEntryPlan:
+    """Entry selection and file movement plan for a release workflow."""
+
+    existing_entries: list[Entry]
+    selected_entries: list[Entry]
+    combined_entries: list[Entry]
+    new_entries: list[Entry]
+    cleanup_unreleased_entry_ids: set[str]
+    copy_entries: bool
+    replace_existing_entries: bool
+
+
+@dataclass
+class ModuleReleasePlan:
+    """Resolved module snapshot and rendered entry selection for a release."""
+
+    entries_by_module: dict[str, tuple[Config, list[Entry]]]
+    version_map: dict[str, str]
+    previous_release: ReleaseManifest | None
 
 
 def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
@@ -416,6 +466,266 @@ def _find_outstanding_release_candidates(
     return outstanding
 
 
+def _resolve_release_intent(
+    project_root: Path,
+    *,
+    version: str,
+    version_source: ReleaseVersionSource,
+    source_release: Optional[str],
+    current_unreleased: bool,
+) -> ReleaseIntent:
+    """Normalize CLI/API inputs into an explicit release workflow mode."""
+    if source_release and current_unreleased:
+        raise click.ClickException("Use only one of --from or --current-unreleased.")
+    if source_release and version_source != "explicit":
+        raise click.ClickException("Provide an explicit stable version when using --from.")
+
+    tag_version = render_release_tag(version)
+    is_prerelease = is_release_candidate(version)
+    if is_prerelease and source_release:
+        raise click.ClickException("--from can only be used when creating a stable release.")
+    if is_prerelease and current_unreleased:
+        raise click.ClickException(
+            "Release candidates already snapshot the current unreleased queue; "
+            "--current-unreleased is only for stable releases."
+        )
+
+    existing_manifest = _find_release_manifest(project_root, version)
+    if version_source in {"manual", "auto"} and existing_manifest is not None:
+        follow_up = (
+            "Supply a different bump flag or explicit version."
+            if version_source == "manual"
+            else "Supply an explicit version or a manual bump flag."
+        )
+        raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
+
+    if is_prerelease:
+        return ReleaseIntent(
+            mode=ReleaseMode.SNAPSHOT_PRERELEASE,
+            version=version,
+            tag_version=tag_version,
+            version_source=version_source,
+            existing_manifest=existing_manifest,
+        )
+
+    if source_release is not None:
+        normalized_source_release = normalize_release_version(source_release)
+        if not is_valid_release_version(normalized_source_release):
+            raise click.ClickException(
+                "Source release version must use X.Y.Z or X.Y.Z-rc.N (for example v1.2.3-rc.1)."
+            )
+        source_manifest = _find_release_manifest(project_root, normalized_source_release)
+        if source_manifest is None:
+            raise click.ClickException(f"Source release '{source_release}' not found.")
+        if not is_release_candidate(source_manifest.version):
+            raise click.ClickException(
+                "--from currently only supports promoting release candidates."
+            )
+        if not is_stable_release(version):
+            raise click.ClickException("--from requires a stable target version like 1.2.3.")
+        if stable_release_version(source_manifest.version) != stable_release_version(version):
+            raise click.ClickException(
+                f"Source release '{render_release_tag(source_manifest.version)}' does not match "
+                f"target stable version '{tag_version}'."
+            )
+        return ReleaseIntent(
+            mode=ReleaseMode.PROMOTE_PRERELEASE,
+            version=version,
+            tag_version=tag_version,
+            version_source=version_source,
+            existing_manifest=existing_manifest,
+            source_manifest=source_manifest,
+        )
+
+    outstanding_candidates = _find_outstanding_release_candidates(project_root)
+    if outstanding_candidates and existing_manifest is None and not current_unreleased:
+        matching_candidates = outstanding_candidates.get(stable_release_version(version))
+        if matching_candidates:
+            latest_candidate = render_release_tag(matching_candidates[-1].version)
+            raise click.ClickException(
+                f"Release candidates already exist for '{stable_release_version(version)}'. "
+                f"Use --from {latest_candidate} to promote the latest candidate exactly, "
+                "or pass --current-unreleased to create the stable release from the current "
+                "unreleased queue."
+            )
+        latest_candidates = ", ".join(
+            render_release_tag(candidates[-1].version)
+            for _, candidates in sorted(outstanding_candidates.items())
+        )
+        raise click.ClickException(
+            "Outstanding release candidates already exist: "
+            f"{latest_candidates}. Promote one with --from <candidate>, or pass "
+            f"--current-unreleased to create {tag_version} from the current unreleased "
+            "queue."
+        )
+
+    return ReleaseIntent(
+        mode=(
+            ReleaseMode.REPLACE_WITH_CURRENT_UNRELEASED
+            if current_unreleased
+            else ReleaseMode.SYNC_STABLE_QUEUE
+        ),
+        version=version,
+        tag_version=tag_version,
+        version_source=version_source,
+        existing_manifest=existing_manifest,
+    )
+
+
+def _build_release_entry_plan(
+    project_root: Path,
+    config: Config,
+    intent: ReleaseIntent,
+) -> ReleaseEntryPlan:
+    """Resolve the exact parent entry snapshot for the requested workflow."""
+    existing_entries: list[Entry] = []
+    existing_entry_ids: set[str] = set()
+    if intent.existing_manifest is not None:
+        existing_entries = _load_manifest_entries(project_root, intent.existing_manifest)
+        existing_entry_ids = {entry.entry_id for entry in existing_entries}
+
+    cleanup_unreleased_entry_ids: set[str] = set()
+    copy_entries = intent.mode in {
+        ReleaseMode.SNAPSHOT_PRERELEASE,
+        ReleaseMode.PROMOTE_PRERELEASE,
+    }
+    replace_existing_entries = intent.mode is ReleaseMode.REPLACE_WITH_CURRENT_UNRELEASED
+
+    if intent.mode is ReleaseMode.SNAPSHOT_PRERELEASE:
+        selected_entries = _collect_current_unreleased_entries(project_root, config)
+    elif intent.mode is ReleaseMode.PROMOTE_PRERELEASE:
+        assert intent.source_manifest is not None
+        selected_entries = _load_manifest_entries(project_root, intent.source_manifest)
+        source_entry_ids = {entry.entry_id for entry in selected_entries}
+        if intent.existing_manifest is not None and existing_entry_ids != source_entry_ids:
+            raise click.ClickException(
+                f"Release '{intent.tag_version}' already exists with a different entry set. "
+                "Delete the existing release directory or use --current-unreleased to "
+                "create the stable release from the current unreleased queue instead."
+            )
+        cleanup_unreleased_entry_ids = source_entry_ids
+        replace_existing_entries = intent.existing_manifest is not None
+    elif intent.mode is ReleaseMode.REPLACE_WITH_CURRENT_UNRELEASED:
+        selected_entries = _collect_current_unreleased_entries(project_root, config)
+        cleanup_unreleased_entry_ids = {entry.entry_id for entry in selected_entries}
+        replace_existing_entries = intent.existing_manifest is not None
+    else:
+        include_prereleases = intent.existing_manifest is not None
+        selected_entries = _collect_unused_entries_for_release(
+            project_root,
+            config,
+            include_prereleases=include_prereleases,
+        )
+
+    new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
+    if replace_existing_entries:
+        combined_entries = list(selected_entries)
+    else:
+        combined_entries_map = {entry.entry_id: entry for entry in existing_entries}
+        for entry in new_entries:
+            combined_entries_map[entry.entry_id] = entry
+        combined_entries = list(combined_entries_map.values())
+
+    combined_entries.sort(key=_release_entry_sort_key)
+    return ReleaseEntryPlan(
+        existing_entries=existing_entries,
+        selected_entries=list(selected_entries),
+        combined_entries=combined_entries,
+        new_entries=new_entries,
+        cleanup_unreleased_entry_ids=cleanup_unreleased_entry_ids,
+        copy_entries=copy_entries,
+        replace_existing_entries=replace_existing_entries,
+    )
+
+
+def _resolve_release_baseline(
+    project_root: Path,
+    intent: ReleaseIntent,
+) -> ReleaseManifest | None:
+    """Resolve the stable baseline that this release snapshot compares against."""
+    baseline_holder = intent.source_manifest or intent.existing_manifest
+    if baseline_holder is not None:
+        recorded = _get_previous_stable_manifest(project_root, baseline_holder)
+        if recorded is not None:
+            return recorded
+    return _get_release_manifest_before(project_root, intent.version, stable_only=True)
+
+
+def _resolve_release_source(
+    intent: ReleaseIntent,
+    entry_plan: ReleaseEntryPlan,
+    previous_release: ReleaseManifest | None,
+) -> ReleaseSource | None:
+    """Persist provenance for the release snapshot unless this is metadata-only."""
+    if (
+        intent.existing_manifest is not None
+        and intent.mode is ReleaseMode.SYNC_STABLE_QUEUE
+        and not entry_plan.new_entries
+        and not entry_plan.replace_existing_entries
+    ):
+        return intent.existing_manifest.source
+
+    return ReleaseSource(
+        mode=intent.mode.value,
+        source_release=(
+            render_release_tag(intent.source_manifest.version)
+            if intent.source_manifest is not None
+            else None
+        ),
+        previous_stable=(
+            render_release_tag(previous_release.version) if previous_release is not None else None
+        ),
+    )
+
+
+def _build_module_release_plan(
+    ctx: CLIContext,
+    project_root: Path,
+    intent: ReleaseIntent,
+    previous_release: ReleaseManifest | None,
+) -> ModuleReleasePlan:
+    """Resolve module versions and entries for the release snapshot."""
+    modules = ctx.get_modules()
+    if not modules:
+        return ModuleReleasePlan({}, {}, previous_release)
+
+    previous_module_versions = previous_release.modules if previous_release else None
+
+    if intent.source_manifest is not None and intent.source_manifest.modules:
+        target_versions = dict(intent.source_manifest.modules)
+        entries_by_module, _ = _gather_module_released_entries(
+            modules,
+            previous_module_versions,
+            target_versions,
+            include_prereleases=is_release_candidate(intent.source_manifest.version),
+        )
+        return ModuleReleasePlan(entries_by_module, target_versions, previous_release)
+
+    if (
+        intent.existing_manifest is not None
+        and intent.mode is not ReleaseMode.REPLACE_WITH_CURRENT_UNRELEASED
+        and intent.existing_manifest.modules
+    ):
+        target_versions = dict(intent.existing_manifest.modules)
+        entries_by_module, _ = _gather_module_released_entries(
+            modules,
+            previous_module_versions,
+            target_versions,
+            include_prereleases=(
+                intent.is_prerelease
+                or any(is_release_candidate(version) for version in target_versions.values())
+            ),
+        )
+        return ModuleReleasePlan(entries_by_module, target_versions, previous_release)
+
+    entries_by_module, current_versions = _gather_module_released_entries(
+        modules,
+        previous_module_versions,
+        include_prereleases=intent.is_prerelease,
+    )
+    return ModuleReleasePlan(entries_by_module, current_versions, previous_release)
+
+
 def create_release(
     ctx: CLIContext,
     *,
@@ -440,7 +750,7 @@ def create_release(
     project_root = ctx.project_root
     normalized_bump = _coerce_release_bump(version_bump)
 
-    unused_entries = _collect_unused_entries_for_release(
+    preview_entries = _collect_unused_entries_for_release(
         project_root,
         config,
         include_prereleases=False,
@@ -449,128 +759,33 @@ def create_release(
         project_root,
         version,
         normalized_bump,
-        unreleased_entries=unused_entries,
+        unreleased_entries=preview_entries,
+    )
+    intent = _resolve_release_intent(
+        project_root,
+        version=version,
+        version_source=version_source,
+        source_release=source_release,
+        current_unreleased=current_unreleased,
     )
 
-    if source_release and current_unreleased:
-        raise click.ClickException("Use only one of --from or --current-unreleased.")
-    if source_release and version_source != "explicit":
-        raise click.ClickException("Provide an explicit stable version when using --from.")
-
-    tag_version = render_release_tag(version)
-    is_rc_release = is_release_candidate(version)
-    if is_rc_release and source_release:
-        raise click.ClickException("--from can only be used when creating a stable release.")
-    if is_rc_release and current_unreleased:
-        raise click.ClickException(
-            "Release candidates already snapshot the current unreleased queue; "
-            "--current-unreleased is only for stable releases."
-        )
-
-    existing_manifest = _find_release_manifest(project_root, version)
-    if version_source in {"manual", "auto"} and existing_manifest is not None:
-        follow_up = (
-            "Supply a different bump flag or explicit version."
-            if version_source == "manual"
-            else "Supply an explicit version or a manual bump flag."
-        )
-        raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
+    existing_manifest = intent.existing_manifest
+    source_manifest = intent.source_manifest
     release_dir = (
         release_manifest_root(project_root, existing_manifest)
         if existing_manifest is not None
-        else release_directory(project_root) / tag_version
+        else release_directory(project_root) / intent.tag_version
     )
     manifest_path = release_dir / "manifest.yaml"
     notes_path = release_dir / NOTES_FILENAME
 
-    existing_entries: list[Entry] = []
-    existing_entry_ids: set[str] = set()
-    if existing_manifest:
-        existing_entries = _load_manifest_entries(project_root, existing_manifest)
-        existing_entry_ids = {entry.entry_id for entry in existing_entries}
-
-    source_manifest: ReleaseManifest | None = None
-    cleanup_unreleased_entry_ids: set[str] = set()
-    copy_entries = is_rc_release
-    replace_existing_entries = False
-
-    if is_rc_release:
-        selected_entries = _collect_current_unreleased_entries(project_root, config)
-    elif source_release is not None:
-        normalized_source_release = normalize_release_version(source_release)
-        if not is_valid_release_version(normalized_source_release):
-            raise click.ClickException(
-                "Source release version must use X.Y.Z or X.Y.Z-rc.N (for example v1.2.3-rc.1)."
-            )
-        source_manifest = _find_release_manifest(project_root, normalized_source_release)
-        if source_manifest is None:
-            raise click.ClickException(f"Source release '{source_release}' not found.")
-        if not is_release_candidate(source_manifest.version):
-            raise click.ClickException(
-                "--from currently only supports promoting release candidates."
-            )
-        if not is_stable_release(version):
-            raise click.ClickException("--from requires a stable target version like 1.2.3.")
-        if stable_release_version(source_manifest.version) != stable_release_version(version):
-            raise click.ClickException(
-                f"Source release '{render_release_tag(source_manifest.version)}' does not match "
-                f"target stable version '{tag_version}'."
-            )
-        source_entries = _load_manifest_entries(project_root, source_manifest)
-        source_entry_ids = {entry.entry_id for entry in source_entries}
-        if existing_manifest is not None and existing_entry_ids != source_entry_ids:
-            raise click.ClickException(
-                f"Release '{tag_version}' already exists with a different entry set. "
-                "Delete the existing release directory or use --current-unreleased to "
-                "create the stable release from the current unreleased queue instead."
-            )
-        selected_entries = source_entries
-        cleanup_unreleased_entry_ids = source_entry_ids
-        copy_entries = True
-    else:
-        outstanding_candidates = _find_outstanding_release_candidates(project_root)
-        if outstanding_candidates and existing_manifest is None and not current_unreleased:
-            matching_candidates = outstanding_candidates.get(stable_release_version(version))
-            if matching_candidates:
-                latest_candidate = render_release_tag(matching_candidates[-1].version)
-                raise click.ClickException(
-                    f"Release candidates already exist for '{stable_release_version(version)}'. "
-                    f"Use --from {latest_candidate} to promote the latest candidate exactly, "
-                    "or pass --current-unreleased to create the stable release from the current "
-                    "unreleased queue."
-                )
-            latest_candidates = ", ".join(
-                render_release_tag(candidates[-1].version)
-                for _, candidates in sorted(outstanding_candidates.items())
-            )
-            raise click.ClickException(
-                "Outstanding release candidates already exist: "
-                f"{latest_candidates}. Promote one with --from <candidate>, or pass "
-                f"--current-unreleased to create {tag_version} from the current unreleased "
-                "queue."
-            )
-        if current_unreleased:
-            selected_entries = _collect_current_unreleased_entries(project_root, config)
-            cleanup_unreleased_entry_ids = {entry.entry_id for entry in selected_entries}
-            replace_existing_entries = existing_manifest is not None
-        else:
-            selected_entries = unused_entries
-
-    new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
-
-    if source_manifest is not None or replace_existing_entries:
-        combined_entries = {entry.entry_id: entry for entry in selected_entries}
-    else:
-        combined_entries = {entry.entry_id: entry for entry in existing_entries}
-        for entry in new_entries:
-            combined_entries[entry.entry_id] = entry
-
-    entries_sorted = sorted(combined_entries.values(), key=_release_entry_sort_key)
+    entry_plan = _build_release_entry_plan(project_root, config, intent)
+    entries_sorted = entry_plan.combined_entries
 
     if title is not None and not title_explicit:
         # Treat explicitly provided empty strings as intentional overrides.
         title_explicit = True
-    default_release_title = f"{config.name} {tag_version}"
+    default_release_title = f"{config.name} {intent.tag_version}"
     source_release_title = None
     if source_manifest is not None:
         source_tag = render_release_tag(source_manifest.version)
@@ -587,7 +802,7 @@ def create_release(
         if existing_manifest
         else default_release_title
     )
-    # Validate mutually exclusive intro sources and resolve intro.
+
     if intro_text and intro_file:
         raise click.ClickException("Use only one of --intro or --intro-file, not both.")
     if intro_text is not None:
@@ -613,7 +828,7 @@ def create_release(
         table.add_column("Title")
         table.add_column("Type", no_wrap=True, justify="center")
         table.add_column("ID", style="cyan")
-        new_entry_ids = {entry.entry_id for entry in new_entries}
+        new_entry_ids = {entry.entry_id for entry in entry_plan.new_entries}
         for entry in entries_sorted:
             status = "new" if entry.entry_id in new_entry_ids else "existing"
             status_cell = STATUS_TABLE_CELLS.get(status, Text("•"))
@@ -670,71 +885,41 @@ def create_release(
                 prefer_compact = False
         compact_flag = prefer_compact
 
-    release_notes = release_notes_compact if compact_flag else release_notes_standard
-
+    previous_release = _resolve_release_baseline(project_root, intent)
+    module_plan = _build_module_release_plan(ctx, project_root, intent, previous_release)
     manifest = ReleaseManifest(
-        version=tag_version,
+        version=intent.tag_version,
         created=release_dt,
         entries=[entry.entry_id for entry in entries_sorted],
         title=release_title or "",
         intro=manifest_intro or None,
+        modules=dict(module_plan.version_map),
+        source=_resolve_release_source(intent, entry_plan, previous_release),
         path=existing_manifest.path if existing_manifest is not None else None,
     )
 
+    release_notes = release_notes_compact if compact_flag else release_notes_standard
     readme_content = _compose_release_document(manifest.intro, release_notes)
-
-    # Append module summaries to static release notes
-    modules = ctx.get_modules()
-    if modules:
-        # Compare against the latest stable parent release so RCs and promoted
-        # stable releases both render cumulative module notes from the previous
-        # stable baseline.
-        previous_release = _get_latest_release_manifest(project_root)
-        previous_module_versions = previous_release.modules if previous_release else None
-
-        module_entries: dict[str, tuple[Config, list[Entry]]] = {}
-        module_version_map: dict[str, str] = {}
-        if source_manifest is not None:
-            include_module_prereleases = is_release_candidate(source_manifest.version)
-            if source_manifest.modules:
-                module_entries, _ = _gather_module_released_entries(
-                    modules,
-                    previous_module_versions,
-                    source_manifest.modules,
-                    include_prereleases=include_module_prereleases,
-                )
-                manifest.modules = dict(source_manifest.modules)
-                module_version_map = dict(source_manifest.modules)
-        else:
-            module_entries, current_module_versions = _gather_module_released_entries(
-                modules,
-                previous_module_versions,
-                include_prereleases=is_rc_release,
+    if module_plan.entries_by_module:
+        module_sections: list[str] = []
+        for module_id in sorted(module_plan.entries_by_module.keys()):
+            module_config, module_entries = module_plan.entries_by_module[module_id]
+            module_body = _render_module_entries_compact(
+                module_entries,
+                module_config,
+                include_emoji=True,
+                explicit_links=explicit_links,
             )
-            if current_module_versions:
-                manifest.modules = current_module_versions
-                module_version_map = current_module_versions
-
-        if module_entries:
-            module_sections: list[str] = []
-            for module_id in sorted(module_entries.keys()):
-                module_config, entries = module_entries[module_id]
-                module_body = _render_module_entries_compact(
-                    entries,
-                    module_config,
-                    include_emoji=True,
-                    explicit_links=explicit_links,
+            if module_body:
+                version_str = module_plan.version_map.get(module_id, "")
+                header = (
+                    f"## {module_config.name} {version_str}"
+                    if version_str
+                    else f"## {module_config.name}"
                 )
-                if module_body:
-                    version_str = module_version_map.get(module_id, "")
-                    header = (
-                        f"## {module_config.name} {version_str}"
-                        if version_str
-                        else f"## {module_config.name}"
-                    )
-                    module_sections.append(f"{header}\n\n{module_body}")
-            if module_sections:
-                readme_content = readme_content + "\n\n---\n\n" + "\n\n".join(module_sections)
+                module_sections.append(f"{header}\n\n{module_body}")
+        if module_sections:
+            readme_content = readme_content + "\n\n---\n\n" + "\n\n".join(module_sections)
 
     manifest_payload = serialize_release_manifest(manifest)
     manifest_exists = manifest_path.exists()
@@ -747,7 +932,9 @@ def create_release(
 
     current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
     unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
-    missing_cleanup_entry_ids = sorted(cleanup_unreleased_entry_ids - set(unreleased_entries_by_id))
+    missing_cleanup_entry_ids = sorted(
+        entry_plan.cleanup_unreleased_entry_ids - set(unreleased_entries_by_id)
+    )
     if missing_cleanup_entry_ids:
         log_warning(
             f"{len(missing_cleanup_entry_ids)} promoted entry file(s) were not found in "
@@ -755,23 +942,26 @@ def create_release(
         )
     cleanup_unreleased_paths = [
         unreleased_entries_by_id[entry_id].path
-        for entry_id in sorted(cleanup_unreleased_entry_ids)
+        for entry_id in sorted(entry_plan.cleanup_unreleased_entry_ids)
         if entry_id in unreleased_entries_by_id
     ]
 
     stale_release_entry_paths: list[Path] = []
-    if replace_existing_entries:
-        existing_entries_by_id = {entry.entry_id: entry for entry in existing_entries}
+    if entry_plan.replace_existing_entries:
+        existing_entries_by_id = {entry.entry_id: entry for entry in entry_plan.existing_entries}
+        combined_entry_ids = {entry.entry_id for entry in entry_plan.combined_entries}
         stale_release_entry_paths = [
             existing_entries_by_id[entry_id].path
-            for entry_id in sorted(existing_entry_ids - set(combined_entries))
+            for entry_id in sorted(existing_entries_by_id.keys() - combined_entry_ids)
             if entry_id in existing_entries_by_id
         ]
 
     entry_snapshot_updates: list[Entry] = []
-    if (source_manifest is not None or replace_existing_entries) and existing_manifest is not None:
+    if (
+        source_manifest is not None or entry_plan.replace_existing_entries
+    ) and existing_manifest is not None:
         release_entries_dir = release_dir / "entries"
-        for entry in selected_entries:
+        for entry in entry_plan.selected_entries:
             destination_path = release_entries_dir / entry.path.name
             if (
                 not destination_path.exists()
@@ -784,9 +974,9 @@ def create_release(
     if not release_dir.exists():
         changes_required = True
         change_reasons.append("create release directory")
-    if new_entries:
+    if entry_plan.new_entries:
         changes_required = True
-        change_reasons.append(f"append {len(new_entries)} new entries")
+        change_reasons.append(f"append {len(entry_plan.new_entries)} new entries")
     if cleanup_unreleased_paths:
         changes_required = True
         change_reasons.append(
@@ -808,7 +998,7 @@ def create_release(
         change_reasons.append("refresh release notes")
 
     version_file_updates = []
-    if not is_rc_release and _is_current_or_newer_release(project_root, version):
+    if not intent.is_prerelease and _is_current_or_newer_release(project_root, version):
         version_file_updates = plan_version_file_updates(
             project_root,
             version,
@@ -822,12 +1012,12 @@ def create_release(
         change_reasons.append(f"update {count} version file{plural}")
 
     if not changes_required:
-        log_success(f"release '{tag_version}' is already up to date.")
-        click.echo(tag_version)
+        log_success(f"release '{intent.tag_version}' is already up to date.")
+        click.echo(intent.tag_version)
         return
 
     if not assume_yes:
-        log_info(f"changes for release {format_bold(tag_version)}:")
+        log_info(f"changes for release {format_bold(intent.tag_version)}:")
         for reason in change_reasons:
             log_success(reason)
         log_info(f"re-run with {format_bold('--yes')} to apply these updates.")
@@ -851,21 +1041,23 @@ def create_release(
             stale_entry_path.unlink()
 
     entries_to_sync = (
-        selected_entries if source_manifest is not None or replace_existing_entries else new_entries
+        entry_plan.selected_entries
+        if source_manifest is not None or entry_plan.replace_existing_entries
+        else entry_plan.new_entries
     )
     for entry in entries_to_sync:
         source_path = entry.path
         destination_path = release_entries_dir / source_path.name
         if not source_path.exists():
-            action = "copy" if copy_entries else "move"
+            action = "copy" if entry_plan.copy_entries else "move"
             raise click.ClickException(
                 f"Cannot {action} entry '{entry.entry_id}' because {source_path} is missing."
             )
         if destination_path.exists():
-            if source_manifest is None and not replace_existing_entries:
+            if source_manifest is None and not entry_plan.replace_existing_entries:
                 continue
             destination_path.unlink()
-        if copy_entries:
+        if entry_plan.copy_entries:
             shutil.copy2(source_path, destination_path)
         else:
             source_path.rename(destination_path)
@@ -890,15 +1082,17 @@ def create_release(
         log_success(
             f"synchronized {len(entries_to_sync)} promoted entries in: {relative_release_dir}"
         )
-    elif new_entries:
-        log_success(f"appended {len(new_entries)} entries to: {relative_release_dir}")
+    elif entry_plan.new_entries:
+        log_success(f"appended {len(entry_plan.new_entries)} entries to: {relative_release_dir}")
     else:
-        log_success(f"updated release metadata for {tag_version}.")
+        log_success(f"updated release metadata for {intent.tag_version}.")
     if removed_unreleased_count:
-        log_success(f"consumed {removed_unreleased_count} unreleased entries for {tag_version}.")
+        log_success(
+            f"consumed {removed_unreleased_count} unreleased entries for {intent.tag_version}."
+        )
 
     # Output version to stdout for scripting (e.g., VERSION=$(tenzir-ship release create ...))
-    click.echo(tag_version)
+    click.echo(intent.tag_version)
 
 
 def publish_release(

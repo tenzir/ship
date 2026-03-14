@@ -584,6 +584,68 @@ def test_release_create_from_release_candidate_preserves_module_snapshot(tmp_pat
     assert "Module Stable Two" not in show_result.output
 
 
+def test_release_create_edit_existing_release_preserves_module_snapshot(tmp_path: Path) -> None:
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Stable One", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent One")
+
+    runner = CliRunner()
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    create_released_entry(mod_root, "Module Stable Two", "v1.1.0", "feature")
+    create_entry(project_dir, "Parent Two")
+    second_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.1.0", "--yes"],
+    )
+    assert second_release.exit_code == 0, second_release.output
+
+    edit_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--intro",
+            "Updated intro.",
+            "--yes",
+        ],
+    )
+    assert edit_release.exit_code == 0, edit_release.output
+
+    notes = (project_dir / "releases" / "v1.0.0" / "notes.md").read_text(encoding="utf-8")
+    assert notes.startswith("Updated intro.")
+    assert "## My Module v1.0.0" in notes
+    assert "Module Stable One" in notes
+    assert "## My Module v1.1.0" not in notes
+    assert "Module Stable Two" not in notes
+
+    show_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "v1.0.0", "--release", "-m"],
+    )
+    assert show_result.exit_code == 0, show_result.output
+    assert "## My Module v1.0.0" in show_result.output
+    assert "Module Stable One" in show_result.output
+    assert "## My Module v1.1.0" not in show_result.output
+    assert "Module Stable Two" not in show_result.output
+
+
 def test_release_create_ignores_module_release_candidates_for_stable_parent(tmp_path: Path) -> None:
     packages = tmp_path / "packages"
     mod_root = create_module(packages, "mymod", "My Module")

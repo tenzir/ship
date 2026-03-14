@@ -82,8 +82,8 @@ from ._export import (
     _export_json_payload,
 )
 from ._manifests import (
-    _get_release_manifest_before,
     _get_latest_release_manifest,
+    _get_previous_stable_manifest,
     _gather_module_released_entries,
 )
 
@@ -1286,11 +1286,7 @@ def _show_entries_export_release_mode(
                 modules = ctx.get_modules()
                 if modules:
                     if manifest:
-                        previous_release = _get_release_manifest_before(
-                            project_root,
-                            manifest.version,
-                            stable_only=True,
-                        )
+                        previous_release = _get_previous_stable_manifest(project_root, manifest)
                         target_module_versions = manifest.modules or None
                     else:
                         previous_release = _get_latest_release_manifest(project_root)
@@ -1378,11 +1374,7 @@ def _show_entries_export_release_mode(
                 modules = ctx.get_modules()
                 if modules:
                     if manifest:
-                        previous_release = _get_release_manifest_before(
-                            project_root,
-                            manifest.version,
-                            stable_only=True,
-                        )
+                        previous_release = _get_previous_stable_manifest(project_root, manifest)
                         target_module_versions = manifest.modules or None
                     else:
                         previous_release = _get_latest_release_manifest(project_root)

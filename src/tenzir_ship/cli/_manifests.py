@@ -14,6 +14,7 @@ from ..releases import (
     is_release_candidate,
     iter_release_manifests,
     load_release_entry,
+    normalize_release_version,
     parse_release_version,
     render_release_tag,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "_get_module_latest_version",
     "_get_sorted_release_manifests",
     "_get_release_manifest_before",
+    "_get_previous_stable_manifest",
     "_get_latest_release_manifest",
     "_gather_module_released_entries",
 ]
@@ -78,6 +80,15 @@ def _get_release_manifest_before(
     return previous
 
 
+def _find_release_manifest(project_root: Path, version: str) -> ReleaseManifest | None:
+    """Return the manifest matching *version*, if present."""
+    normalized = normalize_release_version(version)
+    for manifest in iter_release_manifests(project_root):
+        if normalize_release_version(manifest.version) == normalized:
+            return manifest
+    return None
+
+
 def _get_latest_release_manifest(
     project_root: Path, *, stable_only: bool = True
 ) -> ReleaseManifest | None:
@@ -86,6 +97,17 @@ def _get_latest_release_manifest(
     if not manifests:
         return None
     return manifests[-1][1]
+
+
+def _get_previous_stable_manifest(
+    project_root: Path, manifest: ReleaseManifest
+) -> ReleaseManifest | None:
+    """Resolve the stable baseline recorded for a release manifest."""
+    if manifest.source and manifest.source.previous_stable:
+        recorded = _find_release_manifest(project_root, manifest.source.previous_stable)
+        if recorded is not None:
+            return recorded
+    return _get_release_manifest_before(project_root, manifest.version, stable_only=True)
 
 
 def _gather_module_released_entries(
