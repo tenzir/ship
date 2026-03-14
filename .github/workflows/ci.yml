@@ -78,7 +78,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: write
-    uses: ./.github/workflows/reusable-release-advanced.yaml
+    uses: ./.github/workflows/reusable-release.yaml
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
@@ -89,7 +89,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: write
-    uses: ./.github/workflows/reusable-release-advanced.yaml
+    uses: ./.github/workflows/reusable-release.yaml
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with an explicit push token.

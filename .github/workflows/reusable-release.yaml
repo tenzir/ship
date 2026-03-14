@@ -47,6 +47,11 @@ on:
         required: false
         default: ""
         type: string
+      skip-publish:
+        description: "Create and prepare release but skip publish/tag/branch updates"
+        required: false
+        default: false
+        type: boolean
       github_app_id:
         description: "Optional GitHub App ID used to mint a repository-scoped token"
         required: false
@@ -102,7 +107,7 @@ jobs:
       post-create: ${{ inputs.post-create }}
       pre-publish: ""
       post-publish: ""
-      skip-publish: false
+      skip-publish: ${{ inputs.skip-publish }}
       publish-no-latest-on-non-main: false
       copy-release-to-main-on-non-main: false
       update-latest-branch-on-main: false
@@ -111,7 +116,6 @@ jobs:
       git_user_email: ${{ inputs.git_user_email }}
       sign_commits: ${{ inputs.sign_commits }}
       sign_tags: ${{ inputs.sign_tags }}
-    secrets:
-      push_token: ${{ secrets.push_token }}
-      github_app_private_key: ${{ secrets.github_app_private_key }}
-      gpg_private_key: ${{ secrets.gpg_private_key }}
+    # Preserve inherited caller secrets across the wrapper -> advanced hop so
+    # secret-backed hook scripts keep working.
+    secrets: inherit
