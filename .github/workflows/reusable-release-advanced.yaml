@@ -183,9 +183,10 @@ jobs:
 
       - name: Determine latest status
         id: determine-latest
+        env:
+          BRANCH: ${{ steps.release-type.outputs.branch }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
         run: |
-          BRANCH="${{ steps.release-type.outputs.branch }}"
-          RELEASE_VERSION="${{ steps.create-release.outputs.version }}"
           if [ "$BRANCH" = "main" ] && [[ "$RELEASE_VERSION" != *-* ]]; then
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
           else
@@ -227,7 +228,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Copy release to main branch (non-main release)
-        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.determine-latest.outputs.is_latest == 'false' }}
+        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.branch != 'main' }}
         run: |
           RELEASE_DIR="$CHANGELOG_ROOT/changelog/releases/$RELEASE_VERSION"
           TMP_DIR="$(mktemp -d)"
