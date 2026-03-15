@@ -5130,7 +5130,7 @@ def test_stats_json_prefers_latest_stable_over_newer_release_candidate(
     )
     assert stats_json.exit_code == 0, stats_json.output
     payload = json.loads(stats_json.output)
-    assert payload["parent"]["releases"]["count"] == 2
+    assert payload["parent"]["releases"]["count"] == 1
     assert payload["parent"]["releases"]["latest"] == "v1.2.3"
     assert payload["parent"]["entries"]["total"] == 2
     assert payload["parent"]["entries"]["shipped"] == 1
@@ -6676,6 +6676,119 @@ def test_show_latest_ignores_release_candidates(tmp_path: Path) -> None:
     assert "Stable Feature" in show_result.output
     assert "RC Feature" not in show_result.output
     assert "v1.5.0" in show_result.output
+
+
+def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Shared Entry",
+            "--type",
+            "feature",
+            "--description",
+            "Original RC body.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    entry_path = next((project_dir / "unreleased").glob("*.md"))
+
+    rc_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    updated_entry = entry_path.read_text(encoding="utf-8")
+    updated_entry = updated_entry.replace("title: Shared Entry\n", "title: Stable Entry\n")
+    updated_entry = updated_entry.replace("Original RC body.", "Updated stable body.")
+    entry_path.write_text(updated_entry, encoding="utf-8")
+
+    stable_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--current-unreleased",
+            "--yes",
+        ],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_markdown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "v1.2.3-rc.1",
+            "-m",
+        ],
+    )
+    assert rc_markdown.exit_code == 0, rc_markdown.output
+    assert "Original RC body." in rc_markdown.output
+    assert "Updated stable body." not in rc_markdown.output
+
+    rc_table = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "v1.2.3-rc.1",
+        ],
+    )
+    assert rc_table.exit_code == 0, rc_table.output
+    assert "Shared Entry" in rc_table.output
+    assert "Stable Entry" not in rc_table.output
+    assert "Missing entry" not in rc_table.output
+
+    stable_table = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "v1.2.3",
+        ],
+    )
+    assert stable_table.exit_code == 0, stable_table.output
+    assert "Stable Entry" in stable_table.output
+    assert "Shared Entry" not in stable_table.output
+
+    stable_markdown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "v1.2.3",
+            "-m",
+        ],
+    )
+    assert stable_markdown.exit_code == 0, stable_markdown.output
+    assert "Updated stable body." in stable_markdown.output
+    assert "Original RC body." not in stable_markdown.output
 
 
 def test_release_create_edit_existing_stable_ignores_rc_snapshots(tmp_path: Path) -> None:

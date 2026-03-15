@@ -11,7 +11,12 @@ import click
 from ._core import CLIContext, _warn_on_structure_issues
 from ._rendering import create_table
 from ..entries import iter_entries
-from ..releases import collect_release_entries, iter_release_manifests, render_release_tag
+from ..releases import (
+    collect_release_entries,
+    is_release_candidate,
+    iter_release_manifests,
+    render_release_tag,
+)
 from ..utils import console
 from ._manifests import _get_latest_release_manifest
 from ._release import _infer_next_release_version
@@ -43,12 +48,14 @@ def _format_age(days: int) -> str:
 
 def _collect_project_stats(project_root: Path) -> dict:
     """Collect statistics for a single project/module."""
-    # Get latest release info with a stable-first fallback. Prefer the newest
-    # stable release, but fall back to prereleases when no stable release
-    # exists yet so release counts and latest stay internally consistent.
-    latest = _get_latest_release_manifest(project_root)
-    if latest is None:
-        latest = _get_latest_release_manifest(project_root, stable_only=False)
+    releases = list(iter_release_manifests(project_root))
+    stable_releases = [release for release in releases if not is_release_candidate(release.version)]
+
+    # Keep release-wide metrics internally consistent: if a stable release
+    # exists, treat stable releases as the primary timeline. Otherwise fall back
+    # to prereleases so new projects still report meaningful stats.
+    metric_releases = stable_releases or releases
+    latest = _get_latest_release_manifest(project_root, stable_only=bool(stable_releases))
     if latest:
         last_date = latest.created
         last_str = latest.created.isoformat()
@@ -64,14 +71,12 @@ def _collect_project_stats(project_root: Path) -> dict:
         version_str = None
         latest_entry_count = None
 
-    # Count releases and compute time span/cadence
-    releases = list(iter_release_manifests(project_root))
-    release_count = len(releases)
+    release_count = len(metric_releases)
 
     # Find first release and compute time span
-    if releases:
+    if metric_releases:
         # Sort by date to find first
-        sorted_releases = sorted(releases, key=lambda r: r.created)
+        sorted_releases = sorted(metric_releases, key=lambda r: r.created)
         first_date = sorted_releases[0].created
         first_str = first_date.isoformat()
         if last_date and first_date != last_date:
@@ -79,7 +84,7 @@ def _collect_project_stats(project_root: Path) -> dict:
             span_str = _format_age(span_days)
             # Cadence: exponentially weighted releases per month
             # Recent months weighted more heavily (half-life ~2 months)
-            by_month = Counter((r.created.year, r.created.month) for r in releases)
+            by_month = Counter((r.created.year, r.created.month) for r in metric_releases)
             if by_month:
                 today = date.today()
                 current_month = (today.year, today.month)

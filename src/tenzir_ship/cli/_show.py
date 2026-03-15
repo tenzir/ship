@@ -290,9 +290,7 @@ def _load_release_entries_for_display(
     missing_entries: list[str] = []
     release_entries: list[Entry] = []
     for entry_id in manifest.entries:
-        entry = entry_map.get(entry_id)
-        if entry is None:
-            entry = load_release_entry(project_root, manifest, entry_id)
+        entry = load_release_entry(project_root, manifest, entry_id)
         if entry is None:
             missing_entries.append(entry_id)
             continue
