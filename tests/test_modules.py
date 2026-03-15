@@ -868,6 +868,103 @@ def test_release_create_release_candidate_includes_module_release_candidates(
     assert "RC Module Feature" in stable_show_result.output
 
 
+def test_show_latest_release_includes_modules(tmp_path: Path) -> None:
+    """Released-scope show output includes module sections for the latest release."""
+    import json
+
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Feature", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    markdown_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "latest", "--release", "-m"],
+    )
+    assert markdown_result.exit_code == 0, markdown_result.output
+    assert "v2.0.0" in markdown_result.output
+    assert "## My Module v1.0.0" in markdown_result.output
+    assert "Module Feature" in markdown_result.output
+
+    json_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "latest", "--release", "-j"],
+    )
+    assert json_result.exit_code == 0, json_result.output
+    data = json.loads(json_result.output)
+    assert len(data) == 1
+    release = data[0]
+    assert release["version"] == "v2.0.0"
+    assert release["modules"][0]["id"] == "mymod"
+    assert release["modules"][0]["entries"][0]["title"] == "Module Feature"
+
+
+def test_show_release_preserves_empty_module_snapshot(tmp_path: Path) -> None:
+    """Historical show output keeps empty module snapshots empty."""
+    import json
+
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Stable One", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    manifest_path = project_dir / "releases" / "v2.0.0" / "manifest.yaml"
+    manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest_data["modules"] = {}
+    manifest_path.write_text(yaml.safe_dump(manifest_data, sort_keys=False), encoding="utf-8")
+
+    create_released_entry(mod_root, "Module Stable Two", "v1.1.0", "feature")
+
+    markdown_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "v2.0.0", "--release", "-m"],
+    )
+    assert markdown_result.exit_code == 0, markdown_result.output
+    assert "## My Module" not in markdown_result.output
+    assert "Module Stable One" not in markdown_result.output
+    assert "Module Stable Two" not in markdown_result.output
+
+    json_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "v2.0.0", "--release", "-j"],
+    )
+    assert json_result.exit_code == 0, json_result.output
+    data = json.loads(json_result.output)
+    assert len(data) == 1
+    release = data[0]
+    assert "modules" not in release
+
+
 def test_show_release_json_includes_modules(tmp_path: Path) -> None:
     """JSON output includes modules array with released entries."""
     import json
