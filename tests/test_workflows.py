@@ -53,6 +53,19 @@ def test_reusable_release_wrapper_preserves_hook_inputs_and_inherited_secrets() 
     assert forwarded_inputs["skip-publish"] == "${{ inputs.skip-publish }}"
 
 
+def test_advanced_reusable_release_allows_inherited_app_key_when_app_auth_is_unused() -> None:
+    workflow = _load_workflow("reusable-release-advanced.yaml")
+    release_job = _job(workflow, "release")
+    steps = _as_sequence(release_job["steps"])
+
+    validate_inputs = _step_by_name(steps, "Validate workflow inputs")
+    validate_inputs_run = cast(str, validate_inputs["run"])
+    assert "Input 'github_app_id' requires secret 'github_app_private_key'." in validate_inputs_run
+    assert (
+        "Secret 'github_app_private_key' requires input 'github_app_id'." not in validate_inputs_run
+    )
+
+
 def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     workflow = _load_workflow("reusable-release-advanced.yaml")
     release_job = _job(workflow, "release")
