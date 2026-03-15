@@ -230,7 +230,7 @@ def used_entry_ids(project_root: Path, *, include_prereleases: bool = True) -> s
     """
     used = set()
     for manifest in iter_release_manifests(project_root):
-        if not include_prereleases and is_release_candidate(manifest.version):
+        if not include_prereleases and not is_stable_release(manifest.version):
             continue
         used.update(manifest.entries)
     return used

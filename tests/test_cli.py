@@ -5065,6 +5065,71 @@ def test_stats_json_reports_latest_release_candidate_when_no_stable_exists(tmp_p
     assert payload["parent"]["releases"]["latest"] == "v1.2.3-rc.1"
 
 
+def test_stats_json_prefers_latest_stable_over_newer_release_candidate(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships stable first.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert stable_add.exit_code == 0, stable_add.output
+
+    stable_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--yes"],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships as a release candidate.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert rc_add.exit_code == 0, rc_add.output
+
+    rc_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.4-rc.1", "--yes"],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    stats_json = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "stats", "--json"],
+    )
+    assert stats_json.exit_code == 0, stats_json.output
+    payload = json.loads(stats_json.output)
+    assert payload["parent"]["releases"]["count"] == 2
+    assert payload["parent"]["releases"]["latest"] == "v1.2.3"
+
+
 def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exists(
     tmp_path: Path,
 ) -> None:
@@ -5455,6 +5520,44 @@ def test_collect_unused_entries_for_release_ignores_release_candidates_by_defaul
         project_dir, load_config(project_dir / "config.yaml")
     )
     assert [entry.entry_id for entry in unused_entries] == ["rc-feature"]
+
+
+def test_collect_unused_entries_for_release_ignores_non_stable_legacy_prereleases(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Legacy Beta",
+            "--type",
+            "feature",
+            "--description",
+            "Should still count as unreleased.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    legacy_release_dir = project_dir / "releases" / "v1.2.3-beta.1"
+    (legacy_release_dir / "entries").mkdir(parents=True)
+    (legacy_release_dir / "manifest.yaml").write_text(
+        "version: v1.2.3-beta.1\ncreated: 2025-01-01\nentries:\n  - legacy-beta\n",
+        encoding="utf-8",
+    )
+
+    unused_entries = _collect_unused_entries_for_release(
+        project_dir, load_config(project_dir / "config.yaml")
+    )
+    assert [entry.entry_id for entry in unused_entries] == ["legacy-beta"]
 
 
 def test_release_create_warns_when_promoted_entries_are_missing_from_unreleased(

@@ -159,7 +159,7 @@ class Changelog:
             The latest stable released version string.
 
         Raises:
-            ValueError: If no releases exist.
+            ValueError: If no stable releases exist.
         """
         manifest = _get_latest_release_manifest(self._ctx.project_root)
         if manifest is None:

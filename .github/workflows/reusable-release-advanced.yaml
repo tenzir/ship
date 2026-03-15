@@ -72,7 +72,7 @@ on:
         description: "Created release version tag (for example v1.2.3)"
         value: ${{ jobs.release.outputs.version }}
       is_latest:
-        description: "Whether the release was created from the main branch"
+        description: "Whether the created release should be treated as latest"
         value: ${{ jobs.release.outputs.is_latest }}
 
 jobs:
@@ -83,7 +83,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.create-release.outputs.version }}
-      is_latest: ${{ steps.release-type.outputs.is_latest }}
+      is_latest: ${{ steps.determine-latest.outputs.is_latest }}
 
     steps:
       - name: Validate bump input
@@ -181,6 +181,17 @@ jobs:
         if: inputs.post-create != ''
         run: ${{ inputs.post-create }}
 
+      - name: Determine latest status
+        id: determine-latest
+        run: |
+          BRANCH="${{ steps.release-type.outputs.branch }}"
+          RELEASE_VERSION="${{ steps.create-release.outputs.version }}"
+          if [ "$BRANCH" = "main" ] && [[ "$RELEASE_VERSION" != *-* ]]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run pre-publish script
         if: ${{ inputs.pre-publish != '' && !inputs['skip-publish'] }}
         run: ${{ inputs.pre-publish }}
@@ -211,12 +222,12 @@ jobs:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
-          IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
+          IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           NO_LATEST_NON_MAIN: ${{ inputs.publish-no-latest-on-non-main }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Copy release to main branch (non-main release)
-        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.is_latest == 'false' }}
+        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.determine-latest.outputs.is_latest == 'false' }}
         run: |
           RELEASE_DIR="$CHANGELOG_ROOT/changelog/releases/$RELEASE_VERSION"
           TMP_DIR="$(mktemp -d)"
@@ -237,7 +248,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
 
       - name: Update latest branch
-        if: ${{ !inputs['skip-publish'] && inputs.update-latest-branch-on-main && steps.release-type.outputs.is_latest == 'true' }}
+        if: ${{ !inputs['skip-publish'] && inputs.update-latest-branch-on-main && steps.determine-latest.outputs.is_latest == 'true' }}
         run: |
           git checkout -B latest
           git push origin latest --force
@@ -248,13 +259,13 @@ jobs:
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
-          IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
+          IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Summary
         run: |
           VERSION="${{ steps.create-release.outputs.version }}"
-          IS_LATEST="${{ steps.release-type.outputs.is_latest }}"
+          IS_LATEST="${{ steps.determine-latest.outputs.is_latest }}"
           {
             echo "## Release ${VERSION}"
             echo ""
