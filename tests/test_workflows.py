@@ -11,8 +11,25 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 
+class _GitHubWorkflowLoader(yaml.SafeLoader):
+    yaml_implicit_resolvers = {
+        key: value[:] for key, value in yaml.SafeLoader.yaml_implicit_resolvers.items()
+    }
+
+
+for ch in "OoYyNn":
+    _GitHubWorkflowLoader.yaml_implicit_resolvers[ch] = [
+        entry
+        for entry in _GitHubWorkflowLoader.yaml_implicit_resolvers.get(ch, [])
+        if entry[0] != "tag:yaml.org,2002:bool"
+    ]
+
+
 def _load_workflow(name: str) -> dict[str, object]:
-    data = yaml.safe_load((WORKFLOWS_DIR / name).read_text(encoding="utf-8"))
+    data = yaml.load(
+        (WORKFLOWS_DIR / name).read_text(encoding="utf-8"),
+        Loader=_GitHubWorkflowLoader,
+    )
     assert isinstance(data, dict)
     return cast(dict[str, object], data)
 
@@ -38,6 +55,15 @@ def _step_by_name(steps: list[object], name: str) -> dict[str, object]:
         if step_mapping.get("name") == name:
             return step_mapping
     raise AssertionError(f"workflow step not found: {name}")
+
+
+def test_load_workflow_preserves_on_key() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
+
+    assert "on" in workflow
+    assert True not in workflow
+    workflow_on = _as_mapping(workflow["on"])
+    assert "workflow_call" in workflow_on
 
 
 def test_reusable_release_wrapper_preserves_hook_inputs_and_inherited_secrets() -> None:
@@ -88,9 +114,12 @@ def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps()
     configure_git = _step_by_name(steps, "Configure Git")
     configure_git_env = _as_mapping(configure_git["env"])
     assert configure_git_env["AUTH_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
+    assert configure_git_env["GITHUB_SERVER_URL"] == "${{ github.server_url }}"
     configure_git_run = cast(str, configure_git["run"])
+    assert 'server_host="${GITHUB_SERVER_URL#https://}"' in configure_git_run
     assert "git remote set-url origin" in configure_git_run
     assert "AUTH_TOKEN" in configure_git_run
+    assert "${server_host}/${{ github.repository }}.git" in configure_git_run
 
     for step_name in ["Run pre-publish script", "Stage and publish", "Run post-publish script"]:
         step = _step_by_name(steps, step_name)

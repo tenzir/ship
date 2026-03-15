@@ -252,12 +252,15 @@ jobs:
           AUTH_TOKEN: ${{ steps.auth-token.outputs.token }}
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           # Keep this after optional GPG setup so explicit workflow inputs win
           # over any identity inferred from the imported signing key.
           git config --global user.name "$GIT_USER_NAME"
           git config --global user.email "$GIT_USER_EMAIL"
-          git remote set-url origin "https://x-access-token:${AUTH_TOKEN}@github.com/${{ github.repository }}.git"
+          server_host="${GITHUB_SERVER_URL#https://}"
+          server_host="${server_host#http://}"
+          git remote set-url origin "https://x-access-token:${AUTH_TOKEN}@${server_host}/${{ github.repository }}.git"
 
       - name: Determine release branch
         id: release-type
