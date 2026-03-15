@@ -830,6 +830,7 @@ def create_release(
         else release_directory(project_root) / intent.tag_version
     )
     manifest_path = release_dir / "manifest.yaml"
+    release_entries_dir = release_dir / "entries"
     notes_path = release_dir / NOTES_FILENAME
 
     entry_plan = _build_release_entry_plan(project_root, config, intent)
@@ -1005,7 +1006,6 @@ def create_release(
     if (
         source_manifest is not None or entry_plan.replace_existing_entries
     ) and existing_manifest is not None:
-        release_entries_dir = release_dir / "entries"
         for entry in entry_plan.selected_entries:
             destination_path = release_entries_dir / entry.path.name
             if (
@@ -1069,7 +1069,6 @@ def create_release(
         raise SystemExit(1)
 
     release_dir.mkdir(parents=True, exist_ok=True)
-    release_entries_dir = release_dir / "entries"
     release_entries_dir.mkdir(parents=True, exist_ok=True)
 
     if version_file_updates:
