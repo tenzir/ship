@@ -20,6 +20,7 @@ from ..releases import (
 )
 
 __all__ = [
+    "_find_release_manifest",
     "_get_module_latest_version",
     "_get_sorted_release_manifests",
     "_get_release_manifest_before",

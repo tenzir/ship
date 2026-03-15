@@ -584,6 +584,62 @@ def test_release_create_from_release_candidate_preserves_module_snapshot(tmp_pat
     assert "Module Stable Two" not in show_result.output
 
 
+def test_release_create_from_release_candidate_preserves_empty_module_snapshot(
+    tmp_path: Path,
+) -> None:
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Stable One", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent Feature")
+
+    runner = CliRunner()
+    rc_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v2.0.0-rc.1", "--yes"],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    rc_manifest_path = project_dir / "releases" / "v2.0.0-rc.1" / "manifest.yaml"
+    rc_manifest_data = yaml.safe_load(rc_manifest_path.read_text(encoding="utf-8"))
+    rc_manifest_data["modules"] = {}
+    rc_manifest_path.write_text(yaml.safe_dump(rc_manifest_data, sort_keys=False), encoding="utf-8")
+
+    create_released_entry(mod_root, "Module Stable Two", "v1.1.0", "feature")
+
+    promote_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.0",
+            "--from",
+            "v2.0.0-rc.1",
+            "--yes",
+        ],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+
+    manifest_data = yaml.safe_load(
+        (project_dir / "releases" / "v2.0.0" / "manifest.yaml").read_text(encoding="utf-8")
+    )
+    assert "modules" not in manifest_data
+
+    notes = (project_dir / "releases" / "v2.0.0" / "notes.md").read_text(encoding="utf-8")
+    assert "## My Module" not in notes
+    assert "Module Stable One" not in notes
+    assert "Module Stable Two" not in notes
+
+
 def test_release_create_edit_existing_release_preserves_module_snapshot(tmp_path: Path) -> None:
     packages = tmp_path / "packages"
     mod_root = create_module(packages, "mymod", "My Module")
@@ -644,6 +700,61 @@ def test_release_create_edit_existing_release_preserves_module_snapshot(tmp_path
     assert "Module Stable One" in show_result.output
     assert "## My Module v1.1.0" not in show_result.output
     assert "Module Stable Two" not in show_result.output
+
+
+def test_release_create_edit_existing_release_preserves_empty_module_snapshot(
+    tmp_path: Path,
+) -> None:
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Module Stable One", "v1.0.0", "feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+    create_entry(project_dir, "Parent One")
+
+    runner = CliRunner()
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    manifest_path = project_dir / "releases" / "v1.0.0" / "manifest.yaml"
+    manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest_data["modules"] = {}
+    manifest_path.write_text(yaml.safe_dump(manifest_data, sort_keys=False), encoding="utf-8")
+
+    create_released_entry(mod_root, "Module Stable Two", "v1.1.0", "feature")
+
+    edit_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--intro",
+            "Updated intro.",
+            "--yes",
+        ],
+    )
+    assert edit_release.exit_code == 0, edit_release.output
+
+    updated_manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert "modules" not in updated_manifest
+
+    notes = (project_dir / "releases" / "v1.0.0" / "notes.md").read_text(encoding="utf-8")
+    assert notes.startswith("Updated intro.")
+    assert "## My Module" not in notes
+    assert "Module Stable One" not in notes
+    assert "Module Stable Two" not in notes
 
 
 def test_release_create_ignores_module_release_candidates_for_stable_parent(tmp_path: Path) -> None:

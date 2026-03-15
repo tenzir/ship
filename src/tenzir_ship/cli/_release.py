@@ -71,7 +71,11 @@ from ._rendering import (
     _render_module_entries_compact,
     _release_entry_sort_key,
 )
-from ._manifests import _get_previous_stable_manifest, _get_release_manifest_before
+from ._manifests import (
+    _find_release_manifest,
+    _get_previous_stable_manifest,
+    _get_release_manifest_before,
+)
 from ._show import (
     _collect_unused_entries_for_release,
     _gather_module_released_entries,
@@ -237,14 +241,6 @@ class ModuleReleasePlan:
     entries_by_module: dict[str, tuple[Config, list[Entry]]]
     version_map: dict[str, str]
     previous_release: ReleaseManifest | None
-
-
-def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
-    normalized_version = normalize_release_version(version)
-    for manifest in iter_release_manifests(project_root):
-        if normalize_release_version(manifest.version) == normalized_version:
-            return manifest
-    return None
 
 
 def _github_release_exists(repository: str, tag_name: str, gh_path: str) -> bool:
@@ -691,8 +687,10 @@ def _build_module_release_plan(
 
     previous_module_versions = previous_release.modules if previous_release else None
 
-    if intent.source_manifest is not None and intent.source_manifest.modules:
+    if intent.source_manifest is not None:
         target_versions = dict(intent.source_manifest.modules)
+        if not target_versions:
+            return ModuleReleasePlan({}, {}, previous_release)
         entries_by_module, _ = _gather_module_released_entries(
             modules,
             previous_module_versions,
@@ -704,9 +702,10 @@ def _build_module_release_plan(
     if (
         intent.existing_manifest is not None
         and intent.mode is not ReleaseMode.REPLACE_WITH_CURRENT_UNRELEASED
-        and intent.existing_manifest.modules
     ):
         target_versions = dict(intent.existing_manifest.modules)
+        if not target_versions:
+            return ModuleReleasePlan({}, {}, previous_release)
         entries_by_module, _ = _gather_module_released_entries(
             modules,
             previous_module_versions,
