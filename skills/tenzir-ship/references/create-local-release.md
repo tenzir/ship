@@ -51,7 +51,9 @@ Title rules:
 
 ## Create the release
 
-Cut the release by running:
+### Stable release from the current queue
+
+Cut a stable release by running:
 
 ```sh
 uvx tenzir-ship release create \
@@ -73,6 +75,33 @@ Only when the user explicitly provides a specific version, pass it as positional
 argument, e.g., `create v1.2.3`. This is a rare override, e.g., to re-cut a
 release that was tagged but failed to publish, or to align with an externally
 dictated version number.
+
+### Release candidate workflow
+
+Create a release candidate by passing an explicit prerelease version:
+
+```sh
+uvx tenzir-ship release create v1.2.3-rc.1 \
+  --title "<title>" \
+  --intro "<intro>" \
+  --yes
+```
+
+Release candidates snapshot the current unreleased queue without consuming it,
+so you can iterate on `-rc.N` releases before shipping the stable release.
+
+To promote an existing release candidate exactly, create the matching stable
+release with `--from`:
+
+```sh
+uvx tenzir-ship release create v1.2.3 \
+  --from v1.2.3-rc.2 \
+  --yes
+```
+
+If release candidates already exist but the stable release should use the
+current unreleased queue instead of a candidate snapshot, pass
+`--current-unreleased`.
 
 Replace `--intro` with `--intro-file` if the introduction contains escape-worthy
 characters.
@@ -103,5 +132,6 @@ Notes:
 - The `--commit` flag commits whatever is staged
 - The `--tag` option creates an annotated tag (that gets pushed automatically)
 - Add `--draft` if the user requested a draft release
-- Add `--prerelease` if the user requested marking the release as prerelease
-- Add `--no-latest` if the user requested that the release must not be marked as latest
+- `release publish` automatically treats `vX.Y.Z-rc.N` releases as GitHub prereleases and prevents them from being marked as latest
+- Add `--prerelease` only when the user explicitly wants to mark a stable version as prerelease
+- Add `--no-latest` if the user requested that a stable release must not be marked as latest
