@@ -161,11 +161,6 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
-            echo "::error::Secret 'github_app_private_key' requires input 'github_app_id'."
-            exit 1
-          fi
-
           if [ -z "$GIT_USER_NAME" ] || [ -z "$GIT_USER_EMAIL" ]; then
             echo "::error::Both 'git_user_name' and 'git_user_email' must be non-empty."
             exit 1
