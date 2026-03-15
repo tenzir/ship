@@ -5063,6 +5063,10 @@ def test_stats_json_reports_latest_release_candidate_when_no_stable_exists(tmp_p
     payload = json.loads(stats_json.output)
     assert payload["parent"]["releases"]["count"] == 1
     assert payload["parent"]["releases"]["latest"] == "v1.2.3-rc.1"
+    assert payload["parent"]["entries"]["total"] == 1
+    assert payload["parent"]["entries"]["shipped"] == 0
+    assert payload["parent"]["entries"]["unreleased"] == 1
+    assert payload["parent"]["entries"]["feature"] == 1
 
 
 def test_stats_json_prefers_latest_stable_over_newer_release_candidate(
@@ -5128,6 +5132,10 @@ def test_stats_json_prefers_latest_stable_over_newer_release_candidate(
     payload = json.loads(stats_json.output)
     assert payload["parent"]["releases"]["count"] == 2
     assert payload["parent"]["releases"]["latest"] == "v1.2.3"
+    assert payload["parent"]["entries"]["total"] == 2
+    assert payload["parent"]["entries"]["shipped"] == 1
+    assert payload["parent"]["entries"]["unreleased"] == 1
+    assert payload["parent"]["entries"]["feature"] == 2
 
 
 def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exists(

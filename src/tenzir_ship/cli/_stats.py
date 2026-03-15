@@ -116,8 +116,10 @@ def _collect_project_stats(project_root: Path) -> dict:
         cadence_str = None
         cadence_extra = None
 
-    # Count released entries by type
-    released_entries = collect_release_entries(project_root)
+    # Count shipped entries by type from stable releases only. Prereleases are
+    # snapshots that intentionally leave the same entries in unreleased/, so
+    # including them here would double-count entry totals.
+    released_entries = collect_release_entries(project_root, include_prereleases=False)
     released_types: Counter[str] = Counter()
     for entry in released_entries.values():
         released_types[entry.type] += 1

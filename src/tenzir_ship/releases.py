@@ -317,10 +317,19 @@ def load_release_entry(
     return read_entry(entry_path)
 
 
-def collect_release_entries(project_root: Path) -> dict[str, Entry]:
-    """Return a mapping of entry ids to entries across all releases."""
+def collect_release_entries(
+    project_root: Path, *, include_prereleases: bool = True
+) -> dict[str, Entry]:
+    """Return a mapping of entry ids to entries across release manifests.
+
+    By default, prerelease manifests are included. Pass
+    ``include_prereleases=False`` when only stable releases should contribute to
+    shipped entry counts.
+    """
     collected: dict[str, Entry] = {}
     for manifest in iter_release_manifests(project_root):
+        if not include_prereleases and not is_stable_release(manifest.version):
+            continue
         for entry_id in manifest.entries:
             if entry_id in collected:
                 continue
