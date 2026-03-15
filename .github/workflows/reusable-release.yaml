@@ -8,6 +8,11 @@ on:
         required: false
         default: ""
         type: string
+      version:
+        description: "Explicit release version (for example v1.2.3 or v1.2.3-rc.1)"
+        required: false
+        default: ""
+        type: string
       intro:
         description: "1-2 sentence release introduction"
         required: true
@@ -17,6 +22,16 @@ on:
         required: false
         default: ""
         type: string
+      source-release:
+        description: "Promote the specified release candidate into the target stable release"
+        required: false
+        default: ""
+        type: string
+      current-unreleased:
+        description: "Create the stable release from the current unreleased queue even if RCs exist"
+        required: false
+        default: false
+        type: boolean
       changelog-root:
         description: "Project root for --root flag"
         required: false
@@ -42,7 +57,7 @@ on:
         description: "Created release version tag (for example v1.2.3)"
         value: ${{ jobs.release.outputs.version }}
       is_latest:
-        description: "Whether the release was created from the main branch"
+        description: "Whether the created release should be treated as latest"
         value: ${{ jobs.release.outputs.is_latest }}
 
 jobs:
@@ -50,8 +65,11 @@ jobs:
     uses: ./.github/workflows/reusable-release-advanced.yaml
     with:
       bump: ${{ inputs.bump }}
+      version: ${{ inputs.version }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
+      source-release: ${{ inputs.source-release }}
+      current-unreleased: ${{ inputs.current-unreleased }}
       changelog-root: ${{ inputs.changelog-root }}
       git-add-paths: ${{ inputs.git-add-paths }}
       pre-create: ${{ inputs.pre-create }}

@@ -5327,7 +5327,7 @@ def test_release_create_release_candidate_keeps_unreleased_entries(tmp_path: Pat
     ).exists()
 
 
-def test_release_create_existing_release_candidate_preserves_snapshotted_entries(
+def test_release_create_rejects_promoting_release_candidate_when_unreleased_entry_diverged(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -5403,11 +5403,12 @@ def test_release_create_existing_release_candidate_preserves_snapshotted_entries
             "--yes",
         ],
     )
-    assert promote_result.exit_code == 0, promote_result.output
-
-    stable_notes = (project_dir / "releases" / "v1.2.3" / "notes.md").read_text(encoding="utf-8")
-    assert "Snapshot me." in stable_notes
-    assert "Edited after snapshot." not in stable_notes
+    assert promote_result.exit_code != 0
+    assert "changed after the release candidate snapshot was created" in promote_result.output
+    assert "--current-unreleased" in promote_result.output
+    assert entry_path.exists()
+    assert "Edited after snapshot." in entry_path.read_text(encoding="utf-8")
+    assert not (project_dir / "releases" / "v1.2.3").exists()
 
 
 def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> None:

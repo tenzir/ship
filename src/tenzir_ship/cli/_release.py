@@ -235,6 +235,14 @@ class ReleaseEntryPlan:
 
 
 @dataclass
+class UnreleasedCleanupPlan:
+    """Resolved cleanup actions for unreleased entry files."""
+
+    paths: list[Path]
+    missing_entry_ids: list[str]
+
+
+@dataclass
 class ModuleReleasePlan:
     """Resolved module snapshot and rendered entry selection for a release."""
 
@@ -634,6 +642,52 @@ def _build_release_entry_plan(
     )
 
 
+def _plan_unreleased_cleanup(
+    project_root: Path,
+    config: Config,
+    intent: ReleaseIntent,
+    entry_plan: ReleaseEntryPlan,
+) -> UnreleasedCleanupPlan:
+    """Resolve which unreleased entry files may be removed safely."""
+    current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
+    unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
+
+    if intent.mode is ReleaseMode.PROMOTE_PRERELEASE:
+        promoted_entries_by_id = {entry.entry_id: entry for entry in entry_plan.selected_entries}
+        diverged_entry_ids: list[str] = []
+        for entry_id in sorted(entry_plan.cleanup_unreleased_entry_ids):
+            current_entry = unreleased_entries_by_id.get(entry_id)
+            promoted_entry = promoted_entries_by_id.get(entry_id)
+            if current_entry is None or promoted_entry is None:
+                continue
+            if current_entry.path.read_bytes() != promoted_entry.path.read_bytes():
+                diverged_entry_ids.append(entry_id)
+        if diverged_entry_ids:
+            quoted_ids = ", ".join(f"'{entry_id}'" for entry_id in diverged_entry_ids)
+            source_tag = (
+                render_release_tag(intent.source_manifest.version)
+                if intent.source_manifest is not None
+                else intent.tag_version
+            )
+            raise click.ClickException(
+                "Cannot promote "
+                f"{source_tag} exactly because unreleased entries changed after the release "
+                f"candidate snapshot was created: {quoted_ids}. Use --current-unreleased "
+                "to release the current queue, or move the follow-up changes into new "
+                "unreleased entries before promoting the release candidate."
+            )
+
+    missing_entry_ids = sorted(
+        entry_plan.cleanup_unreleased_entry_ids - set(unreleased_entries_by_id)
+    )
+    cleanup_paths = [
+        unreleased_entries_by_id[entry_id].path
+        for entry_id in sorted(entry_plan.cleanup_unreleased_entry_ids)
+        if entry_id in unreleased_entries_by_id
+    ]
+    return UnreleasedCleanupPlan(paths=cleanup_paths, missing_entry_ids=missing_entry_ids)
+
+
 def _resolve_release_baseline(
     project_root: Path,
     intent: ReleaseIntent,
@@ -929,21 +983,13 @@ def create_release(
     def _normalize_block(value: Optional[str]) -> str:
         return (value or "").rstrip("\n")
 
-    current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
-    unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
-    missing_cleanup_entry_ids = sorted(
-        entry_plan.cleanup_unreleased_entry_ids - set(unreleased_entries_by_id)
-    )
-    if missing_cleanup_entry_ids:
+    cleanup_plan = _plan_unreleased_cleanup(project_root, config, intent, entry_plan)
+    if cleanup_plan.missing_entry_ids:
         log_warning(
-            f"{len(missing_cleanup_entry_ids)} promoted entry file(s) were not found in "
-            f"unreleased/ and could not be cleaned up: {', '.join(missing_cleanup_entry_ids)}"
+            f"{len(cleanup_plan.missing_entry_ids)} promoted entry file(s) were not found in "
+            f"unreleased/ and could not be cleaned up: {', '.join(cleanup_plan.missing_entry_ids)}"
         )
-    cleanup_unreleased_paths = [
-        unreleased_entries_by_id[entry_id].path
-        for entry_id in sorted(entry_plan.cleanup_unreleased_entry_ids)
-        if entry_id in unreleased_entries_by_id
-    ]
+    cleanup_unreleased_paths = cleanup_plan.paths
 
     stale_release_entry_paths: list[Path] = []
     if entry_plan.replace_existing_entries:

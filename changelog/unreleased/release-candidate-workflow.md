@@ -14,4 +14,4 @@ created: 2026-03-12T20:43:34.379484Z
 
 To ship the exact candidate as stable, use `tenzir-ship release create 1.2.3 --from v1.2.3-rc.2`. If you want to ignore existing release candidates and cut the stable release from the current unreleased queue instead, use `--current-unreleased`.
 
-Publishing a release candidate now automatically creates a GitHub prerelease and prevents it from being marked as latest. Commands that resolve `latest`, including `release version`, `release publish`, and `show latest`, now default to the latest stable release rather than a release candidate.
+Publishing a release candidate now automatically creates a GitHub prerelease and prevents it from being marked as latest. Commands that resolve `latest`, including `release version`, `release publish`, and `show latest`, now default to the latest stable release rather than a release candidate. The bundled GitHub Actions release workflows also accept explicit `version`, `source-release`, and `current-unreleased` inputs so the RC lifecycle can be driven from CI as well as the CLI.
