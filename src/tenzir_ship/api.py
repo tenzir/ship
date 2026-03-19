@@ -128,8 +128,6 @@ class Changelog:
         assume_yes: bool = False,
         version_bump: Optional[str] = None,
         release_candidate: bool = False,
-        source_release: str | None = None,
-        current_unreleased: bool = False,
     ) -> None:
         """Create or update a release manifest."""
 
@@ -145,8 +143,6 @@ class Changelog:
             assume_yes=assume_yes,
             version_bump=version_bump,
             release_candidate=release_candidate,
-            source_release=source_release,
-            current_unreleased=current_unreleased,
             title_explicit=title is not None,
             compact_explicit=compact is not None,
         )

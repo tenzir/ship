@@ -113,19 +113,10 @@ To override the inferred base, prefer a manual bump flag, for example
 `release create --rc --minor`. Pass a stable version only when the user needs
 an exact base version.
 
-To promote a specific release candidate exactly instead of using the latest one,
-create the matching stable release with `--from`:
-
-```sh
-uvx tenzir-ship release create v1.2.3 \
-  --from v1.2.3-rc.2 \
-  --yes
-```
-
-If release candidates already exist but the stable release should use the
-current unreleased queue instead of the latest candidate snapshot, pass
-`--current-unreleased`. You can omit the stable version here as well; the CLI
-uses the latest RC's base version automatically.
+Once an RC series exists, keep the workflow on that series: use `--rc` to cut
+another candidate, or run the stable command without `--rc` to promote the
+latest candidate. Do not try to bypass the RC snapshot with an explicit stable
+version or a manual bump.
 
 Replace `--intro` with `--intro-file` if the introduction contains escape-worthy
 characters.

@@ -27,11 +27,6 @@ repository accepts these common inputs:
   when promoting a specific stable release.
 - **rc**: Optional boolean that creates or continues the release-candidate
   series for the resolved stable version.
-- **source-release**: Optional release candidate to promote exactly into the
-  matching stable version.
-- **current-unreleased**: Optional boolean used when release candidates exist
-  but the stable release should be cut from the current unreleased queue
-  instead of a candidate snapshot.
 
 If you encounter other inputs, make reasonable choices and inform the user.
 
@@ -74,24 +69,10 @@ To override the inferred stable base for the RC, prefer a manual bump such as
 `-f rc=true -f bump=minor`. Pass a stable `version` only when the user needs an
 exact base version.
 
-### Promote a release candidate exactly
-
-```sh
-gh workflow run release.yaml \
-  -f intro="<intro text>" \
-  -f title="<title>" \
-  -f version=v1.2.3 \
-  -f source-release=v1.2.3-rc.2
-```
-
-### Cut the stable release from the current unreleased queue even when RCs exist
-
-```sh
-gh workflow run release.yaml \
-  -f intro="<intro text>" \
-  -f title="<title>" \
-  -f current-unreleased=true
-```
+Once an RC series exists, keep the workflow on that series: trigger another RC
+with `-f rc=true`, or trigger the normal stable workflow without `rc` to
+promote the latest candidate. Do not try to bypass the RC snapshot with an
+explicit stable version or a manual bump.
 
 ## Monitor the run
 

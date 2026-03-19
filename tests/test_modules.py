@@ -555,9 +555,6 @@ def test_release_create_from_release_candidate_preserves_module_snapshot(tmp_pat
             str(project_dir),
             "release",
             "create",
-            "v2.0.0",
-            "--from",
-            "v2.0.0-rc.1",
             "--yes",
         ],
     )
@@ -621,9 +618,6 @@ def test_release_create_from_release_candidate_preserves_empty_module_snapshot(
             str(project_dir),
             "release",
             "create",
-            "v2.0.0",
-            "--from",
-            "v2.0.0-rc.1",
             "--yes",
         ],
     )
@@ -842,9 +836,6 @@ def test_release_create_release_candidate_includes_module_release_candidates(
             str(project_dir),
             "release",
             "create",
-            "v2.0.0",
-            "--from",
-            "v2.0.0-rc.1",
             "--yes",
         ],
     )

@@ -27,16 +27,6 @@ on:
         required: false
         default: ""
         type: string
-      source-release:
-        description: "Promote the specified release candidate into the target stable release"
-        required: false
-        default: ""
-        type: string
-      current-unreleased:
-        description: "Create the stable release from the current unreleased queue even if RCs exist"
-        required: false
-        default: false
-        type: boolean
       changelog-root:
         description: "Project root for --root flag"
         required: false
@@ -118,26 +108,6 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ inputs.rc }}" = "true" ] && [ -n "${{ inputs.source-release }}" ]; then
-            echo "::error::Use either rc or source-release, not both."
-            exit 1
-          fi
-
-          if [ "${{ inputs.rc }}" = "true" ] && [ "${{ inputs.current-unreleased }}" = "true" ]; then
-            echo "::error::Use either rc or current-unreleased, not both."
-            exit 1
-          fi
-
-          if [ -n "${{ inputs.source-release }}" ] && [ -z "${{ inputs.version }}" ]; then
-            echo "::error::source-release requires an explicit stable target version."
-            exit 1
-          fi
-
-          if [ -n "${{ inputs.source-release }}" ] && [ "${{ inputs.current-unreleased }}" = "true" ]; then
-            echo "::error::Use either source-release or current-unreleased, not both."
-            exit 1
-          fi
-
           if [ "${{ inputs.rc }}" = "true" ] && [[ "${{ inputs.version }}" == *-* ]]; then
             echo "::error::rc expects a stable base version like v1.2.3, not a prerelease version."
             exit 1
@@ -210,14 +180,6 @@ jobs:
               # workflow_dispatch choice) and cannot pass an empty value.
               ;;
           esac
-          SOURCE_ARGS=()
-          if [ -n "$SOURCE_RELEASE" ]; then
-            SOURCE_ARGS=(--from "$SOURCE_RELEASE")
-          fi
-          CURRENT_UNRELEASED_ARGS=()
-          if [ "$CURRENT_UNRELEASED" = "true" ]; then
-            CURRENT_UNRELEASED_ARGS=(--current-unreleased)
-          fi
           RC_ARGS=()
           if [ "$RELEASE_RC" = "true" ]; then
             RC_ARGS=(--rc)
@@ -232,8 +194,6 @@ jobs:
             "${RC_ARGS[@]}" \
             --intro "$RELEASE_INTRO" \
             "${TITLE_ARGS[@]}" \
-            "${SOURCE_ARGS[@]}" \
-            "${CURRENT_UNRELEASED_ARGS[@]}" \
             --yes)
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
         env:
@@ -243,8 +203,6 @@ jobs:
           RELEASE_BUMP: ${{ inputs.bump }}
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_RC: ${{ inputs.rc }}
-          SOURCE_RELEASE: ${{ inputs.source-release }}
-          CURRENT_UNRELEASED: ${{ inputs.current-unreleased }}
 
       - name: Run post-create script
         if: inputs.post-create != ''

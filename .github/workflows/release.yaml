@@ -52,21 +52,6 @@ on:
           User-facing release title (auto-generated if omitted)
         required: false
         type: string
-      source-release:
-        description: |
-          Promote the specified release candidate into the target stable release
-
-          Requires an explicit stable `version`, for example `source-release:
-          v1.2.3-rc.2` with `version: v1.2.3`.
-        required: false
-        type: string
-      current-unreleased:
-        description: |
-          Create the stable release from the current unreleased queue even if
-          release candidates already exist.
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   release:
@@ -77,8 +62,6 @@ jobs:
       rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
-      source-release: ${{ inputs.source-release }}
-      current-unreleased: ${{ inputs.current-unreleased }}
       git-add-paths: pyproject.toml uv.lock
       pre-create: |
         uv sync --dev

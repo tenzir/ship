@@ -27,16 +27,6 @@ on:
         required: false
         default: ""
         type: string
-      source-release:
-        description: "Promote the specified release candidate into the target stable release"
-        required: false
-        default: ""
-        type: string
-      current-unreleased:
-        description: "Create the stable release from the current unreleased queue even if RCs exist"
-        required: false
-        default: false
-        type: boolean
       changelog-root:
         description: "Project root for --root flag"
         required: false
@@ -74,8 +64,6 @@ jobs:
       rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
-      source-release: ${{ inputs.source-release }}
-      current-unreleased: ${{ inputs.current-unreleased }}
       changelog-root: ${{ inputs.changelog-root }}
       git-add-paths: ${{ inputs.git-add-paths }}
       pre-create: ${{ inputs.pre-create }}
