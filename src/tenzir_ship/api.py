@@ -183,16 +183,14 @@ class Changelog:
     ) -> None:
         """Publish a release to GitHub using the same workflow as the CLI.
 
-        If no version is provided, defaults to the latest stable release.
+        If no version is provided, defaults to the latest release.
         """
 
         resolved_version = version
         if resolved_version is None:
-            manifest = _get_latest_release_manifest(self._ctx.project_root)
+            manifest = _get_latest_release_manifest(self._ctx.project_root, stable_only=False)
             if manifest is None:
-                raise ValueError(
-                    "No stable releases found. Create a stable release first with 'release create'."
-                )
+                raise ValueError("No releases found. Create a release first with 'release create'.")
             resolved_version = manifest.version
 
         publish_release(

@@ -6670,10 +6670,10 @@ def test_release_version_no_releases(tmp_path: Path) -> None:
     assert "No stable releases found" in version_result.output
 
 
-def test_release_publish_defaults_to_latest_stable(
+def test_release_publish_defaults_to_latest_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Test that release publish without version uses the latest stable release."""
+    """Test that release publish without version uses the latest release."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -6749,7 +6749,6 @@ def test_release_publish_defaults_to_latest_stable(
 
     # Mock the gh CLI to capture what version is being published.
     recorded_args: list[str] = []
-    commands: list[list[str]] = []
 
     def fake_which(command: str) -> str:
         assert command == "gh"
@@ -6759,7 +6758,6 @@ def test_release_publish_defaults_to_latest_stable(
         args: list[str], *, check: bool, stdout: object = None, stderr: object = None
     ) -> None:
         nonlocal recorded_args
-        commands.append(args)
         if len(args) >= 3 and args[1:3] == ["release", "view"]:
             raise subprocess.CalledProcessError(returncode=1, cmd=args)
         recorded_args = args
@@ -6780,9 +6778,87 @@ def test_release_publish_defaults_to_latest_stable(
     )
     assert publish_result.exit_code == 0, publish_result.output
 
-    # Verify that gh was called with v1.5.0 (the latest stable release).
-    assert "v1.5.0" in recorded_args, f"Expected v1.5.0 in recorded args: {recorded_args}"
+    # Verify that gh was called with v1.6.0-rc.1 (the latest release overall).
+    assert "v1.6.0-rc.1" in recorded_args, f"Expected v1.6.0-rc.1 in recorded args: {recorded_args}"
     assert recorded_args[:3] == ["/usr/bin/gh", "release", "create"]
+    assert "--prerelease" in recorded_args
+    assert "--latest=false" in recorded_args
+
+
+def test_release_publish_defaults_to_latest_release_when_only_rc_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A preview feature.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.6.0-rc.1",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    config_path = project_dir / "config.yaml"
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_data["repository"] = "owner/repo"
+    config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
+
+    recorded_args: list[str] = []
+
+    def fake_which(command: str) -> str:
+        assert command == "gh"
+        return "/usr/bin/gh"
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        nonlocal recorded_args
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
+        recorded_args = args
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    publish_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "--yes",
+        ],
+    )
+    assert publish_result.exit_code == 0, publish_result.output
+    assert "v1.6.0-rc.1" in recorded_args
+    assert "--prerelease" in recorded_args
+    assert "--latest=false" in recorded_args
 
 
 def test_release_publish_infers_prerelease_and_not_latest(

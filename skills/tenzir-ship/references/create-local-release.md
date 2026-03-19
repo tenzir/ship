@@ -146,6 +146,7 @@ Notes:
 
 - The `--commit` flag commits whatever is staged
 - The `--tag` option creates an annotated tag (that gets pushed automatically)
+- Without an explicit version, `release publish` targets the latest release, so the same command works for both stable releases and RCs
 - Add `--draft` if the user requested a draft release
 - `release publish` automatically treats `vX.Y.Z-rc.N` releases as GitHub prereleases and prevents them from being marked as latest
 - Add `--prerelease` only when the user explicitly wants to mark a stable version as prerelease

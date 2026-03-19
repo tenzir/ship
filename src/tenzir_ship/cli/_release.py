@@ -73,13 +73,13 @@ from ._rendering import (
 )
 from ._manifests import (
     _find_release_manifest,
+    _get_latest_release_manifest,
     _get_previous_stable_manifest,
     _get_release_manifest_before,
 )
 from ._show import (
     _collect_unused_entries_for_release,
     _gather_module_released_entries,
-    _get_latest_release_manifest,
 )
 
 
@@ -1573,15 +1573,15 @@ def release_publish_cmd(
 ) -> None:
     """Publish a release to GitHub using the gh CLI.
 
-    If no version is provided, defaults to the latest stable release.
+    If no version is provided, defaults to the latest release.
     """
 
     resolved_version = version
     if resolved_version is None:
-        manifest = _get_latest_release_manifest(ctx.project_root)
+        manifest = _get_latest_release_manifest(ctx.project_root, stable_only=False)
         if manifest is None:
             raise click.ClickException(
-                "No stable releases found. Create a stable release first with 'release create'."
+                "No releases found. Create a release first with 'release create'."
             )
         resolved_version = manifest.version
 
