@@ -5768,7 +5768,8 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
         ],
     )
     assert missing_source_result.exit_code != 0
-    assert "Use --from v1.2.3-rc.1" in missing_source_result.output
+    assert "Omit the version and bump flags" in missing_source_result.output
+    assert "--from v1.2.3-rc.1" in missing_source_result.output
 
     promote_result = runner.invoke(
         cli,
@@ -5777,9 +5778,6 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
-            "--from",
-            "v1.2.3-rc.1",
             "--yes",
         ],
     )
@@ -5983,7 +5981,6 @@ def test_release_create_from_release_candidate_reapplies_snapshot_to_existing_st
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
             "--current-unreleased",
             "--yes",
         ],
@@ -6065,7 +6062,6 @@ def test_release_create_from_release_candidate_reapplies_metadata_to_existing_st
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
             "--title",
             "Stable Title",
             "--intro",
@@ -6167,7 +6163,6 @@ def test_release_create_rejects_existing_stable_with_mismatched_promoted_entries
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
             "--current-unreleased",
             "--yes",
         ],
@@ -6528,7 +6523,6 @@ def test_release_create_stable_from_current_unreleased_with_existing_rc(tmp_path
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
             "--current-unreleased",
             "--yes",
         ],
@@ -6595,7 +6589,6 @@ def test_release_create_current_unreleased_replaces_existing_stable(tmp_path: Pa
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
             "--current-unreleased",
             "--yes",
         ],
@@ -6646,7 +6639,7 @@ def test_release_create_current_unreleased_replaces_existing_stable(tmp_path: Pa
     assert not any((project_dir / "unreleased").glob("*.md"))
 
 
-def test_release_create_rejects_outstanding_rc_on_other_base_without_override(
+def test_release_create_without_rc_promotes_latest_outstanding_candidate(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -6725,10 +6718,10 @@ def test_release_create_rejects_outstanding_rc_on_other_base_without_override(
             "--yes",
         ],
     )
-    assert result.exit_code != 0
-    assert "Outstanding release candidates already exist: v2.0.0-rc.1" in result.output
-    assert "--current-unreleased" in result.output
+    assert result.exit_code == 0, result.output
+    assert (project_dir / "releases" / "v2.0.0").exists()
     assert not (project_dir / "releases" / "v1.6.0").exists()
+    assert not any((project_dir / "unreleased").glob("*.md"))
 
 
 def test_release_create_patch_bump_uses_release_candidate_base_when_no_stable_exists(
@@ -7037,7 +7030,6 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
             str(project_dir),
             "release",
             "create",
-            "v1.2.3",
             "--current-unreleased",
             "--yes",
         ],

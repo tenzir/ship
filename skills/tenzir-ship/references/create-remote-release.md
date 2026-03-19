@@ -48,7 +48,9 @@ gh workflow run release.yaml \
 ```
 
 Do not specify a version bump unless explicitly requested. The workflow will
-pick the appropriate bump according to the changelog entry types.
+pick the appropriate bump according to the changelog entry types. If an
+outstanding release candidate exists, this same invocation promotes the latest
+RC to its matching stable release automatically.
 
 ### Stable release with manual bump
 
@@ -88,7 +90,6 @@ gh workflow run release.yaml \
 gh workflow run release.yaml \
   -f intro="<intro text>" \
   -f title="<title>" \
-  -f version=v1.2.3 \
   -f current-unreleased=true
 ```
 

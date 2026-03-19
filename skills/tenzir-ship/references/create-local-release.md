@@ -66,6 +66,10 @@ This auto-bumps the version to the next version according to the set of
 available changelog entries. Auto-bumping is the best default and should always
 be used unless the user explicitly asks for something different.
 
+If the latest release is an outstanding release candidate, the same command
+promotes that latest RC to its matching stable release automatically. This is
+the preferred follow-up to `release create --rc`.
+
 For a manual bump, pass `--patch`, `--minor`, or `--major`. Only use this when
 the automatic detection is not the right fit for the release, e.g., when a minor
 feature should yield a patch instead of a minor release, or when a breaking
@@ -92,12 +96,25 @@ so you can iterate on `-rc.N` releases before shipping the stable release.
 The stable base is inferred from the unreleased entry types; when the matching
 RC series already exists, `release create --rc` increments the `-rc.N` counter.
 
+When you are ready to ship the stable release, run the normal stable command
+again without `--rc`:
+
+```sh
+uvx tenzir-ship release create \
+  --title "<title>" \
+  --intro "<intro>" \
+  --yes
+```
+
+If an outstanding RC exists, this promotes the latest candidate to its matching
+stable release automatically.
+
 To override the inferred base, prefer a manual bump flag, for example
 `release create --rc --minor`. Pass a stable version only when the user needs
 an exact base version.
 
-To promote an existing release candidate exactly, create the matching stable
-release with `--from`:
+To promote a specific release candidate exactly instead of using the latest one,
+create the matching stable release with `--from`:
 
 ```sh
 uvx tenzir-ship release create v1.2.3 \
@@ -106,8 +123,9 @@ uvx tenzir-ship release create v1.2.3 \
 ```
 
 If release candidates already exist but the stable release should use the
-current unreleased queue instead of a candidate snapshot, pass
-`--current-unreleased`.
+current unreleased queue instead of the latest candidate snapshot, pass
+`--current-unreleased`. You can omit the stable version here as well; the CLI
+uses the latest RC's base version automatically.
 
 Replace `--intro` with `--intro-file` if the introduction contains escape-worthy
 characters.

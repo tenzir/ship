@@ -495,6 +495,10 @@ def _resolve_requested_release_version(
     release_candidate: bool,
 ) -> tuple[str, ReleaseVersionSource]:
     if not release_candidate:
+        if explicit is None and bump is None:
+            latest_outstanding = _latest_outstanding_release_candidate(project_root)
+            if latest_outstanding is not None:
+                return stable_release_version(latest_outstanding.version), "auto"
         return _resolve_release_version(
             project_root,
             explicit,
@@ -600,6 +604,22 @@ def _find_outstanding_release_candidates(
     return outstanding
 
 
+def _latest_outstanding_release_candidate(project_root: Path) -> ReleaseManifest | None:
+    """Return the newest outstanding release candidate across all RC series."""
+    latest: tuple[Version, ReleaseManifest] | None = None
+    for candidates in _find_outstanding_release_candidates(project_root).values():
+        if not candidates:
+            continue
+        candidate = candidates[-1]
+        try:
+            parsed = parse_release_version(candidate.version)
+        except InvalidVersion:
+            continue
+        if latest is None or parsed > latest[0]:
+            latest = (parsed, candidate)
+    return latest[1] if latest is not None else None
+
+
 def _resolve_release_intent(
     project_root: Path,
     *,
@@ -674,13 +694,29 @@ def _resolve_release_intent(
     outstanding_candidates = _find_outstanding_release_candidates(project_root)
     if outstanding_candidates and existing_manifest is None and not current_unreleased:
         matching_candidates = outstanding_candidates.get(stable_release_version(version))
+        latest_candidate_manifest = (
+            matching_candidates[-1]
+            if matching_candidates
+            else _latest_outstanding_release_candidate(project_root)
+        )
+        if latest_candidate_manifest is not None and version_source == "auto":
+            resolved_version = stable_release_version(latest_candidate_manifest.version)
+            return ReleaseIntent(
+                mode=ReleaseMode.PROMOTE_PRERELEASE,
+                version=resolved_version,
+                tag_version=render_release_tag(resolved_version),
+                version_source=version_source,
+                existing_manifest=_find_release_manifest(project_root, resolved_version),
+                source_manifest=latest_candidate_manifest,
+            )
         if matching_candidates:
             latest_candidate = render_release_tag(matching_candidates[-1].version)
             raise click.ClickException(
                 f"Release candidates already exist for '{stable_release_version(version)}'. "
-                f"Use --from {latest_candidate} to promote the latest candidate exactly, "
-                "or pass --current-unreleased to create the stable release from the current "
-                "unreleased queue."
+                f"Omit the version and bump flags to promote {latest_candidate} automatically, "
+                f"use --from {latest_candidate} to promote it explicitly, or pass "
+                "--current-unreleased to create the stable release from the current unreleased "
+                "queue."
             )
         latest_candidates = ", ".join(
             render_release_tag(candidates[-1].version)
@@ -688,8 +724,9 @@ def _resolve_release_intent(
         )
         raise click.ClickException(
             "Outstanding release candidates already exist: "
-            f"{latest_candidates}. Promote one with --from <candidate>, or pass "
-            f"--current-unreleased to create {tag_version} from the current unreleased "
+            f"{latest_candidates}. Omit the version and bump flags to promote the latest "
+            "candidate automatically, promote one explicitly with --from <candidate>, or "
+            f"pass --current-unreleased to create {tag_version} from the current unreleased "
             "queue."
         )
 
