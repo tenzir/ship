@@ -19,18 +19,24 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..config import EXPORT_STYLE_COMPACT
-from ..entries import Entry
+from ..config import EXPORT_STYLE_COMPACT, Config
+from ..entries import Entry, iter_entries
 from ..releases import (
     NOTES_FILENAME,
     ReleaseManifest,
+    ReleaseSource,
+    is_release_candidate,
+    is_stable_release,
+    is_valid_release_version,
     iter_release_manifests,
     load_release_entry,
     normalize_release_version,
+    parse_release_version,
     release_directory,
     release_manifest_root,
     render_release_tag,
     serialize_release_manifest,
+    stable_release_version,
     write_release_manifest,
 )
 from ..utils import (
@@ -65,10 +71,15 @@ from ._rendering import (
     _render_module_entries_compact,
     _release_entry_sort_key,
 )
+from ._manifests import (
+    _find_release_manifest,
+    _get_latest_release_manifest,
+    _get_previous_stable_manifest,
+    _get_release_manifest_before,
+)
 from ._show import (
     _collect_unused_entries_for_release,
     _gather_module_released_entries,
-    _get_latest_release_manifest,
 )
 
 
@@ -184,12 +195,58 @@ ReleaseBump = Literal["patch", "minor", "major"]
 ReleaseVersionSource = Literal["explicit", "manual", "auto"]
 
 
-def _find_release_manifest(project_root: Path, version: str) -> Optional[ReleaseManifest]:
-    normalized_version = normalize_release_version(version)
-    for manifest in iter_release_manifests(project_root):
-        if normalize_release_version(manifest.version) == normalized_version:
-            return manifest
-    return None
+class ReleaseMode(Enum):
+    """High-level release workflows with distinct invariants."""
+
+    SNAPSHOT_PRERELEASE = "snapshot-prerelease"
+    PROMOTE_PRERELEASE = "promote-prerelease"
+    SYNC_STABLE_QUEUE = "sync-stable-queue"
+
+
+@dataclass(frozen=True)
+class ReleaseIntent:
+    """Normalized release workflow intent derived from CLI/API inputs."""
+
+    mode: ReleaseMode
+    version: str
+    tag_version: str
+    version_source: ReleaseVersionSource
+    existing_manifest: ReleaseManifest | None
+    source_manifest: ReleaseManifest | None = None
+
+    @property
+    def is_prerelease(self) -> bool:
+        """Return whether the target release is a prerelease."""
+        return self.mode is ReleaseMode.SNAPSHOT_PRERELEASE
+
+
+@dataclass
+class ReleaseEntryPlan:
+    """Entry selection and file movement plan for a release workflow."""
+
+    existing_entries: list[Entry]
+    selected_entries: list[Entry]
+    combined_entries: list[Entry]
+    new_entries: list[Entry]
+    cleanup_unreleased_entry_ids: set[str]
+    copy_entries: bool
+
+
+@dataclass
+class UnreleasedCleanupPlan:
+    """Resolved cleanup actions for unreleased entry files."""
+
+    paths: list[Path]
+    missing_entry_ids: list[str]
+
+
+@dataclass
+class ModuleReleasePlan:
+    """Resolved module snapshot and rendered entry selection for a release."""
+
+    entries_by_module: dict[str, tuple[Config, list[Entry]]]
+    version_map: dict[str, str]
+    previous_release: ReleaseManifest | None
 
 
 def _github_release_exists(repository: str, tag_name: str, gh_path: str) -> bool:
@@ -208,11 +265,13 @@ def _github_release_exists(repository: str, tag_name: str, gh_path: str) -> bool
         return False
 
 
-def _latest_semver(project_root: Path) -> Version | None:
+def _latest_semver(project_root: Path, *, stable_only: bool = True) -> Version | None:
     versions: list[Version] = []
     for manifest in iter_release_manifests(project_root):
+        if stable_only and is_release_candidate(manifest.version):
+            continue
         try:
-            parsed = Version(normalize_release_version(manifest.version))
+            parsed = parse_release_version(manifest.version)
         except InvalidVersion:
             continue
         versions.append(parsed)
@@ -236,8 +295,29 @@ def _bump_version_value(base: Version, bump: str) -> Version:
     return Version(f"{major}.{minor}.{micro}")
 
 
-def _next_version_for_bump(project_root: Path, bump: ReleaseBump) -> str:
-    latest = _latest_semver(project_root)
+def _latest_bump_base_semver(project_root: Path) -> Version | None:
+    """Return the semantic version used as the base for the next bump.
+
+    Prefer the latest stable release. If the project only has release
+    candidates so far, fall back to the newest candidate's base version.
+    """
+    latest_stable = _latest_semver(project_root)
+    if latest_stable is not None:
+        return latest_stable
+    return _latest_semver(project_root, stable_only=False)
+
+
+def _next_version_for_bump(
+    project_root: Path,
+    bump: ReleaseBump,
+    *,
+    include_prerelease_fallback: bool = True,
+) -> str:
+    latest = (
+        _latest_bump_base_semver(project_root)
+        if include_prerelease_fallback
+        else _latest_semver(project_root)
+    )
     base_version = Version("0.0.0") if latest is None else latest
     next_version = _bump_version_value(base_version, bump)
     return str(next_version)
@@ -253,21 +333,29 @@ def _infer_release_bump(unreleased_entries: list[Entry]) -> ReleaseBump | None:
     return "patch"
 
 
-def _infer_next_release_version(project_root: Path, unreleased_entries: list[Entry]) -> str | None:
+def _infer_next_release_version(
+    project_root: Path,
+    unreleased_entries: list[Entry],
+    *,
+    include_prerelease_fallback: bool = True,
+) -> str | None:
     bump = _infer_release_bump(unreleased_entries)
     if bump is None:
         return None
-    return _next_version_for_bump(project_root, bump)
+    return _next_version_for_bump(
+        project_root,
+        bump,
+        include_prerelease_fallback=include_prerelease_fallback,
+    )
 
 
 def _validate_semver_label(version: str) -> None:
     value = normalize_release_version(version)
-    try:
-        Version(value)
-    except InvalidVersion as exc:
-        raise click.ClickException(
-            "Release version must be a valid semantic version (e.g. 1.2.3 or v1.2.3)."
-        ) from exc
+    if is_valid_release_version(value):
+        return
+    raise click.ClickException(
+        "Release version must use X.Y.Z or X.Y.Z-rc.N (for example 1.2.3, v1.2.3, or 1.2.3-rc.1)."
+    )
 
 
 def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
@@ -276,7 +364,7 @@ def _is_current_or_newer_release(project_root: Path, version: str) -> bool:
         return True
 
     try:
-        target = Version(normalize_release_version(version))
+        target = parse_release_version(version)
     except InvalidVersion:
         return False
     return target >= latest
@@ -288,6 +376,7 @@ def _resolve_release_version(
     bump: ReleaseBump | None,
     *,
     unreleased_entries: list[Entry],
+    include_prerelease_fallback: bool = True,
 ) -> tuple[str, ReleaseVersionSource]:
     if explicit is not None and bump:
         raise click.ClickException("Provide either a version argument or a bump flag, not both.")
@@ -298,15 +387,147 @@ def _resolve_release_version(
         _validate_semver_label(value)
         return normalize_release_version(value), "explicit"
     if bump:
-        return _next_version_for_bump(project_root, bump), "manual"
+        return (
+            _next_version_for_bump(
+                project_root,
+                bump,
+                include_prerelease_fallback=include_prerelease_fallback,
+            ),
+            "manual",
+        )
 
-    inferred = _infer_next_release_version(project_root, unreleased_entries)
+    inferred = _infer_next_release_version(
+        project_root,
+        unreleased_entries,
+        include_prerelease_fallback=include_prerelease_fallback,
+    )
     if inferred is None:
         raise click.ClickException(
             "Cannot auto-bump release version because no unreleased changelog entries were "
             "found. Provide a version argument or specify one of --patch/--minor/--major."
         )
     return inferred, "auto"
+
+
+def _resolve_release_candidate_base_version(
+    project_root: Path,
+    explicit: Optional[str],
+    bump: ReleaseBump | None,
+    *,
+    unreleased_entries: list[Entry],
+) -> tuple[str, ReleaseVersionSource]:
+    if explicit is None:
+        if bump is None:
+            latest_outstanding = _latest_outstanding_release_candidate(project_root)
+            if latest_outstanding is not None:
+                return stable_release_version(latest_outstanding.version), "auto"
+        return _resolve_release_version(
+            project_root,
+            explicit,
+            bump,
+            unreleased_entries=unreleased_entries,
+            include_prerelease_fallback=False,
+        )
+
+    value = explicit.strip()
+    if not value:
+        raise click.ClickException("Release version cannot be empty.")
+    _validate_semver_label(value)
+    normalized = normalize_release_version(value)
+    if is_release_candidate(normalized):
+        raise click.ClickException(
+            "Use --rc with a stable base version like 1.2.3, or omit the version "
+            "to continue the current RC series."
+        )
+    return _resolve_release_version(
+        project_root,
+        explicit,
+        bump,
+        unreleased_entries=unreleased_entries,
+        include_prerelease_fallback=False,
+    )
+
+
+def _next_release_candidate_version(project_root: Path, base_version: str) -> str:
+    normalized_base = normalize_release_version(base_version)
+    if not is_stable_release(normalized_base):
+        raise click.ClickException("Release candidates require a stable base version like 1.2.3.")
+
+    existing_stable = _find_release_manifest(project_root, normalized_base)
+    if existing_stable is not None and is_stable_release(existing_stable.version):
+        raise click.ClickException(
+            f"Stable release '{render_release_tag(normalized_base)}' already exists. "
+            "Provide a newer base version or omit --rc."
+        )
+
+    outstanding_candidates = _find_outstanding_release_candidates(project_root)
+    other_candidates = [
+        render_release_tag(candidates[-1].version)
+        for base, candidates in sorted(outstanding_candidates.items())
+        if base != normalized_base
+    ]
+    if other_candidates:
+        latest_candidates = ", ".join(other_candidates)
+        raise click.ClickException(
+            "Outstanding release candidates already exist: "
+            f"{latest_candidates}. Continue the current RC flow with --rc, or "
+            "promote the outstanding candidate to a stable release before "
+            "starting a different RC series."
+        )
+
+    matching_candidates = outstanding_candidates.get(normalized_base)
+    if not matching_candidates:
+        return f"{normalized_base}-rc.1"
+
+    latest_candidate = matching_candidates[-1]
+    parsed = parse_release_version(latest_candidate.version)
+    if parsed.pre is None or parsed.pre[0] != "rc":
+        raise click.ClickException(
+            f"Unsupported release candidate version: {render_release_tag(latest_candidate.version)}."
+        )
+    return f"{normalized_base}-rc.{parsed.pre[1] + 1}"
+
+
+def _resolve_requested_release_version(
+    project_root: Path,
+    explicit: Optional[str],
+    bump: ReleaseBump | None,
+    *,
+    unreleased_entries: list[Entry],
+    release_candidate: bool,
+) -> tuple[str, ReleaseVersionSource]:
+    if not release_candidate:
+        if explicit is not None:
+            value = explicit.strip()
+            if not value:
+                raise click.ClickException("Release version cannot be empty.")
+            _validate_semver_label(value)
+            normalized = normalize_release_version(value)
+            if is_release_candidate(normalized):
+                raise click.ClickException(
+                    "Release candidate versions must be created with --rc from a stable "
+                    "base version like 1.2.3. Use 'release create --rc' to continue the "
+                    "current RC series, or omit the version and bump flags to promote "
+                    "the latest candidate."
+                )
+        if explicit is None and bump is None:
+            latest_outstanding = _latest_outstanding_release_candidate(project_root)
+            if latest_outstanding is not None:
+                return stable_release_version(latest_outstanding.version), "auto"
+        return _resolve_release_version(
+            project_root,
+            explicit,
+            bump,
+            unreleased_entries=unreleased_entries,
+        )
+
+    base_version, version_source = _resolve_release_candidate_base_version(
+        project_root,
+        explicit,
+        bump,
+        unreleased_entries=unreleased_entries,
+    )
+    return _next_release_candidate_version(project_root, base_version), version_source
 
 
 def _resolve_manual_bump_flags(*, patch: bool, minor: bool, major: bool) -> ReleaseBump | None:
@@ -331,6 +552,343 @@ def _coerce_release_bump(value: Optional[str]) -> ReleaseBump | None:
     return cast(ReleaseBump, normalized)
 
 
+def _collect_current_unreleased_entries(project_root: Path, config: Config) -> list[Entry]:
+    """Return all entries currently present in ``unreleased/`` for this project.
+
+    Unlike ``_collect_unused_entries_for_release``, this intentionally keeps
+    entries that already appear in release candidates because RC creation
+    snapshots by copying entries instead of consuming them.
+    """
+    all_entries = list(iter_entries(project_root))
+    return [entry for entry in all_entries if entry.project is None or entry.project == config.id]
+
+
+def _load_manifest_entries(project_root: Path, manifest: ReleaseManifest) -> list[Entry]:
+    entries: list[Entry] = []
+    for entry_id in manifest.entries:
+        entry = load_release_entry(project_root, manifest, entry_id)
+        if entry is None:
+            raise click.ClickException(
+                f"Release '{manifest.version}' is missing entry file for '{entry_id}'. "
+                "Recreate or repair the release before reusing it."
+            )
+        entries.append(entry)
+    return entries
+
+
+def _find_release_candidates_for_base(project_root: Path, version: str) -> list[ReleaseManifest]:
+    base_version = stable_release_version(version)
+    candidates: list[tuple[Version, ReleaseManifest]] = []
+    for manifest in iter_release_manifests(project_root):
+        if not is_release_candidate(manifest.version):
+            continue
+        if stable_release_version(manifest.version) != base_version:
+            continue
+        try:
+            parsed = parse_release_version(manifest.version)
+        except InvalidVersion:
+            continue
+        candidates.append((parsed, manifest))
+    candidates.sort(key=lambda item: item[0])
+    return [manifest for _, manifest in candidates]
+
+
+def _find_outstanding_release_candidates(
+    project_root: Path,
+) -> dict[str, list[ReleaseManifest]]:
+    """Return RC series whose stable release has not been cut yet."""
+    stable_versions: set[str] = set()
+    candidates_by_base: dict[str, list[tuple[Version, ReleaseManifest]]] = {}
+    for manifest in iter_release_manifests(project_root):
+        try:
+            parsed = parse_release_version(manifest.version)
+        except InvalidVersion:
+            continue
+        base_version = stable_release_version(manifest.version)
+        if is_release_candidate(manifest.version):
+            candidates_by_base.setdefault(base_version, []).append((parsed, manifest))
+        else:
+            stable_versions.add(base_version)
+
+    outstanding: dict[str, list[ReleaseManifest]] = {}
+    for base_version, candidates in candidates_by_base.items():
+        if base_version in stable_versions:
+            continue
+        candidates.sort(key=lambda item: item[0])
+        outstanding[base_version] = [manifest for _, manifest in candidates]
+    return outstanding
+
+
+def _latest_outstanding_release_candidate(project_root: Path) -> ReleaseManifest | None:
+    """Return the newest outstanding release candidate across all RC series."""
+    latest: tuple[Version, ReleaseManifest] | None = None
+    for candidates in _find_outstanding_release_candidates(project_root).values():
+        if not candidates:
+            continue
+        candidate = candidates[-1]
+        try:
+            parsed = parse_release_version(candidate.version)
+        except InvalidVersion:
+            continue
+        if latest is None or parsed > latest[0]:
+            latest = (parsed, candidate)
+    return latest[1] if latest is not None else None
+
+
+def _resolve_release_intent(
+    project_root: Path,
+    *,
+    version: str,
+    version_source: ReleaseVersionSource,
+) -> ReleaseIntent:
+    """Normalize CLI/API inputs into an explicit release workflow mode."""
+    tag_version = render_release_tag(version)
+    is_prerelease = is_release_candidate(version)
+
+    existing_manifest = _find_release_manifest(project_root, version)
+    if version_source in {"manual", "auto"} and existing_manifest is not None:
+        follow_up = (
+            "Supply a different bump flag or explicit version."
+            if version_source == "manual"
+            else "Supply an explicit version or a manual bump flag."
+        )
+        raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
+
+    if is_prerelease:
+        return ReleaseIntent(
+            mode=ReleaseMode.SNAPSHOT_PRERELEASE,
+            version=version,
+            tag_version=tag_version,
+            version_source=version_source,
+            existing_manifest=existing_manifest,
+        )
+
+    outstanding_candidates = _find_outstanding_release_candidates(project_root)
+    if outstanding_candidates and existing_manifest is None:
+        matching_candidates = outstanding_candidates.get(stable_release_version(version))
+        latest_candidate_manifest = (
+            matching_candidates[-1]
+            if matching_candidates
+            else _latest_outstanding_release_candidate(project_root)
+        )
+        if latest_candidate_manifest is not None and version_source == "auto":
+            resolved_version = stable_release_version(latest_candidate_manifest.version)
+            return ReleaseIntent(
+                mode=ReleaseMode.PROMOTE_PRERELEASE,
+                version=resolved_version,
+                tag_version=render_release_tag(resolved_version),
+                version_source=version_source,
+                existing_manifest=_find_release_manifest(project_root, resolved_version),
+                source_manifest=latest_candidate_manifest,
+            )
+        if matching_candidates:
+            latest_candidate = render_release_tag(matching_candidates[-1].version)
+            raise click.ClickException(
+                f"Release candidates already exist for '{stable_release_version(version)}'. "
+                f"Omit the version and bump flags to promote {latest_candidate} automatically, "
+                "or use --rc to continue the RC series."
+            )
+        latest_candidates = ", ".join(
+            render_release_tag(candidates[-1].version)
+            for _, candidates in sorted(outstanding_candidates.items())
+        )
+        raise click.ClickException(
+            "Outstanding release candidates already exist: "
+            f"{latest_candidates}. Omit the version and bump flags to promote the latest "
+            "candidate automatically, or use --rc to continue the RC series."
+        )
+
+    return ReleaseIntent(
+        mode=ReleaseMode.SYNC_STABLE_QUEUE,
+        version=version,
+        tag_version=tag_version,
+        version_source=version_source,
+        existing_manifest=existing_manifest,
+    )
+
+
+def _build_release_entry_plan(
+    project_root: Path,
+    config: Config,
+    intent: ReleaseIntent,
+) -> ReleaseEntryPlan:
+    """Resolve the exact parent entry snapshot for the requested workflow."""
+    existing_entries: list[Entry] = []
+    existing_entry_ids: set[str] = set()
+    if intent.existing_manifest is not None:
+        existing_entries = _load_manifest_entries(project_root, intent.existing_manifest)
+        existing_entry_ids = {entry.entry_id for entry in existing_entries}
+
+    cleanup_unreleased_entry_ids: set[str] = set()
+    copy_entries = intent.mode in {
+        ReleaseMode.SNAPSHOT_PRERELEASE,
+        ReleaseMode.PROMOTE_PRERELEASE,
+    }
+
+    if intent.mode is ReleaseMode.SNAPSHOT_PRERELEASE:
+        selected_entries = _collect_current_unreleased_entries(project_root, config)
+    elif intent.mode is ReleaseMode.PROMOTE_PRERELEASE:
+        assert intent.source_manifest is not None
+        selected_entries = _load_manifest_entries(project_root, intent.source_manifest)
+        cleanup_unreleased_entry_ids = {entry.entry_id for entry in selected_entries}
+    else:
+        include_prereleases = intent.existing_manifest is not None
+        selected_entries = _collect_unused_entries_for_release(
+            project_root,
+            config,
+            include_prereleases=include_prereleases,
+        )
+
+    new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
+    combined_entries_map = {entry.entry_id: entry for entry in existing_entries}
+    for entry in new_entries:
+        combined_entries_map[entry.entry_id] = entry
+    combined_entries = list(combined_entries_map.values())
+
+    combined_entries.sort(key=_release_entry_sort_key)
+    return ReleaseEntryPlan(
+        existing_entries=existing_entries,
+        selected_entries=list(selected_entries),
+        combined_entries=combined_entries,
+        new_entries=new_entries,
+        cleanup_unreleased_entry_ids=cleanup_unreleased_entry_ids,
+        copy_entries=copy_entries,
+    )
+
+
+def _plan_unreleased_cleanup(
+    project_root: Path,
+    config: Config,
+    intent: ReleaseIntent,
+    entry_plan: ReleaseEntryPlan,
+) -> UnreleasedCleanupPlan:
+    """Resolve which unreleased entry files may be removed safely."""
+    current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
+    unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
+
+    if intent.mode is ReleaseMode.PROMOTE_PRERELEASE:
+        promoted_entries_by_id = {entry.entry_id: entry for entry in entry_plan.selected_entries}
+        diverged_entry_ids: list[str] = []
+        for entry_id in sorted(entry_plan.cleanup_unreleased_entry_ids):
+            current_entry = unreleased_entries_by_id.get(entry_id)
+            promoted_entry = promoted_entries_by_id.get(entry_id)
+            if current_entry is None or promoted_entry is None:
+                continue
+            if current_entry.path.read_bytes() != promoted_entry.path.read_bytes():
+                diverged_entry_ids.append(entry_id)
+        if diverged_entry_ids:
+            quoted_ids = ", ".join(f"'{entry_id}'" for entry_id in diverged_entry_ids)
+            source_tag = (
+                render_release_tag(intent.source_manifest.version)
+                if intent.source_manifest is not None
+                else intent.tag_version
+            )
+            raise click.ClickException(
+                "Cannot promote "
+                f"{source_tag} because unreleased entries changed after the release "
+                f"candidate snapshot was created: {quoted_ids}. Move the follow-up changes "
+                "into new unreleased entries and create another release candidate before "
+                "promoting to stable."
+            )
+
+    missing_entry_ids = sorted(
+        entry_plan.cleanup_unreleased_entry_ids - set(unreleased_entries_by_id)
+    )
+    cleanup_paths = [
+        unreleased_entries_by_id[entry_id].path
+        for entry_id in sorted(entry_plan.cleanup_unreleased_entry_ids)
+        if entry_id in unreleased_entries_by_id
+    ]
+    return UnreleasedCleanupPlan(paths=cleanup_paths, missing_entry_ids=missing_entry_ids)
+
+
+def _resolve_release_baseline(
+    project_root: Path,
+    intent: ReleaseIntent,
+) -> ReleaseManifest | None:
+    """Resolve the stable baseline that this release snapshot compares against."""
+    baseline_holder = intent.source_manifest or intent.existing_manifest
+    if baseline_holder is not None:
+        recorded = _get_previous_stable_manifest(project_root, baseline_holder)
+        if recorded is not None:
+            return recorded
+    return _get_release_manifest_before(project_root, intent.version, stable_only=True)
+
+
+def _resolve_release_source(
+    intent: ReleaseIntent,
+    entry_plan: ReleaseEntryPlan,
+    previous_release: ReleaseManifest | None,
+) -> ReleaseSource | None:
+    """Persist provenance for the release snapshot unless this is metadata-only."""
+    if (
+        intent.existing_manifest is not None
+        and intent.mode is ReleaseMode.SYNC_STABLE_QUEUE
+        and not entry_plan.new_entries
+    ):
+        return intent.existing_manifest.source
+
+    return ReleaseSource(
+        mode=intent.mode.value,
+        source_release=(
+            render_release_tag(intent.source_manifest.version)
+            if intent.source_manifest is not None
+            else None
+        ),
+        previous_stable=(
+            render_release_tag(previous_release.version) if previous_release is not None else None
+        ),
+    )
+
+
+def _build_module_release_plan(
+    ctx: CLIContext,
+    project_root: Path,
+    intent: ReleaseIntent,
+    previous_release: ReleaseManifest | None,
+) -> ModuleReleasePlan:
+    """Resolve module versions and entries for the release snapshot."""
+    modules = ctx.get_modules()
+    if not modules:
+        return ModuleReleasePlan({}, {}, previous_release)
+
+    previous_module_versions = previous_release.modules if previous_release else None
+
+    if intent.source_manifest is not None:
+        target_versions = dict(intent.source_manifest.modules)
+        if not target_versions:
+            return ModuleReleasePlan({}, {}, previous_release)
+        entries_by_module, _ = _gather_module_released_entries(
+            modules,
+            previous_module_versions,
+            target_versions,
+            include_prereleases=is_release_candidate(intent.source_manifest.version),
+        )
+        return ModuleReleasePlan(entries_by_module, target_versions, previous_release)
+
+    if intent.existing_manifest is not None:
+        target_versions = dict(intent.existing_manifest.modules)
+        if not target_versions:
+            return ModuleReleasePlan({}, {}, previous_release)
+        entries_by_module, _ = _gather_module_released_entries(
+            modules,
+            previous_module_versions,
+            target_versions,
+            include_prereleases=(
+                intent.is_prerelease
+                or any(is_release_candidate(version) for version in target_versions.values())
+            ),
+        )
+        return ModuleReleasePlan(entries_by_module, target_versions, previous_release)
+
+    entries_by_module, current_versions = _gather_module_released_entries(
+        modules,
+        previous_module_versions,
+        include_prereleases=intent.is_prerelease,
+    )
+    return ModuleReleasePlan(entries_by_module, current_versions, previous_release)
+
+
 def create_release(
     ctx: CLIContext,
     *,
@@ -343,6 +901,7 @@ def create_release(
     explicit_links: bool = False,
     assume_yes: bool,
     version_bump: Optional[str],
+    release_candidate: bool,
     title_explicit: bool,
     compact_explicit: bool,
 ) -> None:
@@ -353,69 +912,67 @@ def create_release(
     project_root = ctx.project_root
     normalized_bump = _coerce_release_bump(version_bump)
 
-    unused_entries = _collect_unused_entries_for_release(project_root, config)
-    version, version_source = _resolve_release_version(
+    preview_entries = _collect_unused_entries_for_release(
+        project_root,
+        config,
+        include_prereleases=False,
+    )
+    version, version_source = _resolve_requested_release_version(
         project_root,
         version,
         normalized_bump,
-        unreleased_entries=unused_entries,
+        unreleased_entries=preview_entries,
+        release_candidate=release_candidate,
+    )
+    intent = _resolve_release_intent(
+        project_root,
+        version=version,
+        version_source=version_source,
     )
 
-    tag_version = render_release_tag(version)
-    existing_manifest = _find_release_manifest(project_root, version)
-    if version_source in {"manual", "auto"} and existing_manifest is not None:
-        follow_up = (
-            "Supply a different bump flag or explicit version."
-            if version_source == "manual"
-            else "Supply an explicit version or a manual bump flag."
-        )
-        raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
+    existing_manifest = intent.existing_manifest
+    source_manifest = intent.source_manifest
     release_dir = (
         release_manifest_root(project_root, existing_manifest)
         if existing_manifest is not None
-        else release_directory(project_root) / tag_version
+        else release_directory(project_root) / intent.tag_version
     )
     manifest_path = release_dir / "manifest.yaml"
+    release_entries_dir = release_dir / "entries"
     notes_path = release_dir / NOTES_FILENAME
 
-    existing_entries: list[Entry] = []
-    existing_entry_ids: set[str] = set()
-    if existing_manifest:
-        for entry_id in existing_manifest.entries:
-            entry = load_release_entry(project_root, existing_manifest, entry_id)
-            if entry is None:
-                raise click.ClickException(
-                    f"Release '{version}' is missing entry file for '{entry_id}'. "
-                    "Recreate or repair the release before appending new entries."
-                )
-            existing_entries.append(entry)
-            existing_entry_ids.add(entry.entry_id)
-
-    new_entries = [entry for entry in unused_entries if entry.entry_id not in existing_entry_ids]
-
-    combined_entries: dict[str, Entry] = {entry.entry_id: entry for entry in existing_entries}
-    for entry in new_entries:
-        combined_entries[entry.entry_id] = entry
-
-    entries_sorted = sorted(combined_entries.values(), key=_release_entry_sort_key)
+    entry_plan = _build_release_entry_plan(project_root, config, intent)
+    entries_sorted = entry_plan.combined_entries
 
     if title is not None and not title_explicit:
         # Treat explicitly provided empty strings as intentional overrides.
         title_explicit = True
+    default_release_title = f"{config.name} {intent.tag_version}"
+    source_release_title = None
+    if source_manifest is not None:
+        source_tag = render_release_tag(source_manifest.version)
+        if source_manifest.title in {source_tag, f"{config.name} {source_tag}"}:
+            source_release_title = default_release_title
+        else:
+            source_release_title = source_manifest.title
     release_title = (
         title
         if title_explicit
+        else source_release_title
+        if source_release_title is not None
         else existing_manifest.title
         if existing_manifest
-        else f"{config.name} {tag_version}"
+        else default_release_title
     )
-    # Validate mutually exclusive intro sources and resolve intro.
+
     if intro_text and intro_file:
         raise click.ClickException("Use only one of --intro or --intro-file, not both.")
     if intro_text is not None:
         manifest_intro: Optional[str] = intro_text.strip() or None
     elif intro_file:
         manifest_intro = intro_file.read_text(encoding="utf-8").strip() or None
+    elif source_manifest is not None:
+        manifest_intro = source_manifest.intro.strip() if source_manifest.intro else None
     elif existing_manifest and existing_manifest.intro:
         manifest_intro = existing_manifest.intro.strip() or None
     else:
@@ -433,7 +990,7 @@ def create_release(
         table.add_column("Title")
         table.add_column("Type", no_wrap=True, justify="center")
         table.add_column("ID", style="cyan")
-        new_entry_ids = {entry.entry_id for entry in new_entries}
+        new_entry_ids = {entry.entry_id for entry in entry_plan.new_entries}
         for entry in entries_sorted:
             status = "new" if entry.entry_id in new_entry_ids else "existing"
             status_cell = STATUS_TABLE_CELLS.get(status, Text("•"))
@@ -490,54 +1047,41 @@ def create_release(
                 prefer_compact = False
         compact_flag = prefer_compact
 
-    release_notes = release_notes_compact if compact_flag else release_notes_standard
-
+    previous_release = _resolve_release_baseline(project_root, intent)
+    module_plan = _build_module_release_plan(ctx, project_root, intent, previous_release)
     manifest = ReleaseManifest(
-        version=tag_version,
+        version=intent.tag_version,
         created=release_dt,
         entries=[entry.entry_id for entry in entries_sorted],
         title=release_title or "",
         intro=manifest_intro or None,
+        modules=dict(module_plan.version_map),
+        source=_resolve_release_source(intent, entry_plan, previous_release),
         path=existing_manifest.path if existing_manifest is not None else None,
     )
 
+    release_notes = release_notes_compact if compact_flag else release_notes_standard
     readme_content = _compose_release_document(manifest.intro, release_notes)
-
-    # Append module summaries to static release notes
-    modules = ctx.get_modules()
-    if modules:
-        # Get previous release to determine which module entries are new
-        previous_release = _get_latest_release_manifest(project_root)
-        previous_module_versions = previous_release.modules if previous_release else None
-
-        module_entries, current_module_versions = _gather_module_released_entries(
-            modules, previous_module_versions
-        )
-
-        # Record current module versions in manifest
-        if current_module_versions:
-            manifest.modules = current_module_versions
-
-        if module_entries:
-            module_sections: list[str] = []
-            for module_id in sorted(module_entries.keys()):
-                module_config, entries = module_entries[module_id]
-                module_body = _render_module_entries_compact(
-                    entries,
-                    module_config,
-                    include_emoji=True,
-                    explicit_links=explicit_links,
+    if module_plan.entries_by_module:
+        module_sections: list[str] = []
+        for module_id in sorted(module_plan.entries_by_module.keys()):
+            module_config, module_entries = module_plan.entries_by_module[module_id]
+            module_body = _render_module_entries_compact(
+                module_entries,
+                module_config,
+                include_emoji=True,
+                explicit_links=explicit_links,
+            )
+            if module_body:
+                version_str = module_plan.version_map.get(module_id, "")
+                header = (
+                    f"## {module_config.name} {version_str}"
+                    if version_str
+                    else f"## {module_config.name}"
                 )
-                if module_body:
-                    version_str = current_module_versions.get(module_id, "")
-                    header = (
-                        f"## {module_config.name} {version_str}"
-                        if version_str
-                        else f"## {module_config.name}"
-                    )
-                    module_sections.append(f"{header}\n\n{module_body}")
-            if module_sections:
-                readme_content = readme_content + "\n\n---\n\n" + "\n\n".join(module_sections)
+                module_sections.append(f"{header}\n\n{module_body}")
+        if module_sections:
+            readme_content = readme_content + "\n\n---\n\n" + "\n\n".join(module_sections)
 
     manifest_payload = serialize_release_manifest(manifest)
     manifest_exists = manifest_path.exists()
@@ -548,14 +1092,27 @@ def create_release(
     def _normalize_block(value: Optional[str]) -> str:
         return (value or "").rstrip("\n")
 
+    cleanup_plan = _plan_unreleased_cleanup(project_root, config, intent, entry_plan)
+    if cleanup_plan.missing_entry_ids:
+        log_warning(
+            f"{len(cleanup_plan.missing_entry_ids)} promoted entry file(s) were not found in "
+            f"unreleased/ and could not be cleaned up: {', '.join(cleanup_plan.missing_entry_ids)}"
+        )
+    cleanup_unreleased_paths = cleanup_plan.paths
+
     changes_required = False
     change_reasons: list[str] = []
     if not release_dir.exists():
         changes_required = True
         change_reasons.append("create release directory")
-    if new_entries:
+    if entry_plan.new_entries:
         changes_required = True
-        change_reasons.append(f"append {len(new_entries)} new entries")
+        change_reasons.append(f"append {len(entry_plan.new_entries)} new entries")
+    if cleanup_unreleased_paths:
+        changes_required = True
+        change_reasons.append(
+            f"consume {len(cleanup_unreleased_paths)} promoted unreleased entries"
+        )
     if _normalize_block(manifest_payload) != _normalize_block(existing_manifest_payload):
         changes_required = True
         change_reasons.append("update manifest metadata")
@@ -564,7 +1121,7 @@ def create_release(
         change_reasons.append("refresh release notes")
 
     version_file_updates = []
-    if _is_current_or_newer_release(project_root, version):
+    if not intent.is_prerelease and _is_current_or_newer_release(project_root, version):
         version_file_updates = plan_version_file_updates(
             project_root,
             version,
@@ -578,18 +1135,18 @@ def create_release(
         change_reasons.append(f"update {count} version file{plural}")
 
     if not changes_required:
-        log_success(f"release '{tag_version}' is already up to date.")
+        log_success(f"release '{intent.tag_version}' is already up to date.")
+        click.echo(intent.tag_version)
         return
 
     if not assume_yes:
-        log_info(f"changes for release {format_bold(tag_version)}:")
+        log_info(f"changes for release {format_bold(intent.tag_version)}:")
         for reason in change_reasons:
             log_success(reason)
         log_info(f"re-run with {format_bold('--yes')} to apply these updates.")
         raise SystemExit(1)
 
     release_dir.mkdir(parents=True, exist_ok=True)
-    release_entries_dir = release_dir / "entries"
     release_entries_dir.mkdir(parents=True, exist_ok=True)
 
     if version_file_updates:
@@ -601,16 +1158,32 @@ def create_release(
                 display_path = update.path
             log_success(f"updated version file: {display_path}")
 
-    for entry in new_entries:
+    entries_to_sync = (
+        entry_plan.selected_entries if source_manifest is not None else entry_plan.new_entries
+    )
+    for entry in entries_to_sync:
         source_path = entry.path
         destination_path = release_entries_dir / source_path.name
         if not source_path.exists():
+            action = "copy" if entry_plan.copy_entries else "move"
             raise click.ClickException(
-                f"Cannot move entry '{entry.entry_id}' because {source_path} is missing."
+                f"Cannot {action} entry '{entry.entry_id}' because {source_path} is missing."
             )
         if destination_path.exists():
+            if source_manifest is None:
+                continue
+            destination_path.unlink()
+        if entry_plan.copy_entries:
+            shutil.copy2(source_path, destination_path)
+        else:
+            source_path.rename(destination_path)
+
+    removed_unreleased_count = 0
+    for unreleased_path in cleanup_unreleased_paths:
+        if not unreleased_path.exists():
             continue
-        source_path.rename(destination_path)
+        unreleased_path.unlink()
+        removed_unreleased_count += 1
 
     manifest_path_result = write_release_manifest(
         project_root,
@@ -620,14 +1193,22 @@ def create_release(
     )
 
     log_success(f"release manifest written: {manifest_path_result.relative_to(project_root)}")
-    if new_entries:
-        relative_release_dir = release_entries_dir.relative_to(project_root)
-        log_success(f"appended {len(new_entries)} entries to: {relative_release_dir}")
+    relative_release_dir = release_entries_dir.relative_to(project_root)
+    if source_manifest is not None:
+        log_success(
+            f"synchronized {len(entries_to_sync)} promoted entries in: {relative_release_dir}"
+        )
+    elif entry_plan.new_entries:
+        log_success(f"appended {len(entry_plan.new_entries)} entries to: {relative_release_dir}")
     else:
-        log_success(f"updated release metadata for {tag_version}.")
+        log_success(f"updated release metadata for {intent.tag_version}.")
+    if removed_unreleased_count:
+        log_success(
+            f"consumed {removed_unreleased_count} unreleased entries for {intent.tag_version}."
+        )
 
     # Output version to stdout for scripting (e.g., VERSION=$(tenzir-ship release create ...))
-    click.echo(tag_version)
+    click.echo(intent.tag_version)
 
 
 def publish_release(
@@ -674,6 +1255,10 @@ def publish_release(
     notes_content = notes_path.read_text(encoding="utf-8").strip()
     if not notes_content:
         raise click.ClickException("Release notes are empty; aborting publish.")
+
+    inferred_prerelease = is_release_candidate(release_version)
+    resolved_prerelease = prerelease or inferred_prerelease
+    resolved_no_latest = no_latest or inferred_prerelease
 
     # Determine commit message early for step tracking display
     final_commit_message: str | None = None
@@ -767,6 +1352,10 @@ def publish_release(
         ]
         if manifest.title:
             command.extend(["--title", manifest.title])
+        if resolved_prerelease:
+            command.append("--prerelease")
+        if resolved_no_latest:
+            command.append("--latest=false")
         confirmation_action = "gh release edit"
     else:
         command = [
@@ -783,9 +1372,9 @@ def publish_release(
             command.extend(["--title", manifest.title])
         if draft:
             command.append("--draft")
-        if prerelease:
+        if resolved_prerelease:
             command.append("--prerelease")
-        if no_latest:
+        if resolved_no_latest:
             command.append("--latest=false")
         confirmation_action = "gh release create"
 
@@ -863,19 +1452,25 @@ def release_group(ctx: CLIContext) -> None:
     "--patch",
     "patch",
     is_flag=True,
-    help="Bump the patch segment from the latest release.",
+    help="Bump the patch segment from the latest stable release.",
 )
 @click.option(
     "--minor",
     "minor",
     is_flag=True,
-    help="Bump the minor segment from the latest release.",
+    help="Bump the minor segment from the latest stable release.",
 )
 @click.option(
     "--major",
     "major",
     is_flag=True,
-    help="Bump the major segment from the latest release.",
+    help="Bump the major segment from the latest stable release.",
+)
+@click.option(
+    "--rc",
+    "release_candidate",
+    is_flag=True,
+    help="Create or continue a release candidate for the resolved stable version.",
 )
 @click.pass_obj
 def release_create_cmd(
@@ -891,6 +1486,7 @@ def release_create_cmd(
     patch: bool,
     minor: bool,
     major: bool,
+    release_candidate: bool,
 ) -> None:
     """Create or update a release manifest from changelog entries and intro text."""
 
@@ -912,6 +1508,7 @@ def release_create_cmd(
         explicit_links=resolved_explicit_links,
         assume_yes=assume_yes,
         version_bump=version_bump,
+        release_candidate=release_candidate,
         title_explicit=title_explicit,
         compact_explicit=compact_explicit,
     )
@@ -925,13 +1522,13 @@ def release_create_cmd(
 )
 @click.pass_obj
 def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
-    """Print the latest released version."""
+    """Print the latest stable released version."""
 
     _warn_on_structure_issues(ctx)
     manifest = _get_latest_release_manifest(ctx.project_root)
     if manifest is None:
         raise click.ClickException(
-            "No releases found. Create a release first with 'release create'."
+            "No stable releases found. Create a stable release first with 'release create'."
         )
 
     if bare:
@@ -998,7 +1595,7 @@ def release_publish_cmd(
 
     resolved_version = version
     if resolved_version is None:
-        manifest = _get_latest_release_manifest(ctx.project_root)
+        manifest = _get_latest_release_manifest(ctx.project_root, stable_only=False)
         if manifest is None:
             raise click.ClickException(
                 "No releases found. Create a release first with 'release create'."

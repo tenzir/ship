@@ -8,6 +8,16 @@ on:
         required: false
         default: ""
         type: string
+      version:
+        description: "Explicit stable release version (for example v1.2.3). Prefer `rc` for release candidates."
+        required: false
+        default: ""
+        type: string
+      rc:
+        description: "Create or continue the release-candidate series for the resolved stable version"
+        required: false
+        default: false
+        type: boolean
       intro:
         description: "1-2 sentence release introduction"
         required: true
@@ -72,7 +82,7 @@ on:
         description: "Created release version tag (for example v1.2.3)"
         value: ${{ jobs.release.outputs.version }}
       is_latest:
-        description: "Whether the release was created from the main branch"
+        description: "Whether the created release should be treated as latest"
         value: ${{ jobs.release.outputs.is_latest }}
 
 jobs:
@@ -83,15 +93,25 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.create-release.outputs.version }}
-      is_latest: ${{ steps.release-type.outputs.is_latest }}
+      is_latest: ${{ steps.determine-latest.outputs.is_latest }}
 
     steps:
-      - name: Validate bump input
+      - name: Validate release inputs
         run: |
           case "${{ inputs.bump }}" in
             ""|auto|major|minor|patch) ;;
             *) echo "::error::Invalid bump value '${{ inputs.bump }}'. Use empty, auto, major, minor, or patch." && exit 1 ;;
           esac
+
+          if [ -n "${{ inputs.version }}" ] && [ -n "${{ inputs.bump }}" ] && [ "${{ inputs.bump }}" != "auto" ]; then
+            echo "::error::Provide either an explicit version or a manual bump, not both."
+            exit 1
+          fi
+
+          if [ "${{ inputs.rc }}" = "true" ] && [[ "${{ inputs.version }}" == *-* ]]; then
+            echo "::error::rc expects a stable base version like v1.2.3, not a prerelease version."
+            exit 1
+          fi
 
       - name: Checkout
         uses: actions/checkout@v5
@@ -133,15 +153,10 @@ jobs:
           git config --global user.email "engineering@tenzir.com"
           git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}.git"
 
-      - name: Determine release type
+      - name: Determine release branch
         id: release-type
         run: |
           BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}"
-          if [ "$BRANCH" = "main" ]; then
-            echo "is_latest=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_latest=false" >> "$GITHUB_OUTPUT"
-          fi
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Run pre-create script
@@ -165,8 +180,18 @@ jobs:
               # workflow_dispatch choice) and cannot pass an empty value.
               ;;
           esac
+          RC_ARGS=()
+          if [ "$RELEASE_RC" = "true" ]; then
+            RC_ARGS=(--rc)
+          fi
+          VERSION_ARG=()
+          if [ -n "$RELEASE_VERSION" ]; then
+            VERSION_ARG=("$RELEASE_VERSION")
+          fi
           VERSION=$(tenzir-ship --root "$CHANGELOG_ROOT" release create \
+            "${VERSION_ARG[@]}" \
             "${BUMP_ARGS[@]}" \
+            "${RC_ARGS[@]}" \
             --intro "$RELEASE_INTRO" \
             "${TITLE_ARGS[@]}" \
             --yes)
@@ -176,10 +201,31 @@ jobs:
           RELEASE_TITLE: ${{ inputs.title }}
           RELEASE_INTRO: ${{ inputs.intro }}
           RELEASE_BUMP: ${{ inputs.bump }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_RC: ${{ inputs.rc }}
 
       - name: Run post-create script
         if: inputs.post-create != ''
         run: ${{ inputs.post-create }}
+
+      - name: Determine latest status
+        id: determine-latest
+        env:
+          BRANCH: ${{ steps.release-type.outputs.branch }}
+          CHANGELOG_ROOT: ${{ inputs.changelog-root }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
+        run: |
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST_STABLE=$(tenzir-ship --root "$CHANGELOG_ROOT" release version)
+          if [ "$BRANCH" = "main" ] && [ "$RELEASE_VERSION" = "$LATEST_STABLE" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run pre-publish script
         if: ${{ inputs.pre-publish != '' && !inputs['skip-publish'] }}
@@ -203,19 +249,21 @@ jobs:
             git add $GIT_ADD_PATHS
           fi
           PUBLISH_ARGS=(--commit --tag --yes)
-          if [ "$IS_LATEST" != "true" ] && [ "$NO_LATEST_NON_MAIN" = "true" ]; then
+          if [ "$IS_LATEST" != "true" ] && { [ "$BRANCH" = "main" ] || [ "$NO_LATEST_NON_MAIN" = "true" ]; }; then
             PUBLISH_ARGS+=(--no-latest)
           fi
-          tenzir-ship --root "$CHANGELOG_ROOT" release publish "${PUBLISH_ARGS[@]}"
+          tenzir-ship --root "$CHANGELOG_ROOT" release publish "$RELEASE_VERSION" "${PUBLISH_ARGS[@]}"
         env:
+          BRANCH: ${{ steps.release-type.outputs.branch }}
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           GIT_ADD_PATHS: ${{ inputs.git-add-paths }}
-          IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
+          IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           NO_LATEST_NON_MAIN: ${{ inputs.publish-no-latest-on-non-main }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Copy release to main branch (non-main release)
-        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.is_latest == 'false' }}
+        if: ${{ !inputs['skip-publish'] && inputs.copy-release-to-main-on-non-main && steps.release-type.outputs.branch != 'main' }}
         run: |
           RELEASE_DIR="$CHANGELOG_ROOT/changelog/releases/$RELEASE_VERSION"
           TMP_DIR="$(mktemp -d)"
@@ -236,7 +284,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
 
       - name: Update latest branch
-        if: ${{ !inputs['skip-publish'] && inputs.update-latest-branch-on-main && steps.release-type.outputs.is_latest == 'true' }}
+        if: ${{ !inputs['skip-publish'] && inputs.update-latest-branch-on-main && steps.determine-latest.outputs.is_latest == 'true' }}
         run: |
           git checkout -B latest
           git push origin latest --force
@@ -247,13 +295,13 @@ jobs:
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
-          IS_LATEST: ${{ steps.release-type.outputs.is_latest }}
+          IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Summary
         run: |
           VERSION="${{ steps.create-release.outputs.version }}"
-          IS_LATEST="${{ steps.release-type.outputs.is_latest }}"
+          IS_LATEST="${{ steps.determine-latest.outputs.is_latest }}"
           {
             echo "## Release ${VERSION}"
             echo ""

@@ -14,6 +14,7 @@ from typing import (
 )
 
 import click
+from packaging.version import InvalidVersion, Version
 from rich.console import RenderableType, Group
 from rich.panel import Panel
 from rich.text import Text
@@ -33,9 +34,11 @@ from ..releases import (
     ReleaseManifest,
     build_entry_release_index,
     collect_release_entries,
+    is_release_candidate,
     iter_release_manifests,
     load_release_entry,
     normalize_release_version,
+    parse_release_version,
     render_release_tag,
     unused_entries,
     used_entry_ids,
@@ -79,8 +82,8 @@ from ._export import (
     _export_json_payload,
 )
 from ._manifests import (
-    _get_release_manifest_before,
     _get_latest_release_manifest,
+    _get_previous_stable_manifest,
     _gather_module_released_entries,
 )
 
@@ -172,10 +175,15 @@ def _parse_scope_from_identifiers(
     return scope, tuple(remaining)
 
 
-def _collect_unused_entries_for_release(project_root: Path, config: Config) -> list[Entry]:
-    """Collect unreleased entries that haven't been included in any release."""
+def _collect_unused_entries_for_release(
+    project_root: Path,
+    config: Config,
+    *,
+    include_prereleases: bool = False,
+) -> list[Entry]:
+    """Collect unreleased entries that haven't been included in matching releases."""
     all_entries = list(iter_entries(project_root))
-    used = used_entry_ids(project_root)
+    used = used_entry_ids(project_root, include_prereleases=include_prereleases)
     unused = unused_entries(all_entries, used)
     filtered = [entry for entry in unused if entry.project is None or entry.project == config.id]
     return filtered
@@ -230,6 +238,113 @@ def _render_release_header(
         )
 
 
+def _preferred_release_version(versions: Sequence[str]) -> str | None:
+    """Choose the best release version for display.
+
+    Prefer the newest stable release when an entry appears in both prerelease
+    and stable releases. Fall back to the newest prerelease if no stable
+    release exists.
+    """
+    parsed_versions: list[tuple[Version, str]] = []
+    stable_versions: list[tuple[Version, str]] = []
+    for version in versions:
+        try:
+            parsed = parse_release_version(version)
+        except InvalidVersion:
+            continue
+        item = (parsed, version)
+        parsed_versions.append(item)
+        if not is_release_candidate(version):
+            stable_versions.append(item)
+    candidates = stable_versions or parsed_versions
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[-1][1]
+
+
+def _release_uses_prerelease_modules(manifest: ReleaseManifest | None) -> bool:
+    """Return whether module rendering must include prerelease snapshots."""
+    if manifest is None:
+        return False
+    if is_release_candidate(manifest.version):
+        return True
+    return any(is_release_candidate(version) for version in manifest.modules.values())
+
+
+def _get_release_module_display_data(
+    ctx: CLIContext,
+    project_root: Path,
+    manifest: ReleaseManifest | None,
+) -> tuple[dict[str, tuple[Config, list[Entry]]], dict[str, str]]:
+    """Return module entries and versions for release-oriented output."""
+    modules = ctx.get_modules()
+    if not modules:
+        return {}, {}
+
+    if manifest is None:
+        previous_release = _get_latest_release_manifest(project_root)
+        previous_module_versions = previous_release.modules if previous_release else None
+        return _gather_module_released_entries(modules, previous_module_versions, None)
+
+    if not manifest.modules:
+        return {}, {}
+
+    previous_release = _get_previous_stable_manifest(project_root, manifest)
+    previous_module_versions = previous_release.modules if previous_release else None
+    module_entries, _ = _gather_module_released_entries(
+        modules,
+        previous_module_versions,
+        manifest.modules,
+        include_prereleases=_release_uses_prerelease_modules(manifest),
+    )
+    return module_entries, dict(manifest.modules)
+
+
+def _build_release_module_payloads(
+    module_entries: dict[str, tuple[Config, list[Entry]]],
+) -> list[dict[str, object]]:
+    """Convert module entries to JSON-ready payloads."""
+    modules_data: list[dict[str, object]] = []
+    for module_id in sorted(module_entries.keys()):
+        module_config, entries = module_entries[module_id]
+        module_payload: dict[str, object] = {
+            "id": module_id,
+            "name": module_config.name,
+            "entries": [_entry_to_dict(e, module_config, compact=True) for e in entries],
+        }
+        modules_data.append(module_payload)
+    return modules_data
+
+
+def _append_release_module_sections(
+    release_block: str,
+    module_entries: dict[str, tuple[Config, list[Entry]]],
+    version_map: dict[str, str],
+    *,
+    include_emoji: bool,
+    explicit_links: bool,
+) -> str:
+    """Append rendered module sections to a Markdown release block."""
+    module_sections: list[str] = []
+    for module_id in sorted(module_entries.keys()):
+        module_config, entries = module_entries[module_id]
+        module_body = _render_module_entries_compact(
+            entries,
+            module_config,
+            include_emoji=include_emoji,
+            explicit_links=explicit_links,
+        )
+        if module_body:
+            version = version_map.get(module_id, "")
+            header = f"## {module_config.name} {version}" if version else f"## {module_config.name}"
+            module_sections.append(f"{header}\n\n{module_body}")
+
+    if not module_sections:
+        return release_block
+    return release_block.rstrip("\n") + "\n\n---\n\n" + "\n\n".join(module_sections)
+
+
 def _load_release_entries_for_display(
     project_root: Path,
     release_version: str,
@@ -248,9 +363,7 @@ def _load_release_entries_for_display(
     missing_entries: list[str] = []
     release_entries: list[Entry] = []
     for entry_id in manifest.entries:
-        entry = entry_map.get(entry_id)
-        if entry is None:
-            entry = load_release_entry(project_root, manifest, entry_id)
+        entry = load_release_entry(project_root, manifest, entry_id)
         if entry is None:
             missing_entries.append(entry_id)
             continue
@@ -506,11 +619,12 @@ def _show_entries_table_all(
     include_unreleased = scope in ("all", "unreleased")
     include_released = scope in ("all", "released", "latest")
 
-    # For "latest" scope, filter manifests to only the latest one
+    # For "latest" scope, filter manifests to only the latest stable release.
     if scope == "latest":
-        if not manifests:
-            raise click.ClickException("No releases found.")
-        manifests = [manifests[-1]]  # Latest release is last after sorting by created
+        latest_manifest = _get_latest_release_manifest(project_root)
+        if latest_manifest is None:
+            raise click.ClickException("No stable releases found.")
+        manifests = [latest_manifest]
 
     unreleased_entries: list[Entry] = []
     if include_unreleased:
@@ -612,8 +726,8 @@ def _show_entries_table_release_mode(
         else:
             for entry in filtered:
                 versions = release_index.get(entry.entry_id, [])
-                if versions:
-                    target_version = versions[0]
+                target_version = _preferred_release_version(versions)
+                if target_version:
                     for release_manifest in iter_release_manifests(project_root):
                         release_version = render_release_tag(release_manifest.version)
                         if release_version == target_version:
@@ -817,11 +931,12 @@ def _show_entries_card(
         include_unreleased = scope in ("all", "unreleased")
         include_released = scope in ("all", "released", "latest")
 
-        # For "latest" scope, filter manifests to only the latest one
+        # For "latest" scope, filter manifests to only the latest stable release.
         if scope == "latest":
-            if not manifests:
-                raise click.ClickException("No releases found.")
-            manifests = [manifests[-1]]
+            latest_manifest = _get_latest_release_manifest(project_root)
+            if latest_manifest is None:
+                raise click.ClickException("No stable releases found.")
+            manifests = [latest_manifest]
 
         unreleased_entries: list[Entry] = []
         if include_unreleased:
@@ -901,8 +1016,8 @@ def _show_entries_card(
             else:
                 for entry in filtered:
                     versions = release_index_all.get(entry.entry_id, [])
-                    if versions:
-                        target_version = versions[0]
+                    target_version = _preferred_release_version(versions)
+                    if target_version:
                         for release_manifest in iter_release_manifests(project_root):
                             release_version = render_release_tag(release_manifest.version)
                             if release_version == target_version:
@@ -1027,11 +1142,12 @@ def _show_entries_export_all(
     include_unreleased = scope in ("all", "unreleased")
     include_released = scope in ("all", "released", "latest")
 
-    # For "latest" scope, filter manifests to only the latest one
+    # For "latest" scope, filter manifests to only the latest stable release.
     if scope == "latest":
-        if not manifests:
-            raise click.ClickException("No releases found.")
-        manifests = [manifests[-1]]
+        latest_manifest = _get_latest_release_manifest(project_root)
+        if latest_manifest is None:
+            raise click.ClickException("No stable releases found.")
+        manifests = [latest_manifest]
 
     unreleased_entries: list[Entry] = []
     if include_unreleased:
@@ -1042,33 +1158,21 @@ def _show_entries_export_all(
     if release_mode:
         releases_data: list[dict[str, object]] = []
 
-        # Gather module entries for unreleased preview
-        modules = ctx.get_modules()
+        # Gather module entries for unreleased preview.
         module_entries_map: dict[str, tuple[Config, list[Entry]]] = {}
         current_versions: dict[str, str] = {}
-        if modules and include_unreleased:
-            previous_release = _get_latest_release_manifest(project_root)
-            previous_module_versions = previous_release.modules if previous_release else None
-            module_entries_map, current_versions = _gather_module_released_entries(
-                modules, previous_module_versions, None
+        if include_unreleased:
+            module_entries_map, current_versions = _get_release_module_display_data(
+                ctx,
+                project_root,
+                None,
             )
 
         if unreleased_entries:
             payload = _build_release_payload(None, unreleased_entries, config, compact=compact)
             # Add modules to the payload for JSON output
             if module_entries_map:
-                modules_data: list[dict[str, object]] = []
-                for module_id in sorted(module_entries_map.keys()):
-                    module_config, entries = module_entries_map[module_id]
-                    module_payload: dict[str, object] = {
-                        "id": module_id,
-                        "name": module_config.name,
-                        "entries": [
-                            _entry_to_dict(e, module_config, compact=True) for e in entries
-                        ],
-                    }
-                    modules_data.append(module_payload)
-                payload["modules"] = modules_data
+                payload["modules"] = _build_release_module_payloads(module_entries_map)
             releases_data.append(payload)
 
         if include_released:
@@ -1080,9 +1184,15 @@ def _show_entries_export_all(
                         release_entries.append(entry)
                 filtered = _filter_entries_by_component(release_entries, components)
                 filtered = sort_entries_desc(filtered)
-                releases_data.append(
-                    _build_release_payload(manifest, filtered, config, compact=compact)
+                payload = _build_release_payload(manifest, filtered, config, compact=compact)
+                module_entries, _ = _get_release_module_display_data(
+                    ctx,
+                    project_root,
+                    manifest,
                 )
+                if module_entries:
+                    payload["modules"] = _build_release_module_payloads(module_entries)
+                releases_data.append(payload)
 
         if view == "json":
             emit_output(json.dumps(releases_data, indent=2))
@@ -1100,29 +1210,13 @@ def _show_entries_export_all(
                 )
                 # Append module sections for unreleased preview
                 if module_entries_map:
-                    module_sections: list[str] = []
-                    for module_id in sorted(module_entries_map.keys()):
-                        module_config, entries = module_entries_map[module_id]
-                        module_body = _render_module_entries_compact(
-                            entries,
-                            module_config,
-                            include_emoji=include_emoji,
-                            explicit_links=explicit_links,
-                        )
-                        if module_body:
-                            version = current_versions.get(module_id, "")
-                            header = (
-                                f"## {module_config.name} {version}"
-                                if version
-                                else f"## {module_config.name}"
-                            )
-                            module_sections.append(f"{header}\n\n{module_body}")
-                    if module_sections:
-                        release_block = (
-                            release_block.rstrip("\n")
-                            + "\n\n---\n\n"
-                            + "\n\n".join(module_sections)
-                        )
+                    release_block = _append_release_module_sections(
+                        release_block,
+                        module_entries_map,
+                        current_versions,
+                        include_emoji=include_emoji,
+                        explicit_links=explicit_links,
+                    )
                 blocks.append(release_block)
             if include_released:
                 for manifest in manifests:
@@ -1133,17 +1227,29 @@ def _show_entries_export_all(
                             release_entries.append(entry)
                     filtered = _filter_entries_by_component(release_entries, components)
                     filtered = sort_entries_desc(filtered)
-                    blocks.append(
-                        _render_markdown_release_block(
-                            manifest,
-                            filtered,
-                            config,
-                            release_index,
+                    release_block = _render_markdown_release_block(
+                        manifest,
+                        filtered,
+                        config,
+                        release_index,
+                        include_emoji=include_emoji,
+                        explicit_links=explicit_links,
+                        compact=compact,
+                    )
+                    module_entries, version_map = _get_release_module_display_data(
+                        ctx,
+                        project_root,
+                        manifest,
+                    )
+                    if module_entries:
+                        release_block = _append_release_module_sections(
+                            release_block,
+                            module_entries,
+                            version_map,
                             include_emoji=include_emoji,
                             explicit_links=explicit_links,
-                            compact=compact,
                         )
-                    )
+                    blocks.append(release_block)
             emit_output("\n---\n\n".join(blocks), newline=False)
     else:
         all_entries: list[Entry] = list(unreleased_entries)
@@ -1238,35 +1344,13 @@ def _show_entries_export_release_mode(
                     fallback_created=fallback_created,
                 )
 
-                modules = ctx.get_modules()
-                if modules:
-                    if manifest:
-                        previous_release = _get_release_manifest_before(
-                            project_root, manifest.version
-                        )
-                        target_module_versions = manifest.modules or None
-                    else:
-                        previous_release = _get_latest_release_manifest(project_root)
-                        target_module_versions = None
-                    previous_module_versions = (
-                        previous_release.modules if previous_release else None
-                    )
-                    module_entries, _ = _gather_module_released_entries(
-                        modules, previous_module_versions, target_module_versions
-                    )
-                    if module_entries:
-                        modules_data: list[dict[str, object]] = []
-                        for module_id in sorted(module_entries.keys()):
-                            module_config, entries = module_entries[module_id]
-                            module_payload: dict[str, object] = {
-                                "id": module_id,
-                                "name": module_config.name,
-                                "entries": [
-                                    _entry_to_dict(e, module_config, compact=True) for e in entries
-                                ],
-                            }
-                            modules_data.append(module_payload)
-                        payload["modules"] = modules_data
+                module_entries, _ = _get_release_module_display_data(
+                    ctx,
+                    project_root,
+                    manifest,
+                )
+                if module_entries:
+                    payload["modules"] = _build_release_module_payloads(module_entries)
 
                 emit_output(json.dumps([payload], indent=2))
                 return
@@ -1325,43 +1409,19 @@ def _show_entries_export_release_mode(
 
                 output = f"# {title}\n\n{output}"
 
-                modules = ctx.get_modules()
-                if modules:
-                    if manifest:
-                        previous_release = _get_release_manifest_before(
-                            project_root, manifest.version
-                        )
-                        target_module_versions = manifest.modules or None
-                    else:
-                        previous_release = _get_latest_release_manifest(project_root)
-                        target_module_versions = None
-                    previous_module_versions = (
-                        previous_release.modules if previous_release else None
+                module_entries, version_map = _get_release_module_display_data(
+                    ctx,
+                    project_root,
+                    manifest,
+                )
+                if module_entries:
+                    output = _append_release_module_sections(
+                        output,
+                        module_entries,
+                        version_map,
+                        include_emoji=include_emoji,
+                        explicit_links=explicit_links,
                     )
-                    module_entries, current_versions = _gather_module_released_entries(
-                        modules, previous_module_versions, target_module_versions
-                    )
-                    version_map = target_module_versions or current_versions
-                    if module_entries:
-                        module_sections: list[str] = []
-                        for module_id in sorted(module_entries.keys()):
-                            module_config, entries = module_entries[module_id]
-                            module_body = _render_module_entries_compact(
-                                entries,
-                                module_config,
-                                include_emoji=include_emoji,
-                                explicit_links=explicit_links,
-                            )
-                            if module_body:
-                                version = version_map.get(module_id, "")
-                                header = (
-                                    f"## {module_config.name} {version}"
-                                    if version
-                                    else f"## {module_config.name}"
-                                )
-                                module_sections.append(f"{header}\n\n{module_body}")
-                        if module_sections:
-                            output = output + "\n\n---\n\n" + "\n\n".join(module_sections)
 
                 emit_output(output)
                 return
@@ -1386,8 +1446,8 @@ def _show_entries_export_release_mode(
         else:
             for entry in filtered:
                 versions = release_index.get(entry.entry_id, [])
-                if versions:
-                    target_version = versions[0]
+                target_version = _preferred_release_version(versions)
+                if target_version:
                     for manifest in iter_release_manifests(project_root):
                         release_version = render_release_tag(manifest.version)
                         if release_version == target_version:

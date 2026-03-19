@@ -140,3 +140,43 @@ def test_python_api_release_version_defaults_to_tag(tmp_path: Path) -> None:
 
     assert client.release_version() == "v1.2.3"
     assert client.release_version(bare=True) == "1.2.3"
+
+
+def test_python_api_release_version_ignores_release_candidates(tmp_path: Path) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    client.add(
+        title="Stable release",
+        entry_type="feature",
+        authors=["codex"],
+        description="Body",
+    )
+    client.release_create(version="v1.2.3", assume_yes=True)
+
+    client.add(
+        title="Preview release",
+        entry_type="feature",
+        authors=["codex"],
+        description="Body",
+    )
+    client.release_create(version="v1.2.4", release_candidate=True, assume_yes=True)
+
+    assert client.release_version() == "v1.2.3"
+
+
+def test_python_api_release_create_supports_implicit_release_candidates(tmp_path: Path) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    client.add(
+        title="Preview release",
+        entry_type="feature",
+        authors=["codex"],
+        description="Body",
+    )
+    client.release_create(release_candidate=True, assume_yes=True)
+    client.release_create(release_candidate=True, assume_yes=True)
+
+    assert (project_dir / "releases" / "v0.1.0-rc.1").exists()
+    assert (project_dir / "releases" / "v0.1.0-rc.2").exists()

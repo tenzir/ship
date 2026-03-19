@@ -118,7 +118,7 @@ class Changelog:
     def release_create(
         self,
         *,
-        version: Optional[str],
+        version: Optional[str] = None,
         title: Optional[str] = None,
         intro_text: Optional[str] = None,
         release_date: Optional[datetime] = None,
@@ -127,6 +127,7 @@ class Changelog:
         explicit_links: bool = False,
         assume_yes: bool = False,
         version_bump: Optional[str] = None,
+        release_candidate: bool = False,
     ) -> None:
         """Create or update a release manifest."""
 
@@ -141,25 +142,28 @@ class Changelog:
             explicit_links=explicit_links,
             assume_yes=assume_yes,
             version_bump=version_bump,
+            release_candidate=release_candidate,
             title_explicit=title is not None,
             compact_explicit=compact is not None,
         )
 
     def release_version(self, *, bare: bool = False) -> str:
-        """Get the latest released version.
+        """Get the latest stable released version.
 
         Args:
             bare: If True, strip the ``v`` prefix from the version.
 
         Returns:
-            The latest released version string.
+            The latest stable released version string.
 
         Raises:
-            ValueError: If no releases exist.
+            ValueError: If no stable releases exist.
         """
         manifest = _get_latest_release_manifest(self._ctx.project_root)
         if manifest is None:
-            raise ValueError("No releases found. Create a release first with 'release create'.")
+            raise ValueError(
+                "No stable releases found. Create a stable release first with 'release create'."
+            )
 
         if bare:
             return normalize_release_version(manifest.version)
@@ -184,7 +188,7 @@ class Changelog:
 
         resolved_version = version
         if resolved_version is None:
-            manifest = _get_latest_release_manifest(self._ctx.project_root)
+            manifest = _get_latest_release_manifest(self._ctx.project_root, stable_only=False)
             if manifest is None:
                 raise ValueError("No releases found. Create a release first with 'release create'.")
             resolved_version = manifest.version

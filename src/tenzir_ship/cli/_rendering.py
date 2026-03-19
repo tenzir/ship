@@ -24,7 +24,6 @@ from ..config import Config
 from ..entries import (
     Entry,
     MultiProjectEntry,
-    iter_entries,
     sort_entries_desc,
 )
 from ..releases import (
@@ -583,7 +582,6 @@ def _render_release(
             )
         )
 
-    all_entries = {entry.entry_id: entry for entry in iter_entries(project_root)}
     table = Table(title="Included Entries")
     table.add_column("Order")
     table.add_column("Entry ID", style="cyan")
@@ -593,9 +591,7 @@ def _render_release(
     resolved_entries: list[Entry | None] = []
     has_components = False
     for entry_id in manifest.entries:
-        entry = all_entries.get(entry_id)
-        if entry is None:
-            entry = load_release_entry(project_root, manifest, entry_id)
+        entry = load_release_entry(project_root, manifest, entry_id)
         resolved_entries.append(entry)
         if entry and entry.components:
             has_components = True

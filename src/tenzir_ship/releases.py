@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
+import re
 from typing import Iterable, Optional
 
+from packaging.version import InvalidVersion, Version
 import yaml
 from yaml.nodes import Node
 
@@ -47,6 +49,19 @@ yaml.SafeDumper.add_representer(_FoldedString, _represent_folded_string)
 
 NOTES_FILENAME = "notes.md"
 RELEASE_DIR = Path("releases")
+_RELEASE_VERSION_PATTERN = re.compile(
+    r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
+    r"(?:-rc\.(?P<rc>[1-9]\d*))?$"
+)
+
+
+@dataclass
+class ReleaseSource:
+    """Provenance metadata describing how a release snapshot was assembled."""
+
+    mode: str
+    source_release: str | None = None
+    previous_stable: str | None = None
 
 
 @dataclass
@@ -60,6 +75,9 @@ class ReleaseManifest:
 
     For projects with modules, `modules` tracks which version of each
     module was current at release time, enabling incremental module summaries.
+    ``source`` persists provenance so later edits and rendering can preserve
+    the original release baseline instead of re-inferring it from current repo
+    state.
     """
 
     version: str
@@ -68,6 +86,7 @@ class ReleaseManifest:
     title: str = ""
     intro: str | None = None
     modules: dict[str, str] = field(default_factory=dict)
+    source: ReleaseSource | None = None
     path: Path | None = None
 
 
@@ -89,6 +108,41 @@ def render_release_tag(version: str) -> str:
     return f"v{normalize_release_version(version)}"
 
 
+def is_valid_release_version(version: str) -> bool:
+    """Return whether *version* matches the supported release formats."""
+    normalized = normalize_release_version(version)
+    return _RELEASE_VERSION_PATTERN.fullmatch(normalized) is not None
+
+
+def is_release_candidate(version: str) -> bool:
+    """Return whether *version* identifies an ``-rc.N`` prerelease."""
+    normalized = normalize_release_version(version)
+    match = _RELEASE_VERSION_PATTERN.fullmatch(normalized)
+    return bool(match and match.group("rc") is not None)
+
+
+def is_stable_release(version: str) -> bool:
+    """Return whether *version* identifies a stable release."""
+    return is_valid_release_version(version) and not is_release_candidate(version)
+
+
+def stable_release_version(version: str) -> str:
+    """Return the ``X.Y.Z`` base version for a stable release or release candidate."""
+    normalized = normalize_release_version(version)
+    match = _RELEASE_VERSION_PATTERN.fullmatch(normalized)
+    if match is None:
+        raise ValueError(f"Invalid release version: {version!r}")
+    return f"{match.group('major')}.{match.group('minor')}.{match.group('patch')}"
+
+
+def parse_release_version(version: str) -> Version:
+    """Parse *version* into a :class:`packaging.version.Version`."""
+    normalized = normalize_release_version(version)
+    if not is_valid_release_version(normalized):
+        raise InvalidVersion(f"Invalid release version: {version!r}")
+    return Version(normalized)
+
+
 def release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path:
     """Return the base directory for a release manifest."""
     if manifest.path is None:
@@ -103,6 +157,21 @@ def _parse_created_date(raw_value: object | None) -> date:
     if raw_value is None:
         return date.today()
     return date.fromisoformat(str(raw_value))
+
+
+def _parse_release_source(raw_value: object | None) -> ReleaseSource | None:
+    if not isinstance(raw_value, dict):
+        return None
+    mode = str(raw_value.get("mode", "") or "").strip()
+    source_release = str(raw_value.get("source_release", "") or "").strip() or None
+    previous_stable = str(raw_value.get("previous_stable", "") or "").strip() or None
+    if not mode and source_release is None and previous_stable is None:
+        return None
+    return ReleaseSource(
+        mode=mode or "unknown",
+        source_release=source_release,
+        previous_stable=previous_stable,
+    )
 
 
 def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
@@ -133,6 +202,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         modules: dict[str, str] = {}
         if isinstance(raw_modules, dict):
             modules = {str(k): str(v) for k, v in raw_modules.items()}
+        source = _parse_release_source(data.get("source"))
 
         manifest = ReleaseManifest(
             version=str(version_value),
@@ -140,6 +210,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
             title=title_value,
             intro=raw_intro or None,
             modules=modules,
+            source=source,
             path=path,
         )
         if isinstance(entry_values, list) and entry_values:
@@ -151,10 +222,16 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
         yield manifest
 
 
-def used_entry_ids(project_root: Path) -> set[str]:
-    """Return a set containing entry IDs that already belong to a release."""
+def used_entry_ids(project_root: Path, *, include_prereleases: bool = True) -> set[str]:
+    """Return entry IDs that already belong to releases.
+
+    By default, prerelease manifests are included. Pass ``include_prereleases=False``
+    when computing which entries have been consumed by stable releases.
+    """
     used = set()
     for manifest in iter_release_manifests(project_root):
+        if not include_prereleases and not is_stable_release(manifest.version):
+            continue
         used.update(manifest.entries)
     return used
 
@@ -176,6 +253,16 @@ def serialize_release_manifest(manifest: ReleaseManifest) -> str:
         payload["intro"] = _FoldedString(manifest.intro)
     if manifest.modules:
         payload["modules"] = manifest.modules
+    if manifest.source is not None:
+        source_payload: dict[str, str] = {}
+        if manifest.source.mode:
+            source_payload["mode"] = manifest.source.mode
+        if manifest.source.source_release:
+            source_payload["source_release"] = manifest.source.source_release
+        if manifest.source.previous_stable:
+            source_payload["previous_stable"] = manifest.source.previous_stable
+        if source_payload:
+            payload["source"] = source_payload
     # Use default wrapping width for readability; preserve key order.
     return yaml.safe_dump(payload, sort_keys=False)
 
@@ -230,10 +317,19 @@ def load_release_entry(
     return read_entry(entry_path)
 
 
-def collect_release_entries(project_root: Path) -> dict[str, Entry]:
-    """Return a mapping of entry ids to entries across all releases."""
+def collect_release_entries(
+    project_root: Path, *, include_prereleases: bool = True
+) -> dict[str, Entry]:
+    """Return a mapping of entry ids to entries across release manifests.
+
+    By default, prerelease manifests are included. Pass
+    ``include_prereleases=False`` when only stable releases should contribute to
+    shipped entry counts.
+    """
     collected: dict[str, Entry] = {}
     for manifest in iter_release_manifests(project_root):
+        if not include_prereleases and not is_stable_release(manifest.version):
+            continue
         for entry_id in manifest.entries:
             if entry_id in collected:
                 continue
@@ -254,6 +350,13 @@ def build_entry_release_index(
             versions = index.setdefault(entry_id, [])
             if version not in versions:
                 versions.append(version)
+
+    def _version_sort_key(version: str) -> tuple[int, Version | str]:
+        try:
+            return (0, parse_release_version(version))
+        except InvalidVersion:
+            return (1, version)
+
     for versions in index.values():
-        versions.sort()
+        versions.sort(key=_version_sort_key)
     return index

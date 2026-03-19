@@ -7,7 +7,8 @@ on:
         description: |
           Version bump type
 
-          Use `auto` to infer from unreleased changelog entries.
+          Use `auto` to infer from unreleased changelog entries. Leave this as
+          `auto` when providing an explicit version below.
         required: false
         # workflow_dispatch choice inputs cannot represent an unset value.
         # `auto` is the explicit sentinel for "infer bump".
@@ -18,6 +19,25 @@ on:
           - minor
           - patch
           - major
+      version:
+        description: |
+          Explicit stable release version (for example `v1.2.3`)
+
+          Prefer `rc: true` for release candidates. Use `version` only for an
+          exact stable release or to override the stable base explicitly.
+        required: false
+        type: string
+      rc:
+        description: |
+          Create or continue the release-candidate series for the resolved
+          stable version.
+
+          When enabled, omit `version` to infer the RC base from changelog
+          entries, or provide a stable `version` like `v1.2.3` to override the
+          base explicitly.
+        required: false
+        default: false
+        type: boolean
       intro:
         description: |
           Intro of the release
@@ -38,6 +58,8 @@ jobs:
     uses: ./.github/workflows/reusable-release.yaml
     with:
       bump: ${{ inputs.bump }}
+      version: ${{ inputs.version }}
+      rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
       git-add-paths: pyproject.toml uv.lock

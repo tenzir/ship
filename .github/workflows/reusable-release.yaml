@@ -8,6 +8,16 @@ on:
         required: false
         default: ""
         type: string
+      version:
+        description: "Explicit stable release version (for example v1.2.3). Prefer `rc` for release candidates."
+        required: false
+        default: ""
+        type: string
+      rc:
+        description: "Create or continue the release-candidate series for the resolved stable version"
+        required: false
+        default: false
+        type: boolean
       intro:
         description: "1-2 sentence release introduction"
         required: true
@@ -42,7 +52,7 @@ on:
         description: "Created release version tag (for example v1.2.3)"
         value: ${{ jobs.release.outputs.version }}
       is_latest:
-        description: "Whether the release was created from the main branch"
+        description: "Whether the created release should be treated as latest"
         value: ${{ jobs.release.outputs.is_latest }}
 
 jobs:
@@ -50,6 +60,8 @@ jobs:
     uses: ./.github/workflows/reusable-release-advanced.yaml
     with:
       bump: ${{ inputs.bump }}
+      version: ${{ inputs.version }}
+      rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
       changelog-root: ${{ inputs.changelog-root }}
