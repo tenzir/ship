@@ -1,0 +1,9 @@
+created: 2026-03-19
+title: Release candidate support
+intro: >-
+  tenzir-ship now supports release candidates via release create --rc, letting you
+  iterate on -rc.N builds before promoting one to the final stable release. The new
+  flag works across both the CLI and the bundled GitHub Actions workflows.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.5.0
