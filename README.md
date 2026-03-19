@@ -67,6 +67,9 @@ jobs:
       bump: auto
 ```
 
+<details>
+<summary>Advanced auth, signing, and release-control options</summary>
+
 ### Auth and signing overrides
 
 Both `reusable-release.yaml` and `reusable-release-advanced.yaml` support
@@ -126,6 +129,7 @@ Use the smallest option that fits your release process:
   repository-scoped bot automation with a short-lived token.
 - Use `gpg_private_key` when you want to sign commits or tags. Signing stays
   disabled unless you provide a key.
+</details>
 
 ## 📚 Documentation
 
