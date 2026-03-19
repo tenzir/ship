@@ -92,8 +92,9 @@ so you can iterate on `-rc.N` releases before shipping the stable release.
 The stable base is inferred from the unreleased entry types; when the matching
 RC series already exists, `release create --rc` increments the `-rc.N` counter.
 
-To override the inferred base, combine `--rc` with a stable version or manual
-bump flag, for example `release create v1.2.3 --rc` or `release create --rc --minor`.
+To override the inferred base, prefer a manual bump flag, for example
+`release create --rc --minor`. Pass a stable version only when the user needs
+an exact base version.
 
 To promote an existing release candidate exactly, create the matching stable
 release with `--from`:

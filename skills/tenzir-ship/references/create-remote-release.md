@@ -23,8 +23,8 @@ repository accepts these common inputs:
 - **bump**: Optional manual bump for a stable release (`patch`, `minor`, or
   `major`). Leave this unset or use `auto` unless the user explicitly requests
   a manual bump.
-- **version**: Optional explicit version, used for exact stable/RC targets or
-  as the stable base when `rc` is enabled.
+- **version**: Optional explicit stable version, used for exact overrides or
+  when promoting a specific stable release.
 - **rc**: Optional boolean that creates or continues the release-candidate
   series for the resolved stable version.
 - **source-release**: Optional release candidate to promote exactly into the
@@ -68,8 +68,9 @@ gh workflow run release.yaml \
   -f rc=true
 ```
 
-To override the inferred stable base for the RC, also pass a stable version,
-for example `-f rc=true -f version=v1.2.3`.
+To override the inferred stable base for the RC, prefer a manual bump such as
+`-f rc=true -f bump=minor`. Pass a stable `version` only when the user needs an
+exact base version.
 
 ### Promote a release candidate exactly
 

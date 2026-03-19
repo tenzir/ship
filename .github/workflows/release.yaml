@@ -21,10 +21,10 @@ on:
           - major
       version:
         description: |
-          Explicit release version (for example `v1.2.3` or `v1.2.3-rc.1`)
+          Explicit stable release version (for example `v1.2.3`)
 
-          Use this for an exact stable release, an exact RC tag, or as the
-          stable base when `rc` is enabled.
+          Prefer `rc: true` for release candidates. Use `version` only for an
+          exact stable release or to override the stable base explicitly.
         required: false
         type: string
       rc:

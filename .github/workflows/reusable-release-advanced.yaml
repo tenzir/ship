@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
       version:
-        description: "Explicit release version (for example v1.2.3 or v1.2.3-rc.1)"
+        description: "Explicit stable release version (for example v1.2.3). Prefer `rc` for release candidates."
         required: false
         default: ""
         type: string
