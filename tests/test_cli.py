@@ -5327,6 +5327,315 @@ def test_release_create_release_candidate_keeps_unreleased_entries(tmp_path: Pat
     ).exists()
 
 
+def test_release_create_implicit_release_candidate_uses_auto_base(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Preview me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--rc",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code == 0, release_result.output
+    assert release_result.stdout.strip() == "v0.1.0-rc.1"
+    assert (project_dir / "releases" / "v0.1.0-rc.1").exists()
+
+
+def test_release_create_implicit_release_candidate_increments_existing_series(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    first_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "First RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "In rc1.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert first_entry.exit_code == 0, first_entry.output
+
+    rc1_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--rc",
+            "--yes",
+        ],
+    )
+    assert rc1_result.exit_code == 0, rc1_result.output
+    assert rc1_result.stdout.strip() == "v0.1.0-rc.1"
+
+    second_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Second RC Fix",
+            "--type",
+            "bugfix",
+            "--description",
+            "Added for rc2.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert second_entry.exit_code == 0, second_entry.output
+
+    rc2_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--rc",
+            "--yes",
+        ],
+    )
+    assert rc2_result.exit_code == 0, rc2_result.output
+    assert rc2_result.stdout.strip() == "v0.1.0-rc.2"
+
+    rc2_entries = {
+        path.stem for path in (project_dir / "releases" / "v0.1.0-rc.2" / "entries").glob("*.md")
+    }
+    assert rc2_entries == {"first-rc-feature", "second-rc-fix"}
+
+
+def test_release_create_release_candidate_with_manual_bump_uses_requested_base(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships stable first.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_add.exit_code == 0, stable_add.output
+
+    stable_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Fix",
+            "--type",
+            "bugfix",
+            "--description",
+            "Ships as a preview.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_add.exit_code == 0, rc_add.output
+
+    rc_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--rc",
+            "--minor",
+            "--yes",
+        ],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+    assert rc_result.stdout.strip() == "v1.3.0-rc.1"
+
+
+def test_release_create_rejects_explicit_prerelease_when_rc_flag_is_set(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Preview me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--rc",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code != 0
+    assert "Use --rc with a stable base version like 1.2.3" in release_result.output
+
+
+def test_release_create_rejects_rc_when_other_base_is_outstanding(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships stable first.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_add.exit_code == 0, stable_add.output
+
+    stable_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.5.0",
+            "--yes",
+        ],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_add = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Queued for a different base.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_add.exit_code == 0, rc_add.output
+
+    explicit_rc = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v2.0.0-rc.1",
+            "--yes",
+        ],
+    )
+    assert explicit_rc.exit_code == 0, explicit_rc.output
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--rc",
+            "--yes",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Outstanding release candidates already exist: v2.0.0-rc.1" in result.output
+
+
 def test_release_create_rejects_promoting_release_candidate_when_unreleased_entry_diverged(
     tmp_path: Path,
 ) -> None:

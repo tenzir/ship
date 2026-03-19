@@ -23,10 +23,21 @@ on:
         description: |
           Explicit release version (for example `v1.2.3` or `v1.2.3-rc.1`)
 
-          Use this for release candidates or when promoting a specific stable
-          version.
+          Use this for an exact stable release, an exact RC tag, or as the
+          stable base when `rc` is enabled.
         required: false
         type: string
+      rc:
+        description: |
+          Create or continue the release-candidate series for the resolved
+          stable version.
+
+          When enabled, omit `version` to infer the RC base from changelog
+          entries, or provide a stable `version` like `v1.2.3` to override the
+          base explicitly.
+        required: false
+        default: false
+        type: boolean
       intro:
         description: |
           Intro of the release
@@ -63,6 +74,7 @@ jobs:
     with:
       bump: ${{ inputs.bump }}
       version: ${{ inputs.version }}
+      rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
       source-release: ${{ inputs.source-release }}

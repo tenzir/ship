@@ -78,10 +78,10 @@ dictated version number.
 
 ### Release candidate workflow
 
-Create a release candidate by passing an explicit prerelease version:
+Create or continue a release candidate by passing `--rc`:
 
 ```sh
-uvx tenzir-ship release create v1.2.3-rc.1 \
+uvx tenzir-ship release create --rc \
   --title "<title>" \
   --intro "<intro>" \
   --yes
@@ -89,6 +89,11 @@ uvx tenzir-ship release create v1.2.3-rc.1 \
 
 Release candidates snapshot the current unreleased queue without consuming it,
 so you can iterate on `-rc.N` releases before shipping the stable release.
+The stable base is inferred from the unreleased entry types; when the matching
+RC series already exists, `release create --rc` increments the `-rc.N` counter.
+
+To override the inferred base, combine `--rc` with a stable version or manual
+bump flag, for example `release create v1.2.3 --rc` or `release create --rc --minor`.
 
 To promote an existing release candidate exactly, create the matching stable
 release with `--from`:

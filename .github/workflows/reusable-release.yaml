@@ -13,6 +13,11 @@ on:
         required: false
         default: ""
         type: string
+      rc:
+        description: "Create or continue the release-candidate series for the resolved stable version"
+        required: false
+        default: false
+        type: boolean
       intro:
         description: "1-2 sentence release introduction"
         required: true
@@ -66,6 +71,7 @@ jobs:
     with:
       bump: ${{ inputs.bump }}
       version: ${{ inputs.version }}
+      rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
       source-release: ${{ inputs.source-release }}

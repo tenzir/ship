@@ -309,8 +309,17 @@ def _latest_bump_base_semver(project_root: Path) -> Version | None:
     return _latest_semver(project_root, stable_only=False)
 
 
-def _next_version_for_bump(project_root: Path, bump: ReleaseBump) -> str:
-    latest = _latest_bump_base_semver(project_root)
+def _next_version_for_bump(
+    project_root: Path,
+    bump: ReleaseBump,
+    *,
+    include_prerelease_fallback: bool = True,
+) -> str:
+    latest = (
+        _latest_bump_base_semver(project_root)
+        if include_prerelease_fallback
+        else _latest_semver(project_root)
+    )
     base_version = Version("0.0.0") if latest is None else latest
     next_version = _bump_version_value(base_version, bump)
     return str(next_version)
@@ -326,11 +335,20 @@ def _infer_release_bump(unreleased_entries: list[Entry]) -> ReleaseBump | None:
     return "patch"
 
 
-def _infer_next_release_version(project_root: Path, unreleased_entries: list[Entry]) -> str | None:
+def _infer_next_release_version(
+    project_root: Path,
+    unreleased_entries: list[Entry],
+    *,
+    include_prerelease_fallback: bool = True,
+) -> str | None:
     bump = _infer_release_bump(unreleased_entries)
     if bump is None:
         return None
-    return _next_version_for_bump(project_root, bump)
+    return _next_version_for_bump(
+        project_root,
+        bump,
+        include_prerelease_fallback=include_prerelease_fallback,
+    )
 
 
 def _validate_semver_label(version: str) -> None:
@@ -360,6 +378,7 @@ def _resolve_release_version(
     bump: ReleaseBump | None,
     *,
     unreleased_entries: list[Entry],
+    include_prerelease_fallback: bool = True,
 ) -> tuple[str, ReleaseVersionSource]:
     if explicit is not None and bump:
         raise click.ClickException("Provide either a version argument or a bump flag, not both.")
@@ -370,15 +389,126 @@ def _resolve_release_version(
         _validate_semver_label(value)
         return normalize_release_version(value), "explicit"
     if bump:
-        return _next_version_for_bump(project_root, bump), "manual"
+        return (
+            _next_version_for_bump(
+                project_root,
+                bump,
+                include_prerelease_fallback=include_prerelease_fallback,
+            ),
+            "manual",
+        )
 
-    inferred = _infer_next_release_version(project_root, unreleased_entries)
+    inferred = _infer_next_release_version(
+        project_root,
+        unreleased_entries,
+        include_prerelease_fallback=include_prerelease_fallback,
+    )
     if inferred is None:
         raise click.ClickException(
             "Cannot auto-bump release version because no unreleased changelog entries were "
             "found. Provide a version argument or specify one of --patch/--minor/--major."
         )
     return inferred, "auto"
+
+
+def _resolve_release_candidate_base_version(
+    project_root: Path,
+    explicit: Optional[str],
+    bump: ReleaseBump | None,
+    *,
+    unreleased_entries: list[Entry],
+) -> tuple[str, ReleaseVersionSource]:
+    if explicit is None:
+        return _resolve_release_version(
+            project_root,
+            explicit,
+            bump,
+            unreleased_entries=unreleased_entries,
+            include_prerelease_fallback=False,
+        )
+
+    value = explicit.strip()
+    if not value:
+        raise click.ClickException("Release version cannot be empty.")
+    _validate_semver_label(value)
+    normalized = normalize_release_version(value)
+    if is_release_candidate(normalized):
+        raise click.ClickException(
+            "Use --rc with a stable base version like 1.2.3, or provide the exact "
+            "release candidate version without --rc."
+        )
+    return _resolve_release_version(
+        project_root,
+        explicit,
+        bump,
+        unreleased_entries=unreleased_entries,
+        include_prerelease_fallback=False,
+    )
+
+
+def _next_release_candidate_version(project_root: Path, base_version: str) -> str:
+    normalized_base = normalize_release_version(base_version)
+    if not is_stable_release(normalized_base):
+        raise click.ClickException("Release candidates require a stable base version like 1.2.3.")
+
+    existing_stable = _find_release_manifest(project_root, normalized_base)
+    if existing_stable is not None and is_stable_release(existing_stable.version):
+        raise click.ClickException(
+            f"Stable release '{render_release_tag(normalized_base)}' already exists. "
+            "Provide a newer base version or omit --rc."
+        )
+
+    outstanding_candidates = _find_outstanding_release_candidates(project_root)
+    other_candidates = [
+        render_release_tag(candidates[-1].version)
+        for base, candidates in sorted(outstanding_candidates.items())
+        if base != normalized_base
+    ]
+    if other_candidates:
+        latest_candidates = ", ".join(other_candidates)
+        raise click.ClickException(
+            "Outstanding release candidates already exist: "
+            f"{latest_candidates}. Use an explicit stable base that matches the "
+            "outstanding RC series, promote it with --from <candidate>, or create "
+            "the stable release from the current unreleased queue."
+        )
+
+    matching_candidates = outstanding_candidates.get(normalized_base)
+    if not matching_candidates:
+        return f"{normalized_base}-rc.1"
+
+    latest_candidate = matching_candidates[-1]
+    parsed = parse_release_version(latest_candidate.version)
+    if parsed.pre is None or parsed.pre[0] != "rc":
+        raise click.ClickException(
+            f"Unsupported release candidate version: {render_release_tag(latest_candidate.version)}."
+        )
+    return f"{normalized_base}-rc.{parsed.pre[1] + 1}"
+
+
+def _resolve_requested_release_version(
+    project_root: Path,
+    explicit: Optional[str],
+    bump: ReleaseBump | None,
+    *,
+    unreleased_entries: list[Entry],
+    release_candidate: bool,
+) -> tuple[str, ReleaseVersionSource]:
+    if not release_candidate:
+        return _resolve_release_version(
+            project_root,
+            explicit,
+            bump,
+            unreleased_entries=unreleased_entries,
+        )
+
+    base_version, version_source = _resolve_release_candidate_base_version(
+        project_root,
+        explicit,
+        bump,
+        unreleased_entries=unreleased_entries,
+    )
+    return _next_release_candidate_version(project_root, base_version), version_source
 
 
 def _resolve_manual_bump_flags(*, patch: bool, minor: bool, major: bool) -> ReleaseBump | None:
@@ -791,6 +921,7 @@ def create_release(
     explicit_links: bool = False,
     assume_yes: bool,
     version_bump: Optional[str],
+    release_candidate: bool,
     source_release: Optional[str],
     current_unreleased: bool,
     title_explicit: bool,
@@ -808,11 +939,12 @@ def create_release(
         config,
         include_prereleases=False,
     )
-    version, version_source = _resolve_release_version(
+    version, version_source = _resolve_requested_release_version(
         project_root,
         version,
         normalized_bump,
         unreleased_entries=preview_entries,
+        release_candidate=release_candidate,
     )
     intent = _resolve_release_intent(
         project_root,
@@ -1395,6 +1527,12 @@ def release_group(ctx: CLIContext) -> None:
     help="Bump the major segment from the latest stable release.",
 )
 @click.option(
+    "--rc",
+    "release_candidate",
+    is_flag=True,
+    help="Create or continue a release candidate for the resolved stable version.",
+)
+@click.option(
     "--from",
     "source_release",
     help="Promote the specified release candidate into the target stable release.",
@@ -1418,6 +1556,7 @@ def release_create_cmd(
     patch: bool,
     minor: bool,
     major: bool,
+    release_candidate: bool,
     source_release: Optional[str],
     current_unreleased: bool,
 ) -> None:
@@ -1441,6 +1580,7 @@ def release_create_cmd(
         explicit_links=resolved_explicit_links,
         assume_yes=assume_yes,
         version_bump=version_bump,
+        release_candidate=release_candidate,
         source_release=source_release,
         current_unreleased=current_unreleased,
         title_explicit=title_explicit,

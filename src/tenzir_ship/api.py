@@ -118,7 +118,7 @@ class Changelog:
     def release_create(
         self,
         *,
-        version: Optional[str],
+        version: Optional[str] = None,
         title: Optional[str] = None,
         intro_text: Optional[str] = None,
         release_date: Optional[datetime] = None,
@@ -127,6 +127,7 @@ class Changelog:
         explicit_links: bool = False,
         assume_yes: bool = False,
         version_bump: Optional[str] = None,
+        release_candidate: bool = False,
         source_release: str | None = None,
         current_unreleased: bool = False,
     ) -> None:
@@ -143,6 +144,7 @@ class Changelog:
             explicit_links=explicit_links,
             assume_yes=assume_yes,
             version_bump=version_bump,
+            release_candidate=release_candidate,
             source_release=source_release,
             current_unreleased=current_unreleased,
             title_explicit=title is not None,
