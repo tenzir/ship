@@ -160,7 +160,7 @@ def test_python_api_release_version_ignores_release_candidates(tmp_path: Path) -
         authors=["codex"],
         description="Body",
     )
-    client.release_create(version="v1.2.4-rc.1", assume_yes=True)
+    client.release_create(version="v1.2.4", release_candidate=True, assume_yes=True)
 
     assert client.release_version() == "v1.2.3"
 

@@ -417,6 +417,10 @@ def _resolve_release_candidate_base_version(
     unreleased_entries: list[Entry],
 ) -> tuple[str, ReleaseVersionSource]:
     if explicit is None:
+        if bump is None:
+            latest_outstanding = _latest_outstanding_release_candidate(project_root)
+            if latest_outstanding is not None:
+                return stable_release_version(latest_outstanding.version), "auto"
         return _resolve_release_version(
             project_root,
             explicit,
@@ -432,8 +436,8 @@ def _resolve_release_candidate_base_version(
     normalized = normalize_release_version(value)
     if is_release_candidate(normalized):
         raise click.ClickException(
-            "Use --rc with a stable base version like 1.2.3, or provide the exact "
-            "release candidate version without --rc."
+            "Use --rc with a stable base version like 1.2.3, or omit the version "
+            "to continue the current RC series."
         )
     return _resolve_release_version(
         project_root,
@@ -493,6 +497,19 @@ def _resolve_requested_release_version(
     release_candidate: bool,
 ) -> tuple[str, ReleaseVersionSource]:
     if not release_candidate:
+        if explicit is not None:
+            value = explicit.strip()
+            if not value:
+                raise click.ClickException("Release version cannot be empty.")
+            _validate_semver_label(value)
+            normalized = normalize_release_version(value)
+            if is_release_candidate(normalized):
+                raise click.ClickException(
+                    "Release candidate versions must be created with --rc from a stable "
+                    "base version like 1.2.3. Use 'release create --rc' to continue the "
+                    "current RC series, or omit the version and bump flags to promote "
+                    "the latest candidate."
+                )
         if explicit is None and bump is None:
             latest_outstanding = _latest_outstanding_release_candidate(project_root)
             if latest_outstanding is not None:

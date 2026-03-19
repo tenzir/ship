@@ -542,7 +542,7 @@ def test_release_create_from_release_candidate_preserves_module_snapshot(tmp_pat
     runner = CliRunner()
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v2.0.0-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -600,7 +600,7 @@ def test_release_create_from_release_candidate_preserves_empty_module_snapshot(
     runner = CliRunner()
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v2.0.0-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -808,7 +808,7 @@ def test_release_create_release_candidate_includes_module_release_candidates(
     runner = CliRunner()
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v2.0.0-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 

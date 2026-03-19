@@ -5051,7 +5051,7 @@ def test_stats_json_reports_latest_release_candidate_when_no_stable_exists(tmp_p
 
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.3-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5120,7 +5120,7 @@ def test_stats_json_prefers_latest_stable_over_newer_release_candidate(
 
     rc_release = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.4-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v1.2.4", "--rc", "--yes"],
     )
     assert rc_release.exit_code == 0, rc_release.output
 
@@ -5165,7 +5165,7 @@ def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exis
 
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.3-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5309,14 +5309,7 @@ def test_release_create_release_candidate_keeps_unreleased_entries(tmp_path: Pat
 
     release_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert release_result.exit_code == 0, release_result.output
 
@@ -5352,15 +5345,7 @@ def test_release_create_implicit_release_candidate_uses_auto_base(tmp_path: Path
 
     release_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3",
-            "--rc",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "--rc", "--yes"],
     )
     assert release_result.exit_code == 0, release_result.output
     assert release_result.stdout.strip() == "v0.1.0-rc.1"
@@ -5394,15 +5379,7 @@ def test_release_create_implicit_release_candidate_increments_existing_series(
 
     rc1_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3",
-            "--rc",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "--rc", "--yes"],
     )
     assert rc1_result.exit_code == 0, rc1_result.output
     assert rc1_result.stdout.strip() == "v0.1.0-rc.1"
@@ -5556,7 +5533,45 @@ def test_release_create_rejects_explicit_prerelease_when_rc_flag_is_set(tmp_path
     assert "Use --rc with a stable base version like 1.2.3" in release_result.output
 
 
-def test_release_create_rejects_rc_when_other_base_is_outstanding(tmp_path: Path) -> None:
+def test_release_create_rejects_explicit_prerelease_without_rc_flag(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Preview me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3-rc.1",
+            "--yes",
+        ],
+    )
+    assert release_result.exit_code != 0
+    assert "Release candidate versions must be created with --rc" in release_result.output
+
+
+def test_release_create_without_version_continues_outstanding_rc_series(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -5612,14 +5627,7 @@ def test_release_create_rejects_rc_when_other_base_is_outstanding(tmp_path: Path
 
     explicit_rc = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v2.0.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--rc", "--yes"],
     )
     assert explicit_rc.exit_code == 0, explicit_rc.output
 
@@ -5634,8 +5642,8 @@ def test_release_create_rejects_rc_when_other_base_is_outstanding(tmp_path: Path
             "--yes",
         ],
     )
-    assert result.exit_code != 0
-    assert "Outstanding release candidates already exist: v2.0.0-rc.1" in result.output
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "v2.0.0-rc.2"
 
 
 def test_release_create_rejects_promoting_release_candidate_when_unreleased_entry_diverged(
@@ -5667,14 +5675,7 @@ def test_release_create_rejects_promoting_release_candidate_when_unreleased_entr
 
     rc_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5682,20 +5683,6 @@ def test_release_create_rejects_promoting_release_candidate_when_unreleased_entr
         entry_path.read_text(encoding="utf-8").replace("Snapshot me.", "Edited after snapshot."),
         encoding="utf-8",
     )
-
-    rerun_result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
-    )
-    assert rerun_result.exit_code == 0, rerun_result.output
-    assert "already up to date" in rerun_result.output
 
     rc_notes = (project_dir / "releases" / "v1.2.3-rc.1" / "notes.md").read_text(encoding="utf-8")
     assert "Snapshot me." in rc_notes
@@ -5744,14 +5731,7 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
 
     rc_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5827,7 +5807,7 @@ def test_collect_unused_entries_for_release_ignores_release_candidates_by_defaul
 
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.3-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5904,14 +5884,7 @@ def test_release_create_warns_when_promoted_entries_are_missing_from_unreleased(
 
     rc_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5957,14 +5930,7 @@ def test_release_create_sequential_release_candidates_include_new_entries(tmp_pa
 
     rc1_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc1_result.exit_code == 0, rc1_result.output
 
@@ -5988,14 +5954,7 @@ def test_release_create_sequential_release_candidates_include_new_entries(tmp_pa
 
     rc2_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.2",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "--rc", "--yes"],
     )
     assert rc2_result.exit_code == 0, rc2_result.output
 
@@ -6063,14 +6022,7 @@ def test_release_create_without_rc_promotes_latest_outstanding_candidate(
 
     rc_release = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v2.0.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--rc", "--yes"],
     )
     assert rc_release.exit_code == 0, rc_release.output
 
@@ -6117,7 +6069,7 @@ def test_release_create_patch_bump_uses_release_candidate_base_when_no_stable_ex
 
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.3-rc.1", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -6240,14 +6192,7 @@ def test_release_version_ignores_release_candidates(tmp_path: Path) -> None:
 
     rc_release = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.6.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.6.0", "--rc", "--yes"],
     )
     assert rc_release.exit_code == 0, rc_release.output
 
@@ -6320,14 +6265,7 @@ def test_show_latest_ignores_release_candidates(tmp_path: Path) -> None:
 
     rc_release = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.6.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.6.0", "--rc", "--yes"],
     )
     assert rc_release.exit_code == 0, rc_release.output
 
@@ -6375,14 +6313,7 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
 
     rc_release = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
     )
     assert rc_release.exit_code == 0, rc_release.output
 
@@ -6543,14 +6474,7 @@ def test_release_create_edit_existing_stable_ignores_rc_snapshots(tmp_path: Path
 
     rc_release = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v2.0.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v2.0.0", "--rc", "--yes"],
     )
     assert rc_release.exit_code == 0, rc_release.output
 
@@ -6730,14 +6654,7 @@ def test_release_publish_defaults_to_latest_release(
 
     rc_release_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.6.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.6.0", "--rc", "--yes"],
     )
     assert rc_release_result.exit_code == 0, rc_release_result.output
 
@@ -6812,14 +6729,7 @@ def test_release_publish_defaults_to_latest_release_when_only_rc_exists(
 
     release_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.6.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.6.0", "--rc", "--yes"],
     )
     assert release_result.exit_code == 0, release_result.output
 
@@ -6888,14 +6798,7 @@ def test_release_publish_infers_prerelease_and_not_latest(
 
     release_result = runner.invoke(
         cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.6.0-rc.1",
-            "--yes",
-        ],
+        ["--root", str(project_dir), "release", "create", "v1.6.0", "--rc", "--yes"],
     )
     assert release_result.exit_code == 0, release_result.output
 
