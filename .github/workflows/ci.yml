@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Tests (${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -54,7 +54,7 @@ jobs:
         run: uv run pytest --durations=10
 
   lint-workflows:
-    name: Lint GitHub Actions workflows
+    name: Actionlint
     runs-on: ubuntu-latest
 
     steps:
@@ -74,22 +74,22 @@ jobs:
           "$ACTIONLINT_BIN"
 
   smoke-reusable-release-default-token:
-    name: Smoke test reusable release workflow (default token)
+    name: Release smoke (default token)
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: write
-    uses: ./.github/workflows/reusable-release.yaml
+    uses: ./.github/workflows/reusable-release-advanced.yaml
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
       skip-publish: true
 
   smoke-reusable-release-push-token:
-    name: Smoke test reusable release workflow (push token)
+    name: Release smoke (push token)
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: write
-    uses: ./.github/workflows/reusable-release.yaml
+    uses: ./.github/workflows/reusable-release-advanced.yaml
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with an explicit push token.
@@ -99,7 +99,7 @@ jobs:
       push_token: ${{ github.token }}
 
   build:
-    name: Build distribution
+    name: Build
     runs-on: ubuntu-latest
     needs: test
 
@@ -132,7 +132,7 @@ jobs:
           retention-days: 7
 
   test-install:
-    name: Test installation from artifact
+    name: Install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build
     strategy:

@@ -121,6 +121,7 @@ def test_advanced_reusable_release_allows_inherited_app_key_when_app_auth_is_unu
 def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     workflow = _load_workflow("reusable-release-advanced.yaml")
     release_job = _job(workflow, "release")
+    assert release_job["name"] == "release"
     steps = _as_sequence(release_job["steps"])
 
     resolve_auth = _step_by_name(steps, "Resolve auth token")
@@ -237,18 +238,20 @@ def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
     assert forwarded_secrets["gpg_private_key"] == "${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}"
 
 
-def test_ci_smoke_jobs_cover_wrapper_workflow_for_default_and_push_token_modes() -> None:
+def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes() -> None:
     workflow = _load_workflow("ci.yml")
 
     default_job = _job(workflow, "smoke-reusable-release-default-token")
-    assert default_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    assert default_job["name"] == "Release smoke (default token)"
+    assert default_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
     default_permissions = _as_mapping(default_job["permissions"])
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
     assert default_with["skip-publish"] is True
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
-    assert push_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    assert push_job["name"] == "Release smoke (push token)"
+    assert push_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
     push_permissions = _as_mapping(push_job["permissions"])
     assert push_permissions["contents"] == "write"
     push_with = _as_mapping(push_job["with"])
