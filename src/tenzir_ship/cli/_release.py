@@ -1036,10 +1036,7 @@ def create_release(
 
     rc_cleanup_dirs: list[Path] = []
     if existing_manifest is None:
-        if release_candidate:
-            rc_cleanup_dirs = release_manifest_dirs(project_root, active_rc_series)
-        elif active_rc_series:
-            rc_cleanup_dirs = release_manifest_dirs(project_root, active_rc_series)
+        rc_cleanup_dirs = release_manifest_dirs(project_root, active_rc_series)
 
     changes_required = False
     change_reasons: list[str] = []
