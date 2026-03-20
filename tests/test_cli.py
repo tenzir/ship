@@ -5812,7 +5812,7 @@ def test_release_create_explicit_stable_closes_active_rc_cycle(tmp_path: Path) -
     assert not any((project_dir / "unreleased").glob("*.md"))
 
 
-def test_release_create_explicit_stable_matching_active_rc_uses_promotion_rules(
+def test_release_create_explicit_matching_active_rc_requires_implicit_promotion(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -5862,8 +5862,10 @@ def test_release_create_explicit_stable_matching_active_rc_uses_promotion_rules(
         ],
     )
     assert promote_result.exit_code != 0
-    assert "changed after the release candidate snapshot was created" in promote_result.output
-    assert "create another release candidate before promoting to stable" in promote_result.output
+    assert "Release candidates already exist for '1.2.3'" in promote_result.output
+    assert "Omit the version and bump flags to promote v1.2.3-rc.1 automatically" in (
+        promote_result.output
+    )
     assert entry_path.exists()
     assert not (project_dir / "releases" / "v1.2.3").exists()
     assert (project_dir / "releases" / "v1.2.3-rc.1").exists()

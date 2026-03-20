@@ -788,11 +788,16 @@ def create_release(
 
     source_manifest = None
     if not release_candidate and active_rc_series:
-        active_rc_base = stable_release_version(active_rc_series[-1].version)
+        active_rc_manifest = active_rc_series[-1]
+        active_rc_base = stable_release_version(active_rc_manifest.version)
         if requested_version is None and normalized_bump is None:
-            source_manifest = active_rc_series[-1]
-        elif requested_version is not None and normalize_release_version(version) == active_rc_base:
-            source_manifest = active_rc_series[-1]
+            source_manifest = active_rc_manifest
+        elif normalize_release_version(version) == active_rc_base:
+            raise click.ClickException(
+                f"Release candidates already exist for '{active_rc_base}'. "
+                f"Omit the version and bump flags to promote {render_release_tag(active_rc_manifest.version)} automatically, "
+                "or use --rc to continue the RC series."
+            )
     is_prerelease = release_candidate
     copy_entries = release_candidate or source_manifest is not None
     release_mode = (
