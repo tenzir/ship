@@ -1,0 +1,8 @@
+created: 2026-03-20
+title: Release candidate lifecycle cleanup
+intro: >-
+  This release fixes the release candidate workflow so that superseded release candidates
+  are properly removed from changelog history after promotion to a stable release.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.6.0
