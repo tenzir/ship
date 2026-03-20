@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 import re
+import shutil
 from typing import Iterable, Optional
 
 from packaging.version import InvalidVersion, Version
@@ -60,7 +61,6 @@ class ReleaseSource:
     """Provenance metadata describing how a release snapshot was assembled."""
 
     mode: str
-    source_release: str | None = None
     previous_stable: str | None = None
 
 
@@ -153,6 +153,22 @@ def release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path
     return path.parent
 
 
+def release_manifest_dirs(project_root: Path, manifests: list[ReleaseManifest]) -> list[Path]:
+    """Return the on-disk directories for the provided release manifests."""
+    return [release_manifest_root(project_root, manifest) for manifest in manifests]
+
+
+def remove_release_directories(release_dirs: list[Path]) -> int:
+    """Delete release directories and return how many were removed."""
+    removed_count = 0
+    for release_dir in release_dirs:
+        if not release_dir.exists():
+            continue
+        shutil.rmtree(release_dir)
+        removed_count += 1
+    return removed_count
+
+
 def _parse_created_date(raw_value: object | None) -> date:
     if raw_value is None:
         return date.today()
@@ -163,13 +179,11 @@ def _parse_release_source(raw_value: object | None) -> ReleaseSource | None:
     if not isinstance(raw_value, dict):
         return None
     mode = str(raw_value.get("mode", "") or "").strip()
-    source_release = str(raw_value.get("source_release", "") or "").strip() or None
     previous_stable = str(raw_value.get("previous_stable", "") or "").strip() or None
-    if not mode and source_release is None and previous_stable is None:
+    if not mode and previous_stable is None:
         return None
     return ReleaseSource(
         mode=mode or "unknown",
-        source_release=source_release,
         previous_stable=previous_stable,
     )
 
@@ -257,8 +271,6 @@ def serialize_release_manifest(manifest: ReleaseManifest) -> str:
         source_payload: dict[str, str] = {}
         if manifest.source.mode:
             source_payload["mode"] = manifest.source.mode
-        if manifest.source.source_release:
-            source_payload["source_release"] = manifest.source.source_release
         if manifest.source.previous_stable:
             source_payload["previous_stable"] = manifest.source.previous_stable
         if source_payload:
