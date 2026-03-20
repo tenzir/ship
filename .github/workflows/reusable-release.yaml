@@ -124,6 +124,8 @@ jobs:
       git_user_email: ${{ inputs.git_user_email }}
       sign_commits: ${{ inputs.sign_commits }}
       sign_tags: ${{ inputs.sign_tags }}
-    # Preserve inherited caller secrets across the wrapper -> advanced hop so
-    # secret-backed hook scripts keep working.
-    secrets: inherit
+    secrets:
+      push_token: ${{ secrets.push_token }}
+      github_app_private_key: ${{ secrets.github_app_private_key }}
+      gpg_private_key: ${{ secrets.gpg_private_key }}
+      hook_env: ${{ secrets.hook_env }}

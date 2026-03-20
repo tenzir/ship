@@ -66,15 +66,20 @@ def test_load_workflow_preserves_on_key() -> None:
     assert "workflow_call" in workflow_on
 
 
-def test_reusable_release_wrapper_preserves_hook_inputs_and_inherited_secrets() -> None:
+def test_reusable_release_wrapper_preserves_hook_inputs_and_forwards_secrets() -> None:
     workflow = _load_workflow("reusable-release.yaml")
     workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
     workflow_secrets = _as_mapping(workflow_call["secrets"])
     release_job = _job(workflow, "release")
 
     assert release_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
-    assert release_job["secrets"] == "inherit"
     assert _as_mapping(workflow_secrets["hook_env"])["required"] is False
+
+    forwarded_secrets = _as_mapping(release_job["secrets"])
+    assert forwarded_secrets["push_token"] == "${{ secrets.push_token }}"
+    assert forwarded_secrets["github_app_private_key"] == "${{ secrets.github_app_private_key }}"
+    assert forwarded_secrets["gpg_private_key"] == "${{ secrets.gpg_private_key }}"
+    assert forwarded_secrets["hook_env"] == "${{ secrets.hook_env }}"
 
     forwarded_inputs = _as_mapping(release_job["with"])
     assert forwarded_inputs["pre-create"] == "${{ inputs.pre-create }}"
