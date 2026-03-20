@@ -175,7 +175,18 @@ def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps()
     configure_git_env = _as_mapping(configure_git["env"])
     assert configure_git_env["AUTH_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
     assert configure_git_env["GITHUB_SERVER_URL"] == "${{ github.server_url }}"
+    assert (
+        configure_git_env["GPG_ENABLED"] == "${{ steps.optional-credentials.outputs.has_gpg_key }}"
+    )
+    assert configure_git_env["SIGN_COMMITS"] == "${{ inputs.sign_commits }}"
+    assert configure_git_env["SIGN_TAGS"] == "${{ inputs.sign_tags }}"
     configure_git_run = cast(str, configure_git["run"])
+    assert 'if [ "$GPG_ENABLED" = "true" ]; then' in configure_git_run
+    assert 'git config --global commit.gpgsign "$SIGN_COMMITS"' in configure_git_run
+    assert 'git config --global tag.gpgsign "$SIGN_TAGS"' in configure_git_run
+    assert "git config --global commit.gpgsign false" in configure_git_run
+    assert "git config --global tag.gpgsign false" in configure_git_run
+    assert "git config --global --unset-all user.signingkey || true" in configure_git_run
     assert 'server_host="${GITHUB_SERVER_URL#https://}"' in configure_git_run
     assert "git remote set-url origin" in configure_git_run
     assert "AUTH_TOKEN" in configure_git_run
