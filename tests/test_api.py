@@ -178,5 +178,5 @@ def test_python_api_release_create_supports_implicit_release_candidates(tmp_path
     client.release_create(release_candidate=True, assume_yes=True)
     client.release_create(release_candidate=True, assume_yes=True)
 
-    assert (project_dir / "releases" / "v0.1.0-rc.1").exists()
+    assert not (project_dir / "releases" / "v0.1.0-rc.1").exists()
     assert (project_dir / "releases" / "v0.1.0-rc.2").exists()

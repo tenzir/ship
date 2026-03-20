@@ -60,7 +60,6 @@ class ReleaseSource:
     """Provenance metadata describing how a release snapshot was assembled."""
 
     mode: str
-    source_release: str | None = None
     previous_stable: str | None = None
 
 
@@ -163,13 +162,11 @@ def _parse_release_source(raw_value: object | None) -> ReleaseSource | None:
     if not isinstance(raw_value, dict):
         return None
     mode = str(raw_value.get("mode", "") or "").strip()
-    source_release = str(raw_value.get("source_release", "") or "").strip() or None
     previous_stable = str(raw_value.get("previous_stable", "") or "").strip() or None
-    if not mode and source_release is None and previous_stable is None:
+    if not mode and previous_stable is None:
         return None
     return ReleaseSource(
         mode=mode or "unknown",
-        source_release=source_release,
         previous_stable=previous_stable,
     )
 
@@ -257,8 +254,6 @@ def serialize_release_manifest(manifest: ReleaseManifest) -> str:
         source_payload: dict[str, str] = {}
         if manifest.source.mode:
             source_payload["mode"] = manifest.source.mode
-        if manifest.source.source_release:
-            source_payload["source_release"] = manifest.source.source_release
         if manifest.source.previous_stable:
             source_payload["previous_stable"] = manifest.source.previous_stable
         if source_payload:

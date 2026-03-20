@@ -5735,21 +5735,6 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
     )
     assert rc_result.exit_code == 0, rc_result.output
 
-    missing_source_result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "release",
-            "create",
-            "v1.2.3",
-            "--yes",
-        ],
-    )
-    assert missing_source_result.exit_code != 0
-    assert "Omit the version and bump flags" in missing_source_result.output
-    assert "use --rc to continue the RC series" in missing_source_result.output
-
     promote_result = runner.invoke(
         cli,
         [
@@ -5763,6 +5748,7 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
     assert promote_result.exit_code == 0, promote_result.output
     assert not any((project_dir / "unreleased").glob("*.md"))
     assert (project_dir / "releases" / "v1.2.3" / "entries" / "rc-feature.md").exists()
+    assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
 
     show_result = runner.invoke(
         cli,
@@ -5778,6 +5764,52 @@ def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> 
     assert show_result.exit_code == 0, show_result.output
     assert "v1.2.3" in show_result.output
     assert "v1.2.3-rc.1" not in show_result.output
+
+
+def test_release_create_explicit_stable_closes_active_rc_cycle(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    rc_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    stable_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.3.0",
+            "--yes",
+        ],
+    )
+    assert stable_result.exit_code == 0, stable_result.output
+    assert (project_dir / "releases" / "v1.3.0" / "entries" / "rc-feature.md").exists()
+    assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
+    assert not any((project_dir / "unreleased").glob("*.md"))
 
 
 def test_collect_unused_entries_for_release_ignores_release_candidates_by_default(
@@ -6078,10 +6110,8 @@ def test_release_create_patch_bump_uses_release_candidate_base_when_no_stable_ex
         ["--root", str(project_dir), "release", "create", "--patch"],
     )
     assert patch_result.exit_code != 0
-    assert "Omit the version and bump flags to promote the latest candidate automatically" in (
-        patch_result.output
-    )
-    assert "v0.0.1" not in patch_result.output
+    assert "changes for release" in patch_result.output
+    assert "v1.2.4" in patch_result.output
 
 
 def test_release_version_command(tmp_path: Path) -> None:
@@ -6336,6 +6366,32 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
     )
     assert next_rc_release.exit_code == 0, next_rc_release.output
 
+    rc1_markdown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "v1.2.3-rc.1",
+            "-m",
+        ],
+    )
+    assert rc1_markdown.exit_code != 0
+
+    rc2_markdown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "v1.2.3-rc.2",
+            "-m",
+        ],
+    )
+    assert rc2_markdown.exit_code == 0, rc2_markdown.output
+    assert "Updated stable body." in rc2_markdown.output
+    assert "Original RC body." not in rc2_markdown.output
+
     stable_release = runner.invoke(
         cli,
         [
@@ -6358,9 +6414,7 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
             "-m",
         ],
     )
-    assert rc_markdown.exit_code == 0, rc_markdown.output
-    assert "Original RC body." in rc_markdown.output
-    assert "Updated stable body." not in rc_markdown.output
+    assert rc_markdown.exit_code != 0
 
     rc_table = runner.invoke(
         cli,
@@ -6371,10 +6425,7 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
             "v1.2.3-rc.1",
         ],
     )
-    assert rc_table.exit_code == 0, rc_table.output
-    assert "Shared Entry" in rc_table.output
-    assert "Stable Entry" not in rc_table.output
-    assert "Missing entry" not in rc_table.output
+    assert rc_table.exit_code != 0
 
     stable_table = runner.invoke(
         cli,
@@ -6403,7 +6454,7 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
     assert "Updated stable body." in stable_markdown.output
     assert "Original RC body." not in stable_markdown.output
 
-    rc2_markdown = runner.invoke(
+    deleted_rc2_markdown = runner.invoke(
         cli,
         [
             "--root",
@@ -6413,9 +6464,7 @@ def test_show_release_uses_manifest_specific_entry_snapshots(tmp_path: Path) -> 
             "-m",
         ],
     )
-    assert rc2_markdown.exit_code == 0, rc2_markdown.output
-    assert "Updated stable body." in rc2_markdown.output
-    assert "Original RC body." not in rc2_markdown.output
+    assert deleted_rc2_markdown.exit_code != 0
 
 
 def test_release_create_edit_existing_stable_ignores_rc_snapshots(tmp_path: Path) -> None:
