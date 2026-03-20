@@ -5791,7 +5791,19 @@ def test_release_create_explicit_stable_closes_active_rc_cycle(tmp_path: Path) -
 
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--rc",
+            "--title",
+            "Curated RC title",
+            "--intro",
+            "Curated RC intro.",
+            "--yes",
+        ],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5810,6 +5822,17 @@ def test_release_create_explicit_stable_closes_active_rc_cycle(tmp_path: Path) -
     assert (project_dir / "releases" / "v1.3.0" / "entries" / "rc-feature.md").exists()
     assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
     assert not any((project_dir / "unreleased").glob("*.md"))
+
+    manifest_data = yaml.safe_load(
+        (project_dir / "releases" / "v1.3.0" / "manifest.yaml").read_text(encoding="utf-8")
+    )
+    assert manifest_data["title"] == "Curated RC title"
+    assert manifest_data["intro"] == "Curated RC intro."
+    assert (
+        (project_dir / "releases" / "v1.3.0" / "notes.md")
+        .read_text(encoding="utf-8")
+        .startswith("Curated RC intro.")
+    )
 
 
 def test_release_create_continuing_rc_preserves_previous_intro(tmp_path: Path) -> None:
@@ -6412,6 +6435,88 @@ def test_release_create_explicit_stable_rejects_versions_older_than_active_rc_ta
     assert not (project_dir / "releases" / "v1.2.1").exists()
     assert (project_dir / "releases" / "v1.3.0-rc.1").exists()
     assert (project_dir / "unreleased" / "preview-feature.md").exists()
+
+
+def test_release_create_major_bump_closing_active_rc_preserves_metadata(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "bugfix",
+            "--description",
+            "Ships stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_entry.exit_code == 0, stable_entry.output
+
+    stable_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.0", "--yes"],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Queued for a later stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_entry.exit_code == 0, rc_entry.output
+
+    rc_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.3.0",
+            "--rc",
+            "--title",
+            "Curated RC title",
+            "--intro",
+            "Curated RC intro.",
+            "--yes",
+        ],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    major_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--major", "--yes"],
+    )
+    assert major_result.exit_code == 0, major_result.output
+
+    release_dir = project_dir / "releases" / "v2.0.0"
+    assert (release_dir / "entries" / "preview-feature.md").exists()
+    assert not (project_dir / "releases" / "v1.3.0-rc.1").exists()
+    assert not any((project_dir / "unreleased").glob("*.md"))
+
+    manifest_data = yaml.safe_load((release_dir / "manifest.yaml").read_text(encoding="utf-8"))
+    assert manifest_data["title"] == "Curated RC title"
+    assert manifest_data["intro"] == "Curated RC intro."
+    assert (release_dir / "notes.md").read_text(encoding="utf-8").startswith("Curated RC intro.")
 
 
 def test_release_version_command(tmp_path: Path) -> None:

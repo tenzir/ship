@@ -811,9 +811,12 @@ def create_release(
                 f"{render_release_tag(active_rc_base)}. Omit the bump flag to promote the latest candidate automatically, "
                 "or choose a higher bump or explicit later version."
             )
+    closing_active_rc_cycle = (
+        not release_candidate and existing_manifest is None and active_rc_manifest is not None
+    )
     metadata_source_manifest = (
         active_rc_manifest
-        if release_candidate and active_rc_manifest is not None
+        if active_rc_manifest is not None and (release_candidate or closing_active_rc_cycle)
         else source_manifest
     )
     is_prerelease = release_candidate
