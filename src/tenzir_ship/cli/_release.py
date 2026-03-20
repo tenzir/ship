@@ -524,30 +524,43 @@ def _load_manifest_entries(project_root: Path, manifest: ReleaseManifest) -> lis
     return entries
 
 
-def _get_active_release_candidate_series(project_root: Path) -> list[ReleaseManifest]:
-    """Return the single active RC series sorted from oldest to newest."""
-    candidates: list[tuple[Version, ReleaseManifest]] = []
+def _get_outstanding_release_candidate_series(
+    project_root: Path,
+) -> dict[str, list[ReleaseManifest]]:
+    """Return RC series whose stable release has not been cut yet."""
+    stable_versions: set[str] = set()
+    candidates_by_base: dict[str, list[tuple[Version, ReleaseManifest]]] = {}
     for manifest in iter_release_manifests(project_root):
-        if not is_release_candidate(manifest.version):
-            continue
         try:
             parsed = parse_release_version(manifest.version)
         except InvalidVersion:
             continue
-        candidates.append((parsed, manifest))
+        base_version = stable_release_version(manifest.version)
+        if is_release_candidate(manifest.version):
+            candidates_by_base.setdefault(base_version, []).append((parsed, manifest))
+        else:
+            stable_versions.add(base_version)
 
-    if not candidates:
+    outstanding: dict[str, list[ReleaseManifest]] = {}
+    for base_version, candidates in candidates_by_base.items():
+        if base_version in stable_versions:
+            continue
+        candidates.sort(key=lambda item: item[0])
+        outstanding[base_version] = [manifest for _, manifest in candidates]
+    return outstanding
+
+
+def _get_active_release_candidate_series(project_root: Path) -> list[ReleaseManifest]:
+    """Return the single active RC series sorted from oldest to newest."""
+    outstanding = _get_outstanding_release_candidate_series(project_root)
+    if not outstanding:
         return []
-
-    bases = {stable_release_version(manifest.version) for _, manifest in candidates}
-    if len(bases) > 1:
+    if len(outstanding) > 1:
         raise click.ClickException(
             "Multiple release candidate series exist in releases/. Remove stale RC "
             "directories so only one RC cycle remains before continuing."
         )
-
-    candidates.sort(key=lambda item: item[0])
-    return [manifest for _, manifest in candidates]
+    return next(iter(outstanding.values()))
 
 
 def _resolve_release_baseline(
@@ -773,16 +786,13 @@ def create_release(
         )
         raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
 
-    source_manifest = (
-        active_rc_series[-1]
-        if (
-            not release_candidate
-            and requested_version is None
-            and normalized_bump is None
-            and active_rc_series
-        )
-        else None
-    )
+    source_manifest = None
+    if not release_candidate and active_rc_series:
+        active_rc_base = stable_release_version(active_rc_series[-1].version)
+        if requested_version is None and normalized_bump is None:
+            source_manifest = active_rc_series[-1]
+        elif requested_version is not None and normalize_release_version(version) == active_rc_base:
+            source_manifest = active_rc_series[-1]
     is_prerelease = release_candidate
     copy_entries = release_candidate or source_manifest is not None
     release_mode = (

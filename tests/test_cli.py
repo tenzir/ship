@@ -5812,6 +5812,117 @@ def test_release_create_explicit_stable_closes_active_rc_cycle(tmp_path: Path) -
     assert not any((project_dir / "unreleased").glob("*.md"))
 
 
+def test_release_create_explicit_stable_matching_active_rc_uses_promotion_rules(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    entry_path = project_dir / "unreleased" / "rc-feature.md"
+
+    rc_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    entry_path.write_text(
+        entry_path.read_text(encoding="utf-8").replace("Snapshot me.", "Edited after snapshot."),
+        encoding="utf-8",
+    )
+
+    promote_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--yes",
+        ],
+    )
+    assert promote_result.exit_code != 0
+    assert "changed after the release candidate snapshot was created" in promote_result.output
+    assert "create another release candidate before promoting to stable" in promote_result.output
+    assert entry_path.exists()
+    assert not (project_dir / "releases" / "v1.2.3").exists()
+    assert (project_dir / "releases" / "v1.2.3-rc.1").exists()
+
+
+def test_release_create_ignores_closed_release_candidate_history(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    historical_rc_dir = project_dir / "releases" / "v1.2.0-rc.1"
+    (historical_rc_dir / "entries").mkdir(parents=True)
+    (historical_rc_dir / "manifest.yaml").write_text(
+        "version: v1.2.0-rc.1\ncreated: 2025-01-01\nentries:\n  - old-rc\n",
+        encoding="utf-8",
+    )
+
+    historical_stable_dir = project_dir / "releases" / "v1.2.0"
+    (historical_stable_dir / "entries").mkdir(parents=True)
+    (historical_stable_dir / "manifest.yaml").write_text(
+        "version: v1.2.0\ncreated: 2025-01-02\nentries:\n  - old-rc\n",
+        encoding="utf-8",
+    )
+
+    rc1_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.3.0", "--rc", "--yes"],
+    )
+    assert rc1_result.exit_code == 0, rc1_result.output
+
+    rc2_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--rc", "--yes"],
+    )
+    assert rc2_result.exit_code == 0, rc2_result.output
+    assert (project_dir / "releases" / "v1.2.0-rc.1").exists()
+    assert (project_dir / "releases" / "v1.2.0").exists()
+    assert not (project_dir / "releases" / "v1.3.0-rc.1").exists()
+    assert (project_dir / "releases" / "v1.3.0-rc.2").exists()
+
+
 def test_collect_unused_entries_for_release_ignores_release_candidates_by_default(
     tmp_path: Path,
 ) -> None:
