@@ -783,6 +783,8 @@ def create_release(
 
     source_manifest = None
     if not release_candidate and active_rc_manifest is not None and active_rc_base is not None:
+        active_rc_target = parse_release_version(active_rc_base)
+        resolved_version = parse_release_version(version)
         if requested_version is None and normalized_bump is None:
             source_manifest = active_rc_manifest
         elif normalize_release_version(version) == active_rc_base:
@@ -791,9 +793,18 @@ def create_release(
                 f"Omit the version and bump flags to promote {render_release_tag(active_rc_manifest.version)} automatically, "
                 "or use --rc to continue the RC series."
             )
-        elif normalized_bump is not None and parse_release_version(
-            version
-        ) <= parse_release_version(active_rc_base):
+        elif (
+            requested_version is not None
+            and existing_manifest is None
+            and resolved_version < active_rc_target
+        ):
+            raise click.ClickException(
+                f"Cannot create {tag_version} while {render_release_tag(active_rc_manifest.version)} is active because "
+                f"it does not advance beyond the active RC target {render_release_tag(active_rc_base)}. "
+                "Omit the version and bump flags to promote the latest candidate automatically, "
+                "or choose an explicit later version."
+            )
+        elif normalized_bump is not None and resolved_version <= active_rc_target:
             raise click.ClickException(
                 f"Cannot use --{normalized_bump} while {render_release_tag(active_rc_manifest.version)} is active because "
                 f"it resolves to {tag_version}, which does not advance beyond the active RC target "

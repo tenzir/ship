@@ -6347,6 +6347,73 @@ def test_release_create_patch_bump_rejects_versions_at_or_below_active_rc_target
     assert (project_dir / "unreleased" / "preview-feature.md").exists()
 
 
+def test_release_create_explicit_stable_rejects_versions_older_than_active_rc_target(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "bugfix",
+            "--description",
+            "Ships stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_entry.exit_code == 0, stable_entry.output
+
+    stable_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.0", "--yes"],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Queued for the RC.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_entry.exit_code == 0, rc_entry.output
+
+    rc_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.3.0", "--rc", "--yes"],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    explicit_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.1", "--yes"],
+    )
+    assert explicit_result.exit_code != 0
+    assert "Cannot create v1.2.1 while v1.3.0-rc.1 is active" in explicit_result.output
+    assert "does not advance beyond the active RC target v1.3.0" in explicit_result.output
+    assert not (project_dir / "releases" / "v1.2.1").exists()
+    assert (project_dir / "releases" / "v1.3.0-rc.1").exists()
+    assert (project_dir / "unreleased" / "preview-feature.md").exists()
+
+
 def test_release_version_command(tmp_path: Path) -> None:
     """Test the release version command outputs the latest stable version."""
     runner = CliRunner()
