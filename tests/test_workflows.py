@@ -238,16 +238,9 @@ def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
 def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes() -> None:
     workflow = _load_workflow("ci.yml")
 
-    prepare_job = _job(workflow, "prepare-release-smoke-token")
-    assert prepare_job["name"] == "Prepare release smoke token"
-    prepare_permissions = _as_mapping(prepare_job["permissions"])
-    assert prepare_permissions["contents"] == "write"
-    prepare_outputs = _as_mapping(prepare_job["outputs"])
-    assert prepare_outputs["token"] == "${{ steps.token.outputs.token }}"
-
     default_job = _job(workflow, "smoke-reusable-release-default-token")
     assert default_job["name"] == "Release smoke (default token)"
-    assert default_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    assert default_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
     default_permissions = _as_mapping(default_job["permissions"])
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
@@ -255,7 +248,6 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
     assert push_job["name"] == "Release smoke (push token)"
-    assert push_job["needs"] == "prepare-release-smoke-token"
     assert push_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
     push_permissions = _as_mapping(push_job["permissions"])
     assert push_permissions["contents"] == "write"
@@ -263,4 +255,4 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     assert push_with["use_push_token"] is True
     assert push_with["skip-publish"] is True
     push_secrets = _as_mapping(push_job["secrets"])
-    assert push_secrets["push_token"] == "${{ needs.prepare-release-smoke-token.outputs.token }}"
+    assert push_secrets["push_token"] == "${{ secrets.GITHUB_TOKEN }}"

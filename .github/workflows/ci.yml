@@ -73,29 +73,12 @@ jobs:
           ACTIONLINT_BIN="$(go env GOPATH)/bin/actionlint"
           "$ACTIONLINT_BIN"
 
-  prepare-release-smoke-token:
-    name: Prepare release smoke token
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      token: ${{ steps.token.outputs.token }}
-    steps:
-      - name: Export token
-        id: token
-        env:
-          TOKEN: ${{ github.token }}
-        run: |
-          echo "::add-mask::$TOKEN"
-          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
-
   smoke-reusable-release-default-token:
     name: Release smoke (default token)
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: write
-    uses: ./.github/workflows/reusable-release.yaml
+    uses: ./.github/workflows/reusable-release-advanced.yaml
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
@@ -104,7 +87,6 @@ jobs:
   smoke-reusable-release-push-token:
     name: Release smoke (push token)
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
-    needs: prepare-release-smoke-token
     permissions:
       contents: write
     uses: ./.github/workflows/reusable-release-advanced.yaml
@@ -114,7 +96,7 @@ jobs:
       use_push_token: true
       skip-publish: true
     secrets:
-      push_token: ${{ needs.prepare-release-smoke-token.outputs.token }}
+      push_token: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build
