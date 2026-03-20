@@ -11,7 +11,7 @@ pr: 20
 created: 2026-03-20T10:00:06.37057Z
 ---
 
-This fixes the v1.6.0 release candidate workflow so RCs no longer remain in changelog history after they have been superseded. Creating a new `-rc.N` now replaces the previous RC for that cycle, and creating a stable release closes the RC cycle and removes its RC manifests from `releases/`.
+This fixes the release candidate workflow so RCs no longer remain in changelog history after they have been superseded. Creating a new `-rc.N` now replaces the previous RC for that cycle, and creating a stable release closes the RC cycle and removes its RC manifests from `releases/`.
 
 For example:
 
