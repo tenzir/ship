@@ -1,3 +1,7 @@
+# Thin wrapper around reusable-release-advanced.yaml for common release
+# automation. Uses `secrets: inherit` to forward caller secrets, which works for
+# same-org and same-enterprise callers. External callers that need to pass
+# secrets to hooks should call reusable-release-advanced.yaml directly.
 name: Release
 
 on:
@@ -75,12 +79,12 @@ on:
       sign_commits:
         description: "Whether to sign commits when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
       sign_tags:
         description: "Whether to sign tags when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
     secrets:
       push_token:

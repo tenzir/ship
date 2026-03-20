@@ -100,12 +100,12 @@ on:
       sign_commits:
         description: "Whether to sign commits when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
       sign_tags:
         description: "Whether to sign tags when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
     secrets:
       push_token:
@@ -126,7 +126,7 @@ on:
 
 jobs:
   release:
-    name: release
+    name: Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -508,13 +508,14 @@ jobs:
 
       - name: Summary
         env:
+          RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
+          IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
+          AUTH_SOURCE: ${{ steps.auth-token.outputs.source }}
+          SKIP_PUBLISH: ${{ inputs['skip-publish'] }}
           GPG_ENABLED: ${{ steps.optional-credentials.outputs.has_gpg_key }}
           SIGN_COMMITS: ${{ inputs.sign_commits }}
           SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
-          VERSION="${{ steps.create-release.outputs.version }}"
-          IS_LATEST="${{ steps.determine-latest.outputs.is_latest }}"
-          AUTH_SOURCE="${{ steps.auth-token.outputs.source }}"
           COMMIT_SIGNING=false
           TAG_SIGNING=false
           if [ "$GPG_ENABLED" = "true" ]; then
@@ -522,13 +523,13 @@ jobs:
             TAG_SIGNING="$SIGN_TAGS"
           fi
           {
-            echo "## Release ${VERSION}"
+            echo "## Release ${RELEASE_VERSION}"
             echo ""
-            echo "Successfully released version **${VERSION}**."
+            echo "Successfully released version **${RELEASE_VERSION}**."
             echo ""
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
             echo "- Latest release: \`${IS_LATEST}\`"
-            echo "- Publish skipped: \`${{ inputs['skip-publish'] }}\`"
+            echo "- Publish skipped: \`${SKIP_PUBLISH}\`"
             echo "- Auth mode: \`${AUTH_SOURCE}\`"
             echo "- Commit signing: \`${COMMIT_SIGNING}\`"
             echo "- Tag signing: \`${TAG_SIGNING}\`"

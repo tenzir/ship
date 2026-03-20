@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import cast
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -118,7 +120,7 @@ def test_advanced_reusable_release_allows_inherited_app_key_when_app_auth_is_unu
 def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     workflow = _load_workflow("reusable-release-advanced.yaml")
     release_job = _job(workflow, "release")
-    assert release_job["name"] == "release"
+    assert release_job["name"] == "Release"
     steps = _as_sequence(release_job["steps"])
 
     resolve_auth = _step_by_name(steps, "Resolve auth token")
@@ -226,6 +228,8 @@ def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
     assert forwarded_inputs["github_app_id"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
     assert forwarded_inputs["git_user_name"] == "tenzir-bot"
     assert forwarded_inputs["git_user_email"] == "engineering@tenzir.com"
+    assert forwarded_inputs["sign_commits"] is True
+    assert forwarded_inputs["sign_tags"] is True
 
     forwarded_secrets = _as_mapping(release_job["secrets"])
     assert (
@@ -256,3 +260,101 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     assert push_with["skip-publish"] is True
     push_secrets = _as_mapping(push_job["secrets"])
     assert push_secrets["push_token"] == "${{ secrets.GITHUB_TOKEN }}"
+
+
+# ---------------------------------------------------------------------------
+# Runtime validation tests — exercise the shell logic extracted from the
+# "Validate release inputs" step.
+# ---------------------------------------------------------------------------
+
+
+def _validation_script() -> str:
+    """Extract the shell script from the 'Validate release inputs' step."""
+    workflow = _load_workflow("reusable-release-advanced.yaml")
+    release_job = _job(workflow, "release")
+    steps = _as_sequence(release_job["steps"])
+    validate_step = _step_by_name(steps, "Validate release inputs")
+    return cast(str, validate_step["run"])
+
+
+def _run_validation(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the validation script with the given environment variables."""
+    base_env = {
+        "RELEASE_BUMP": "",
+        "RELEASE_VERSION": "",
+        "RELEASE_RC": "false",
+        "GITHUB_APP_ID": "",
+        "USE_PUSH_TOKEN": "false",
+        "PUSH_TOKEN": "",
+        "GITHUB_APP_PRIVATE_KEY": "",
+        "GIT_USER_NAME": "github-actions[bot]",
+        "GIT_USER_EMAIL": "41898282+github-actions[bot]@users.noreply.github.com",
+    }
+    base_env.update(env)
+    return subprocess.run(
+        ["bash", "-c", _validation_script()],
+        capture_output=True,
+        text=True,
+        env=base_env,
+    )
+
+
+def test_validation_accepts_valid_bump_values() -> None:
+    for bump in ["", "auto", "major", "minor", "patch"]:
+        result = _run_validation({"RELEASE_BUMP": bump})
+        assert result.returncode == 0, f"bump={bump!r} should pass: {result.stderr}"
+
+
+def test_validation_rejects_invalid_bump_value() -> None:
+    result = _run_validation({"RELEASE_BUMP": "bogus"})
+    assert result.returncode == 1
+    assert "Invalid bump value" in result.stdout
+
+
+def test_validation_rejects_version_and_bump_together() -> None:
+    result = _run_validation({"RELEASE_VERSION": "v1.2.3", "RELEASE_BUMP": "minor"})
+    assert result.returncode == 1
+    assert "Provide either an explicit version or a manual bump" in result.stdout
+
+
+def test_validation_allows_version_with_auto_bump() -> None:
+    result = _run_validation({"RELEASE_VERSION": "v1.2.3", "RELEASE_BUMP": "auto"})
+    assert result.returncode == 0
+
+
+def test_validation_rejects_rc_with_prerelease_version() -> None:
+    result = _run_validation({"RELEASE_RC": "true", "RELEASE_VERSION": "v1.2.3-rc.1"})
+    assert result.returncode == 1
+    assert "rc expects a stable base version" in result.stdout
+
+
+def test_validation_rejects_app_id_without_private_key() -> None:
+    result = _run_validation({"GITHUB_APP_ID": "12345", "GITHUB_APP_PRIVATE_KEY": ""})
+    assert result.returncode == 1
+    assert "requires secret 'github_app_private_key'" in result.stdout
+
+
+def test_validation_accepts_app_id_with_private_key() -> None:
+    result = _run_validation({"GITHUB_APP_ID": "12345", "GITHUB_APP_PRIVATE_KEY": "key-data"})
+    assert result.returncode == 0
+
+
+def test_validation_rejects_push_token_flag_without_secret() -> None:
+    result = _run_validation({"USE_PUSH_TOKEN": "true", "PUSH_TOKEN": ""})
+    assert result.returncode == 1
+    assert "requires secret 'push_token'" in result.stdout
+
+
+def test_validation_accepts_push_token_flag_with_secret() -> None:
+    result = _run_validation({"USE_PUSH_TOKEN": "true", "PUSH_TOKEN": "ghp_abc"})
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "name,email",
+    [("", "a@b.com"), ("bot", ""), ("", "")],
+)
+def test_validation_rejects_empty_git_identity(name: str, email: str) -> None:
+    result = _run_validation({"GIT_USER_NAME": name, "GIT_USER_EMAIL": email})
+    assert result.returncode == 1
+    assert "must be non-empty" in result.stdout

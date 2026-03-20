@@ -76,9 +76,10 @@ optional auth and signing overrides:
 - `use_push_token` + `push_token` to opt into a custom token instead of the
   default `GITHUB_TOKEN`.
 - `git_user_name` and `git_user_email` to customize the git author identity.
-- `gpg_private_key` to sign commits and tags.
-- `sign_commits` and `sign_tags` to control which Git objects are signed when a
-  GPG key is provided.
+- `gpg_private_key` to enable GPG signing.
+- `sign_commits` and `sign_tags` (both default to `false`) to control which Git
+  objects are signed when a GPG key is provided. You must set at least one to
+  `true` for signing to take effect.
 
 Use `reusable-release-advanced.yaml` when you also need the extra hooks and
 release controls it exposes: `pre-publish`, `post-publish`,
@@ -86,12 +87,28 @@ release controls it exposes: `pre-publish`, `post-publish`,
 `update-latest-branch-on-main`. Pass hook scripts via `with:`. If your hook
 scripts need secrets, same-org or same-enterprise callers can keep using
 `secrets: inherit`. External callers that cannot inherit secrets can pass a
-newline-delimited `hook_env` secret; the workflow exports those assignments
-before each hook runs. The simpler `reusable-release.yaml` wrapper keeps
-`pre-create`, `post-create`, and `skip-publish` for common release automation
-and CI smoke tests, and preserves caller secrets across the nested workflow
-call. External callers that cannot use `secrets: inherit` should call
-`reusable-release-advanced.yaml` directly when hooks need secrets.
+`hook_env` secret containing newline-delimited `KEY=value` assignments. The
+workflow **sources** this value as a shell script (`set -a; . <(...); set +a`)
+before each hook runs, so standard shell quoting rules apply. For example:
+
+```text
+REGISTRY_URL=https://registry.example.com
+DEPLOY_TOKEN=ghp_abc123
+NPM_CONFIG_REGISTRY="https://npm.example.com/"
+```
+
+> [!CAUTION]
+> Because `hook_env` is sourced as shell, values with unquoted metacharacters
+> like `;`, `$`, or backticks are interpreted. Quote values that contain special
+> characters and avoid embedding secrets that should not appear in runner logs —
+> GitHub masks the entire `hook_env` blob but not individual values extracted
+> from it.
+
+The simpler `reusable-release.yaml` wrapper keeps `pre-create`, `post-create`,
+and `skip-publish` for common release automation and CI smoke tests, and
+preserves caller secrets across the nested workflow call. External callers that
+cannot use `secrets: inherit` should call `reusable-release-advanced.yaml`
+directly when hooks need secrets.
 
 ```yaml
 jobs:
@@ -144,8 +161,9 @@ Pick the smallest option that fits your release process:
   the workflow must trigger downstream workflows.
 - Set `github_app_id` and `github_app_private_key` when you want
   repository-scoped bot automation with a short-lived token.
-- Provide `gpg_private_key` when you want to sign commits or tags. Signing
-  stays disabled unless you provide a key.
+- Provide `gpg_private_key` and set `sign_commits: true` and/or
+  `sign_tags: true` when you want to sign commits or tags. Signing stays
+  disabled unless you both provide a key and explicitly enable it.
 
 ## 📚 Documentation
 
