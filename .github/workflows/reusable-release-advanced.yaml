@@ -114,6 +114,8 @@ on:
         required: false
       gpg_private_key:
         required: false
+      hook_env:
+        required: false
     outputs:
       version:
         description: "Created release version tag (for example v1.2.3)"
@@ -216,8 +218,10 @@ jobs:
             SOURCE="github-token"
           fi
           echo "::add-mask::$TOKEN"
-          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
-          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          {
+            echo "token=$TOKEN"
+            echo "source=$SOURCE"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v5
@@ -240,7 +244,41 @@ jobs:
           WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           REPOSITORY="${WORKFLOW_REF%%/.github/workflows/*}"
-          echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
+          {
+            echo "repository=$REPOSITORY"
+            echo "owner=${REPOSITORY%/*}"
+            echo "name=${REPOSITORY#*/}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate workflow source app token
+        id: workflow-source-app-token
+        if: ${{ inputs.github_app_id != '' && steps.workflow-source.outputs.repository != github.repository }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.github_app_id }}
+          private-key: ${{ secrets.github_app_private_key }}
+          owner: ${{ steps.workflow-source.outputs.owner }}
+          repositories: ${{ steps.workflow-source.outputs.name }}
+
+      - name: Resolve workflow source token
+        id: workflow-source-token
+        env:
+          SOURCE_APP_TOKEN: ${{ steps.workflow-source-app-token.outputs.token }}
+          DEFAULT_TOKEN: ${{ steps.auth-token.outputs.token }}
+        run: |
+          if [ -n "$SOURCE_APP_TOKEN" ]; then
+            TOKEN="$SOURCE_APP_TOKEN"
+            SOURCE="workflow-source-github-app"
+          else
+            TOKEN="$DEFAULT_TOKEN"
+            SOURCE="primary-auth"
+          fi
+          echo "::add-mask::$TOKEN"
+          {
+            echo "token=$TOKEN"
+            echo "source=$SOURCE"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout tenzir-ship source
         uses: actions/checkout@v5
@@ -249,7 +287,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .github/workflow-source/tenzir-ship
           persist-credentials: false
-          token: ${{ steps.auth-token.outputs.token }}
+          token: ${{ steps.workflow-source-token.outputs.token }}
 
       - name: Install tenzir-ship
         run: uv tool install ./.github/workflow-source/tenzir-ship
@@ -286,7 +324,16 @@ jobs:
 
       - name: Run pre-create script
         if: inputs.pre-create != ''
-        run: ${{ inputs.pre-create }}
+        env:
+          HOOK_ENV: ${{ secrets.hook_env }}
+        run: |
+          if [ -n "$HOOK_ENV" ]; then
+            set -a
+            # shellcheck disable=SC1090
+            . <(printf '%s\n' "$HOOK_ENV")
+            set +a
+          fi
+          ${{ inputs.pre-create }}
 
       - name: Create release
         id: create-release
@@ -331,7 +378,16 @@ jobs:
 
       - name: Run post-create script
         if: inputs.post-create != ''
-        run: ${{ inputs.post-create }}
+        env:
+          HOOK_ENV: ${{ secrets.hook_env }}
+        run: |
+          if [ -n "$HOOK_ENV" ]; then
+            set -a
+            # shellcheck disable=SC1090
+            . <(printf '%s\n' "$HOOK_ENV")
+            set +a
+          fi
+          ${{ inputs.post-create }}
 
       - name: Determine latest status
         id: determine-latest
@@ -354,11 +410,19 @@ jobs:
 
       - name: Run pre-publish script
         if: ${{ inputs.pre-publish != '' && !inputs['skip-publish'] }}
-        run: ${{ inputs.pre-publish }}
+        run: |
+          if [ -n "$HOOK_ENV" ]; then
+            set -a
+            # shellcheck disable=SC1090
+            . <(printf '%s\n' "$HOOK_ENV")
+            set +a
+          fi
+          ${{ inputs.pre-publish }}
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
           GH_TOKEN: ${{ steps.auth-token.outputs.token }}
+          HOOK_ENV: ${{ secrets.hook_env }}
 
       - name: Stage and publish
         if: ${{ !inputs['skip-publish'] }}
@@ -416,12 +480,20 @@ jobs:
 
       - name: Run post-publish script
         if: ${{ inputs.post-publish != '' && !inputs['skip-publish'] }}
-        run: ${{ inputs.post-publish }}
+        run: |
+          if [ -n "$HOOK_ENV" ]; then
+            set -a
+            # shellcheck disable=SC1090
+            . <(printf '%s\n' "$HOOK_ENV")
+            set +a
+          fi
+          ${{ inputs.post-publish }}
         env:
           CHANGELOG_ROOT: ${{ inputs.changelog-root }}
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
           IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           GH_TOKEN: ${{ steps.auth-token.outputs.token }}
+          HOOK_ENV: ${{ secrets.hook_env }}
 
       - name: Summary
         env:

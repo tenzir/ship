@@ -89,6 +89,8 @@ on:
         required: false
       gpg_private_key:
         required: false
+      hook_env:
+        required: false
     outputs:
       version:
         description: "Created release version tag (for example v1.2.3)"

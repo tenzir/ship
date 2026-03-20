@@ -84,10 +84,13 @@ Use `reusable-release-advanced.yaml` when you also need the extra hooks and
 release controls it exposes: `pre-publish`, `post-publish`,
 `publish-no-latest-on-non-main`, `copy-release-to-main-on-non-main`, and
 `update-latest-branch-on-main`. Pass hook scripts via `with:`. If your hook
-scripts need secrets, pass them via `secrets:` in the caller workflow. The
-simpler `reusable-release.yaml` wrapper keeps `pre-create`, `post-create`, and
-`skip-publish` for common release automation and CI smoke tests, while
-preserving inherited caller secrets for secret-backed hook scripts.
+scripts need secrets, same-org or same-enterprise callers can keep using
+`secrets: inherit`. External callers that cannot inherit secrets can pass a
+newline-delimited `hook_env` secret; the workflow exports those assignments
+before each hook runs. The simpler `reusable-release.yaml` wrapper keeps
+`pre-create`, `post-create`, and `skip-publish` for common release automation
+and CI smoke tests, while preserving inherited caller secrets and forwarding the
+optional `hook_env` secret for secret-backed hook scripts.
 
 ```yaml
 jobs:
