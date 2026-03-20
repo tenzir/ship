@@ -127,24 +127,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Resolve workflow source
-        id: workflow-source
-        env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-        run: |
-          REPOSITORY="${WORKFLOW_REF%%/.github/workflows/*}"
-          echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout tenzir-ship source
-        uses: actions/checkout@v5
-        with:
-          repository: ${{ steps.workflow-source.outputs.repository }}
-          ref: ${{ github.workflow_sha }}
-          path: .github/workflow-source/tenzir-ship
-          persist-credentials: false
-
       - name: Install tenzir-ship
-        run: uv tool install ./.github/workflow-source/tenzir-ship
+        run: uv tool install tenzir-ship
 
       - name: Generate app token
         id: app-token
