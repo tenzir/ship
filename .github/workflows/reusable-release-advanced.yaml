@@ -82,6 +82,11 @@ on:
         required: false
         default: ""
         type: string
+      use_push_token:
+        description: "Whether to use secret 'push_token' instead of the default GITHUB_TOKEN"
+        required: false
+        default: false
+        type: boolean
       git_user_name:
         description: "Git author name used for release commits"
         required: false
@@ -131,7 +136,11 @@ jobs:
       - name: Validate release inputs
         env:
           RELEASE_BUMP: ${{ inputs.bump }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_RC: ${{ inputs.rc }}
           GITHUB_APP_ID: ${{ inputs.github_app_id }}
+          USE_PUSH_TOKEN: ${{ inputs.use_push_token }}
+          PUSH_TOKEN: ${{ secrets.push_token }}
           GITHUB_APP_PRIVATE_KEY: ${{ secrets.github_app_private_key }}
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
@@ -144,18 +153,23 @@ jobs:
               ;;
           esac
 
-          if [ -n "${{ inputs.version }}" ] && [ -n "${{ inputs.bump }}" ] && [ "${{ inputs.bump }}" != "auto" ]; then
+          if [ -n "$RELEASE_VERSION" ] && [ -n "$RELEASE_BUMP" ] && [ "$RELEASE_BUMP" != "auto" ]; then
             echo "::error::Provide either an explicit version or a manual bump, not both."
             exit 1
           fi
 
-          if [ "${{ inputs.rc }}" = "true" ] && [[ "${{ inputs.version }}" == *-* ]]; then
+          if [ "$RELEASE_RC" = "true" ] && [[ "$RELEASE_VERSION" == *-* ]]; then
             echo "::error::rc expects a stable base version like v1.2.3, not a prerelease version."
             exit 1
           fi
 
           if [ -n "$GITHUB_APP_ID" ] && [ -z "$GITHUB_APP_PRIVATE_KEY" ]; then
             echo "::error::Input 'github_app_id' requires secret 'github_app_private_key'."
+            exit 1
+          fi
+
+          if [ "$USE_PUSH_TOKEN" = "true" ] && [ -z "$PUSH_TOKEN" ]; then
+            echo "::error::Input 'use_push_token' requires secret 'push_token'."
             exit 1
           fi
 
@@ -187,13 +201,14 @@ jobs:
         id: auth-token
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          USE_PUSH_TOKEN: ${{ inputs.use_push_token }}
           PUSH_TOKEN: ${{ secrets.push_token }}
           DEFAULT_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$APP_TOKEN" ]; then
             TOKEN="$APP_TOKEN"
             SOURCE="github-app"
-          elif [ -n "$PUSH_TOKEN" ]; then
+          elif [ "$USE_PUSH_TOKEN" = "true" ] && [ -n "$PUSH_TOKEN" ]; then
             TOKEN="$PUSH_TOKEN"
             SOURCE="push-token"
           else
@@ -234,6 +249,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .github/workflow-source/tenzir-ship
           persist-credentials: false
+          token: ${{ steps.auth-token.outputs.token }}
 
       - name: Install tenzir-ship
         run: uv tool install ./.github/workflow-source/tenzir-ship

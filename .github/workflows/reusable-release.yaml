@@ -57,6 +57,11 @@ on:
         required: false
         default: ""
         type: string
+      use_push_token:
+        description: "Whether to use secret 'push_token' instead of the default GITHUB_TOKEN"
+        required: false
+        default: false
+        type: boolean
       git_user_name:
         description: "Git author name used for release commits"
         required: false
@@ -112,6 +117,7 @@ jobs:
       copy-release-to-main-on-non-main: false
       update-latest-branch-on-main: false
       github_app_id: ${{ inputs.github_app_id }}
+      use_push_token: ${{ inputs.use_push_token }}
       git_user_name: ${{ inputs.git_user_name }}
       git_user_email: ${{ inputs.git_user_email }}
       sign_commits: ${{ inputs.sign_commits }}

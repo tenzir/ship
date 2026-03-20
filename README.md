@@ -69,21 +69,25 @@ jobs:
 
 ### Auth and signing overrides
 
-Both `reusable-release.yaml` and `reusable-release-advanced.yaml` support
-optional overrides for:
+Both `reusable-release.yaml` and `reusable-release-advanced.yaml` support these
+optional auth and signing overrides:
 
-- `github_app_id` + `github_app_private_key` to mint a GitHub App token
-- `push_token` to override the default `GITHUB_TOKEN`
-- `git_user_name` and `git_user_email` to customize the git author identity
-- `gpg_private_key` to sign commits and tags
+- `github_app_id` + `github_app_private_key` to mint a GitHub App token.
+- `use_push_token` + `push_token` to opt into a custom token instead of the
+  default `GITHUB_TOKEN`.
+- `git_user_name` and `git_user_email` to customize the git author identity.
+- `gpg_private_key` to sign commits and tags.
 - `sign_commits` and `sign_tags` to control which Git objects are signed when a
-  GPG key is provided
+  GPG key is provided.
 
 Use `reusable-release-advanced.yaml` when you also need the extra hooks and
-release controls it exposes. The simpler `reusable-release.yaml` wrapper keeps
-`pre-create`, `post-create`, and `skip-publish` for common release automation
-and CI smoke tests, while preserving inherited caller secrets for
-secret-backed hook scripts.
+release controls it exposes: `pre-publish`, `post-publish`,
+`publish-no-latest-on-non-main`, `copy-release-to-main-on-non-main`, and
+`update-latest-branch-on-main`. Pass hook scripts via `with:`. If your hook
+scripts need secrets, pass them via `secrets:` in the caller workflow. The
+simpler `reusable-release.yaml` wrapper keeps `pre-create`, `post-create`, and
+`skip-publish` for common release automation and CI smoke tests, while
+preserving inherited caller secrets for secret-backed hook scripts.
 
 ```yaml
 jobs:
@@ -103,29 +107,41 @@ jobs:
       gpg_private_key: ${{ secrets.MY_GPG_PRIVATE_KEY }}
 ```
 
+If you prefer an explicit push token, opt into it with `use_push_token: true`
+and pass the token as a secret:
+
+```yaml
+jobs:
+  release:
+    uses: tenzir/ship/.github/workflows/reusable-release.yaml@<pinned-ref>
+    permissions:
+      contents: write
+    with:
+      intro: This release improves parser coverage and fixes packaging.
+      use_push_token: true
+    secrets:
+      push_token: ${{ secrets.MY_PUSH_TOKEN }}
+```
+
 Auth precedence is:
 
 1. GitHub App token, when `github_app_id` and `github_app_private_key` are set.
-2. `push_token`, when provided.
+2. `push_token`, when `use_push_token: true` and the secret is set.
 3. The caller repo's default `GITHUB_TOKEN`.
-
-Use `GITHUB_TOKEN` when the workflow only needs to update the current
-repository. Use `push_token` or a GitHub App token when you need pushes or tags
-created by the workflow to trigger downstream automation.
 
 ### Choose an auth mode
 
-Use the smallest option that fits your release process:
+Pick the smallest option that fits your release process:
 
-- Use `GITHUB_TOKEN` when you only need to update the current repository.
-- Use `push_token` when you want to supply your own token for checkout,
-  pushes, or publishing.
-- Use `push_token` or a GitHub App token when pushes or tags from the
-  workflow must trigger downstream workflows.
-- Use `github_app_id` and `github_app_private_key` when you want
+- Keep the default `GITHUB_TOKEN` when you only need to update the current
+  repository.
+- Set `use_push_token: true` and pass `push_token` when you want to supply your
+  own token for checkout, pushes, or publishing, or when pushes or tags from
+  the workflow must trigger downstream workflows.
+- Set `github_app_id` and `github_app_private_key` when you want
   repository-scoped bot automation with a short-lived token.
-- Use `gpg_private_key` when you want to sign commits or tags. Signing stays
-  disabled unless you provide a key.
+- Provide `gpg_private_key` when you want to sign commits or tags. Signing
+  stays disabled unless you provide a key.
 
 ## 📚 Documentation
 

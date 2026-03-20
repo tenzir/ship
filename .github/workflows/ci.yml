@@ -93,6 +93,7 @@ jobs:
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with an explicit push token.
+      use_push_token: true
       skip-publish: true
     secrets:
       push_token: ${{ github.token }}
