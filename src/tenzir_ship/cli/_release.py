@@ -33,7 +33,9 @@ from ..releases import (
     normalize_release_version,
     parse_release_version,
     release_directory,
+    release_manifest_dirs,
     release_manifest_root,
+    remove_release_directories,
     render_release_tag,
     serialize_release_manifest,
     stable_release_version,
@@ -674,20 +676,6 @@ def _plan_promoted_unreleased_cleanup(
     return cleanup_paths, missing_entry_ids
 
 
-def _release_manifest_dirs(manifests: list[ReleaseManifest], project_root: Path) -> list[Path]:
-    return [release_manifest_root(project_root, manifest) for manifest in manifests]
-
-
-def _remove_release_directories(release_dirs: list[Path]) -> int:
-    removed_count = 0
-    for release_dir in release_dirs:
-        if not release_dir.exists():
-            continue
-        shutil.rmtree(release_dir)
-        removed_count += 1
-    return removed_count
-
-
 def _build_module_release_plan(
     ctx: CLIContext,
     project_root: Path,
@@ -786,10 +774,15 @@ def create_release(
         )
         raise click.ClickException(f"Release '{tag_version}' already exists. {follow_up}")
 
+    active_rc_manifest = active_rc_series[-1] if active_rc_series else None
+    active_rc_base = (
+        stable_release_version(active_rc_manifest.version)
+        if active_rc_manifest is not None
+        else None
+    )
+
     source_manifest = None
-    if not release_candidate and active_rc_series:
-        active_rc_manifest = active_rc_series[-1]
-        active_rc_base = stable_release_version(active_rc_manifest.version)
+    if not release_candidate and active_rc_manifest is not None and active_rc_base is not None:
         if requested_version is None and normalized_bump is None:
             source_manifest = active_rc_manifest
         elif normalize_release_version(version) == active_rc_base:
@@ -798,6 +791,20 @@ def create_release(
                 f"Omit the version and bump flags to promote {render_release_tag(active_rc_manifest.version)} automatically, "
                 "or use --rc to continue the RC series."
             )
+        elif normalized_bump is not None and parse_release_version(
+            version
+        ) <= parse_release_version(active_rc_base):
+            raise click.ClickException(
+                f"Cannot use --{normalized_bump} while {render_release_tag(active_rc_manifest.version)} is active because "
+                f"it resolves to {tag_version}, which does not advance beyond the active RC target "
+                f"{render_release_tag(active_rc_base)}. Omit the bump flag to promote the latest candidate automatically, "
+                "or choose a higher bump or explicit later version."
+            )
+    metadata_source_manifest = (
+        active_rc_manifest
+        if release_candidate and active_rc_manifest is not None
+        else source_manifest
+    )
     is_prerelease = release_candidate
     copy_entries = release_candidate or source_manifest is not None
     release_mode = (
@@ -851,12 +858,12 @@ def create_release(
         title_explicit = True
     default_release_title = f"{config.name} {tag_version}"
     source_release_title = None
-    if source_manifest is not None:
-        source_tag = render_release_tag(source_manifest.version)
-        if source_manifest.title in {source_tag, f"{config.name} {source_tag}"}:
+    if metadata_source_manifest is not None:
+        source_tag = render_release_tag(metadata_source_manifest.version)
+        if metadata_source_manifest.title in {source_tag, f"{config.name} {source_tag}"}:
             source_release_title = default_release_title
         else:
-            source_release_title = source_manifest.title
+            source_release_title = metadata_source_manifest.title
     release_title = (
         title
         if title_explicit
@@ -873,8 +880,10 @@ def create_release(
         manifest_intro: Optional[str] = intro_text.strip() or None
     elif intro_file:
         manifest_intro = intro_file.read_text(encoding="utf-8").strip() or None
-    elif source_manifest is not None:
-        manifest_intro = source_manifest.intro.strip() if source_manifest.intro else None
+    elif metadata_source_manifest is not None:
+        manifest_intro = (
+            metadata_source_manifest.intro.strip() if metadata_source_manifest.intro else None
+        )
     elif existing_manifest and existing_manifest.intro:
         manifest_intro = existing_manifest.intro.strip() or None
     else:
@@ -1014,9 +1023,9 @@ def create_release(
     rc_cleanup_dirs: list[Path] = []
     if existing_manifest is None:
         if release_candidate:
-            rc_cleanup_dirs = _release_manifest_dirs(active_rc_series, project_root)
+            rc_cleanup_dirs = release_manifest_dirs(project_root, active_rc_series)
         elif active_rc_series:
-            rc_cleanup_dirs = _release_manifest_dirs(active_rc_series, project_root)
+            rc_cleanup_dirs = release_manifest_dirs(project_root, active_rc_series)
 
     changes_required = False
     change_reasons: list[str] = []
@@ -1112,7 +1121,7 @@ def create_release(
         readme_content,
         overwrite=manifest_exists,
     )
-    removed_rc_count = _remove_release_directories(rc_cleanup_dirs)
+    removed_rc_count = remove_release_directories(rc_cleanup_dirs)
 
     log_success(f"release manifest written: {manifest_path_result.relative_to(project_root)}")
     relative_release_dir = release_entries_dir.relative_to(project_root)

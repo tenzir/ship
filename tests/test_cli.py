@@ -5812,6 +5812,59 @@ def test_release_create_explicit_stable_closes_active_rc_cycle(tmp_path: Path) -
     assert not any((project_dir / "unreleased").glob("*.md"))
 
 
+def test_release_create_continuing_rc_preserves_previous_intro(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    rc1_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.2.3",
+            "--rc",
+            "--intro",
+            "Custom intro.",
+            "--yes",
+        ],
+    )
+    assert rc1_result.exit_code == 0, rc1_result.output
+
+    rc2_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--rc", "--yes"],
+    )
+    assert rc2_result.exit_code == 0, rc2_result.output
+
+    assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
+    rc2_dir = project_dir / "releases" / "v1.2.3-rc.2"
+    assert rc2_dir.exists()
+    manifest_data = yaml.safe_load((rc2_dir / "manifest.yaml").read_text(encoding="utf-8"))
+    assert manifest_data["intro"] == "Custom intro."
+    assert (rc2_dir / "notes.md").read_text(encoding="utf-8").startswith("Custom intro.")
+
+
 def test_release_create_explicit_matching_active_rc_requires_implicit_promotion(
     tmp_path: Path,
 ) -> None:
@@ -6225,6 +6278,73 @@ def test_release_create_patch_bump_uses_release_candidate_base_when_no_stable_ex
     assert patch_result.exit_code != 0
     assert "changes for release" in patch_result.output
     assert "v1.2.4" in patch_result.output
+
+
+def test_release_create_patch_bump_rejects_versions_at_or_below_active_rc_target(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "bugfix",
+            "--description",
+            "Ships stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_entry.exit_code == 0, stable_entry.output
+
+    stable_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.0", "--yes"],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Queued for the RC.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_entry.exit_code == 0, rc_entry.output
+
+    rc_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.3.0", "--rc", "--yes"],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    patch_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--patch", "--yes"],
+    )
+    assert patch_result.exit_code != 0
+    assert "Cannot use --patch while v1.3.0-rc.1 is active" in patch_result.output
+    assert "does not advance beyond the active RC target v1.3.0" in patch_result.output
+    assert not (project_dir / "releases" / "v1.2.1").exists()
+    assert (project_dir / "releases" / "v1.3.0-rc.1").exists()
+    assert (project_dir / "unreleased" / "preview-feature.md").exists()
 
 
 def test_release_version_command(tmp_path: Path) -> None:

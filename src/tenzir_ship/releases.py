@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 import re
+import shutil
 from typing import Iterable, Optional
 
 from packaging.version import InvalidVersion, Version
@@ -150,6 +151,22 @@ def release_manifest_root(project_root: Path, manifest: ReleaseManifest) -> Path
     if path.is_dir():
         return path
     return path.parent
+
+
+def release_manifest_dirs(project_root: Path, manifests: list[ReleaseManifest]) -> list[Path]:
+    """Return the on-disk directories for the provided release manifests."""
+    return [release_manifest_root(project_root, manifest) for manifest in manifests]
+
+
+def remove_release_directories(release_dirs: list[Path]) -> int:
+    """Delete release directories and return how many were removed."""
+    removed_count = 0
+    for release_dir in release_dirs:
+        if not release_dir.exists():
+            continue
+        shutil.rmtree(release_dir)
+        removed_count += 1
+    return removed_count
 
 
 def _parse_created_date(raw_value: object | None) -> date:
