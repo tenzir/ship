@@ -66,20 +66,17 @@ def test_load_workflow_preserves_on_key() -> None:
     assert "workflow_call" in workflow_on
 
 
-def test_reusable_release_wrapper_preserves_hook_inputs_and_forwards_secrets() -> None:
+def test_reusable_release_wrapper_preserves_hook_inputs_and_inherited_secrets() -> None:
     workflow = _load_workflow("reusable-release.yaml")
     workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
     workflow_secrets = _as_mapping(workflow_call["secrets"])
     release_job = _job(workflow, "release")
 
     assert release_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
+    permissions = _as_mapping(release_job["permissions"])
+    assert permissions["contents"] == "write"
+    assert release_job["secrets"] == "inherit"
     assert _as_mapping(workflow_secrets["hook_env"])["required"] is False
-
-    forwarded_secrets = _as_mapping(release_job["secrets"])
-    assert forwarded_secrets["push_token"] == "${{ secrets.push_token }}"
-    assert forwarded_secrets["github_app_private_key"] == "${{ secrets.github_app_private_key }}"
-    assert forwarded_secrets["gpg_private_key"] == "${{ secrets.gpg_private_key }}"
-    assert forwarded_secrets["hook_env"] == "${{ secrets.hook_env }}"
 
     forwarded_inputs = _as_mapping(release_job["with"])
     assert forwarded_inputs["pre-create"] == "${{ inputs.pre-create }}"
@@ -241,9 +238,16 @@ def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
 def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes() -> None:
     workflow = _load_workflow("ci.yml")
 
+    prepare_job = _job(workflow, "prepare-release-smoke-token")
+    assert prepare_job["name"] == "Prepare release smoke token"
+    prepare_permissions = _as_mapping(prepare_job["permissions"])
+    assert prepare_permissions["contents"] == "write"
+    prepare_outputs = _as_mapping(prepare_job["outputs"])
+    assert prepare_outputs["token"] == "${{ steps.token.outputs.token }}"
+
     default_job = _job(workflow, "smoke-reusable-release-default-token")
     assert default_job["name"] == "Release smoke (default token)"
-    assert default_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
+    assert default_job["uses"] == "./.github/workflows/reusable-release.yaml"
     default_permissions = _as_mapping(default_job["permissions"])
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
@@ -251,6 +255,7 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
     assert push_job["name"] == "Release smoke (push token)"
+    assert push_job["needs"] == "prepare-release-smoke-token"
     assert push_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
     push_permissions = _as_mapping(push_job["permissions"])
     assert push_permissions["contents"] == "write"
@@ -258,4 +263,4 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     assert push_with["use_push_token"] is True
     assert push_with["skip-publish"] is True
     push_secrets = _as_mapping(push_job["secrets"])
-    assert push_secrets["push_token"] == "${{ github.token }}"
+    assert push_secrets["push_token"] == "${{ needs.prepare-release-smoke-token.outputs.token }}"

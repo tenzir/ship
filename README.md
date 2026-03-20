@@ -89,8 +89,9 @@ scripts need secrets, same-org or same-enterprise callers can keep using
 newline-delimited `hook_env` secret; the workflow exports those assignments
 before each hook runs. The simpler `reusable-release.yaml` wrapper keeps
 `pre-create`, `post-create`, and `skip-publish` for common release automation
-and CI smoke tests, and forwards the auth, signing, and optional `hook_env`
-secrets explicitly to the advanced workflow.
+and CI smoke tests, and preserves caller secrets across the nested workflow
+call. External callers that cannot use `secrets: inherit` should call
+`reusable-release-advanced.yaml` directly when hooks need secrets.
 
 ```yaml
 jobs:
