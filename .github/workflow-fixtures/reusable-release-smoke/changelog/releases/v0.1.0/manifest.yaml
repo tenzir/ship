@@ -1,5 +1,0 @@
-created: 2026-03-20
-title: Reusable release smoke fixture v0.1.0
-intro: >-
-  Seeds the smoke-test changelog with a stable release so patch version
-  resolution stays deterministic.
