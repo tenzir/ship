@@ -63,6 +63,8 @@ jobs:
     with:
       intro: This release improves parser coverage and fixes packaging.
       bump: auto
+      workflow_source_repository: tenzir/ship
+      workflow_source_ref: <pinned-ref>
 ```
 
 ### Auth and signing overrides
@@ -87,6 +89,12 @@ The same workflow also exposes the advanced hooks and release controls:
 `pre-create`, `post-create`, `pre-publish`, `post-publish`, `skip-publish`,
 `publish-no-latest-on-non-main`, `copy-release-to-main-on-non-main`, and
 `update-latest-branch-on-main`.
+
+Callers must also set `workflow_source_repository` and `workflow_source_ref` so
+the workflow can checkout and install the same `tenzir-ship` source that
+defines the reusable workflow. For external callers, set these to the same
+repository/ref pair you use in `uses:`. For same-repository callers, pass
+`${{ github.repository }}` and `${{ github.sha }}`.
 
 Pass hook scripts via `with:`. If your hook scripts need secrets, same-org or
 same-enterprise callers can keep using `secrets: inherit`. External callers
@@ -116,6 +124,8 @@ jobs:
       contents: write
     with:
       intro: This release improves parser coverage and fixes packaging.
+      workflow_source_repository: tenzir/ship
+      workflow_source_ref: <pinned-ref>
       pre-publish: ./scripts/prepare-release.sh
       post-publish: ./scripts/announce-release.sh
       update-latest-branch-on-main: true
@@ -140,6 +150,8 @@ jobs:
       contents: write
     with:
       intro: This release improves parser coverage and fixes packaging.
+      workflow_source_repository: tenzir/ship
+      workflow_source_ref: <pinned-ref>
       use_push_token: true
     secrets:
       push_token: ${{ secrets.MY_PUSH_TOKEN }}
@@ -156,6 +168,8 @@ jobs:
       contents: write
     with:
       intro: This release improves parser coverage and fixes packaging.
+      workflow_source_repository: tenzir/ship
+      workflow_source_ref: <pinned-ref>
     secrets:
       workflow_source_token: ${{ secrets.MY_WORKFLOW_SOURCE_TOKEN }}
 ```

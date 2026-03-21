@@ -83,6 +83,8 @@ jobs:
       bump: patch
       changelog-root: .github/workflow-fixtures/reusable-release-smoke
       intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
+      workflow_source_repository: ${{ github.repository }}
+      workflow_source_ref: ${{ github.sha }}
       skip-publish: true
 
   smoke-reusable-release-push-token:
@@ -95,6 +97,8 @@ jobs:
       bump: patch
       changelog-root: .github/workflow-fixtures/reusable-release-smoke
       intro: Smoke test the reusable release workflow with an explicit push token.
+      workflow_source_repository: ${{ github.repository }}
+      workflow_source_ref: ${{ github.sha }}
       use_push_token: true
       skip-publish: true
     secrets:

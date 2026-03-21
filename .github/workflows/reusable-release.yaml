@@ -32,6 +32,14 @@ on:
         required: false
         default: "."
         type: string
+      workflow_source_repository:
+        description: "Repository that contains the tenzir-ship source to install for this workflow run"
+        required: true
+        type: string
+      workflow_source_ref:
+        description: "Git ref or commit SHA to checkout from workflow_source_repository for the tenzir-ship install"
+        required: true
+        type: string
       git-add-paths:
         description: "Space-separated extra paths to stage before publish"
         required: false
@@ -149,6 +157,8 @@ jobs:
           SIGN_COMMITS: ${{ inputs.sign_commits }}
           SIGN_TAGS: ${{ inputs.sign_tags }}
           GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
+          WORKFLOW_SOURCE_REPOSITORY: ${{ inputs.workflow_source_repository }}
+          WORKFLOW_SOURCE_REF: ${{ inputs.workflow_source_ref }}
         run: |
           case "$RELEASE_BUMP" in
             ""|auto|major|minor|patch) ;;
@@ -182,6 +192,19 @@ jobs:
             echo "::error::Both 'git_user_name' and 'git_user_email' must be non-empty."
             exit 1
           fi
+
+          if [ -z "$WORKFLOW_SOURCE_REPOSITORY" ] || [ -z "$WORKFLOW_SOURCE_REF" ]; then
+            echo "::error::Both 'workflow_source_repository' and 'workflow_source_ref' must be non-empty."
+            exit 1
+          fi
+
+          case "$WORKFLOW_SOURCE_REPOSITORY" in
+            */*) ;;
+            *)
+              echo "::error::Input 'workflow_source_repository' must use the form 'owner/repo'."
+              exit 1
+              ;;
+          esac
 
           if { [ "$SIGN_COMMITS" = "true" ] || [ "$SIGN_TAGS" = "true" ]; } && [ -z "$GPG_PRIVATE_KEY" ]; then
             echo "::error::Signing requires secret 'gpg_private_key' when 'sign_commits' or 'sign_tags' is enabled."
@@ -249,9 +272,9 @@ jobs:
       - name: Resolve workflow source
         id: workflow-source
         env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SOURCE_REPOSITORY: ${{ inputs.workflow_source_repository }}
         run: |
-          REPOSITORY="${WORKFLOW_REF%%/.github/workflows/*}"
+          REPOSITORY="$WORKFLOW_SOURCE_REPOSITORY"
           {
             echo "repository=$REPOSITORY"
             echo "owner=${REPOSITORY%/*}"
@@ -296,7 +319,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: ${{ steps.workflow-source.outputs.repository }}
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ inputs.workflow_source_ref }}
           path: .github/workflow-source/tenzir-ship
           persist-credentials: false
           token: ${{ steps.workflow-source-token.outputs.token }}

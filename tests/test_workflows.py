@@ -88,6 +88,8 @@ def test_reusable_release_exposes_full_workflow_contract() -> None:
     assert _as_mapping(workflow_inputs["publish-no-latest-on-non-main"])["required"] is False
     assert _as_mapping(workflow_inputs["copy-release-to-main-on-non-main"])["required"] is False
     assert _as_mapping(workflow_inputs["update-latest-branch-on-main"])["required"] is False
+    assert _as_mapping(workflow_inputs["workflow_source_repository"])["required"] is True
+    assert _as_mapping(workflow_inputs["workflow_source_ref"])["required"] is True
     assert _as_mapping(workflow_inputs["github_app_id"])["required"] is False
     assert _as_mapping(workflow_inputs["use_push_token"])["required"] is False
     assert _as_mapping(workflow_inputs["git_user_name"])["required"] is False
@@ -110,6 +112,12 @@ def test_reusable_release_exposes_full_workflow_contract() -> None:
         validate_inputs_run
     )
     assert "Input 'use_push_token' requires secret 'push_token'." in validate_inputs_run
+    assert "Both 'workflow_source_repository' and 'workflow_source_ref' must be non-empty." in (
+        validate_inputs_run
+    )
+    assert "Input 'workflow_source_repository' must use the form 'owner/repo'." in (
+        validate_inputs_run
+    )
     assert (
         "Signing requires secret 'gpg_private_key' when 'sign_commits' or 'sign_tags' is enabled."
         in validate_inputs_run
@@ -143,7 +151,13 @@ def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     assert checkout_with["token"] == "${{ steps.auth-token.outputs.token }}"
 
     workflow_source = _step_by_name(steps, "Resolve workflow source")
+    workflow_source_env = _as_mapping(workflow_source["env"])
+    assert (
+        workflow_source_env["WORKFLOW_SOURCE_REPOSITORY"]
+        == "${{ inputs.workflow_source_repository }}"
+    )
     workflow_source_run = cast(str, workflow_source["run"])
+    assert 'REPOSITORY="$WORKFLOW_SOURCE_REPOSITORY"' in workflow_source_run
     assert 'echo "owner=${REPOSITORY%/*}"' in workflow_source_run
     assert 'echo "name=${REPOSITORY#*/}"' in workflow_source_run
 
@@ -178,6 +192,11 @@ def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
 
     workflow_source_checkout = _step_by_name(steps, "Checkout tenzir-ship source")
     workflow_source_checkout_with = _as_mapping(workflow_source_checkout["with"])
+    assert (
+        workflow_source_checkout_with["repository"]
+        == "${{ steps.workflow-source.outputs.repository }}"
+    )
+    assert workflow_source_checkout_with["ref"] == "${{ inputs.workflow_source_ref }}"
     assert (
         workflow_source_checkout_with["token"] == "${{ steps.workflow-source-token.outputs.token }}"
     )
@@ -242,6 +261,8 @@ def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
     assert permissions["contents"] == "write"
 
     forwarded_inputs = _as_mapping(release_job["with"])
+    assert forwarded_inputs["workflow_source_repository"] == "${{ github.repository }}"
+    assert forwarded_inputs["workflow_source_ref"] == "${{ github.sha }}"
     assert forwarded_inputs["github_app_id"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
     assert forwarded_inputs["git_user_name"] == "tenzir-bot"
     assert forwarded_inputs["git_user_email"] == "engineering@tenzir.com"
@@ -266,6 +287,8 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
     assert default_with["changelog-root"] == ".github/workflow-fixtures/reusable-release-smoke"
+    assert default_with["workflow_source_repository"] == "${{ github.repository }}"
+    assert default_with["workflow_source_ref"] == "${{ github.sha }}"
     assert default_with["skip-publish"] is True
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
@@ -275,6 +298,8 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     assert push_permissions["contents"] == "write"
     push_with = _as_mapping(push_job["with"])
     assert push_with["changelog-root"] == ".github/workflow-fixtures/reusable-release-smoke"
+    assert push_with["workflow_source_repository"] == "${{ github.repository }}"
+    assert push_with["workflow_source_ref"] == "${{ github.sha }}"
     assert push_with["use_push_token"] is True
     assert push_with["skip-publish"] is True
     push_secrets = _as_mapping(push_job["secrets"])
@@ -311,6 +336,8 @@ def _run_validation(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
         "SIGN_COMMITS": "false",
         "SIGN_TAGS": "false",
         "GPG_PRIVATE_KEY": "",
+        "WORKFLOW_SOURCE_REPOSITORY": "tenzir/ship",
+        "WORKFLOW_SOURCE_REF": "v1.2.3",
     }
     base_env.update(env)
     return subprocess.run(
@@ -370,6 +397,18 @@ def test_validation_rejects_push_token_flag_without_secret() -> None:
 def test_validation_accepts_push_token_flag_with_secret() -> None:
     result = _run_validation({"USE_PUSH_TOKEN": "true", "PUSH_TOKEN": "ghp_abc"})
     assert result.returncode == 0
+
+
+def test_validation_rejects_missing_workflow_source() -> None:
+    result = _run_validation({"WORKFLOW_SOURCE_REPOSITORY": "", "WORKFLOW_SOURCE_REF": ""})
+    assert result.returncode == 1
+    assert "workflow_source_repository" in result.stdout
+
+
+def test_validation_rejects_invalid_workflow_source_repository() -> None:
+    result = _run_validation({"WORKFLOW_SOURCE_REPOSITORY": "tenzir-ship"})
+    assert result.returncode == 1
+    assert "must use the form 'owner/repo'" in result.stdout
 
 
 def test_validation_rejects_signing_without_gpg_key() -> None:

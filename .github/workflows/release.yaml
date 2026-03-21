@@ -78,6 +78,8 @@ jobs:
       rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
+      workflow_source_repository: ${{ github.repository }}
+      workflow_source_ref: ${{ github.sha }}
       git-add-paths: pyproject.toml uv.lock
       pre-create: |
         uv sync --dev
