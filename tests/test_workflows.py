@@ -111,6 +111,10 @@ def test_reusable_release_exposes_full_workflow_contract() -> None:
     )
     assert "Input 'use_push_token' requires secret 'push_token'." in validate_inputs_run
     assert (
+        "Signing requires secret 'gpg_private_key' when 'sign_commits' or 'sign_tags' is enabled."
+        in validate_inputs_run
+    )
+    assert (
         "Secret 'github_app_private_key' requires input 'github_app_id'." not in validate_inputs_run
     )
 
@@ -220,8 +224,19 @@ def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
 
 def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
     workflow = _load_workflow("release.yaml")
+    validate_job = _job(workflow, "validate-release-config")
     release_job = _job(workflow, "release")
 
+    assert validate_job["name"] == "Validate release config"
+    validate_steps = _as_sequence(validate_job["steps"])
+    validate_step = _step_by_name(validate_steps, "Validate GitHub App configuration")
+    validate_env = _as_mapping(validate_step["env"])
+    assert validate_env["TENZIR_GITHUB_APP_ID"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
+    validate_run = cast(str, validate_step["run"])
+    assert "TENZIR_GITHUB_APP_ID" in validate_run
+    assert "Repository release workflow requires variable 'TENZIR_GITHUB_APP_ID'." in validate_run
+
+    assert release_job["needs"] == "validate-release-config"
     assert release_job["uses"] == "./.github/workflows/reusable-release.yaml"
     permissions = _as_mapping(release_job["permissions"])
     assert permissions["contents"] == "write"
@@ -293,6 +308,9 @@ def _run_validation(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
         "GITHUB_APP_PRIVATE_KEY": "",
         "GIT_USER_NAME": "github-actions[bot]",
         "GIT_USER_EMAIL": "41898282+github-actions[bot]@users.noreply.github.com",
+        "SIGN_COMMITS": "false",
+        "SIGN_TAGS": "false",
+        "GPG_PRIVATE_KEY": "",
     }
     base_env.update(env)
     return subprocess.run(
@@ -351,6 +369,17 @@ def test_validation_rejects_push_token_flag_without_secret() -> None:
 
 def test_validation_accepts_push_token_flag_with_secret() -> None:
     result = _run_validation({"USE_PUSH_TOKEN": "true", "PUSH_TOKEN": "ghp_abc"})
+    assert result.returncode == 0
+
+
+def test_validation_rejects_signing_without_gpg_key() -> None:
+    result = _run_validation({"SIGN_COMMITS": "true"})
+    assert result.returncode == 1
+    assert "Signing requires secret 'gpg_private_key'" in result.stdout
+
+
+def test_validation_accepts_signing_with_gpg_key() -> None:
+    result = _run_validation({"SIGN_TAGS": "true", "GPG_PRIVATE_KEY": "key-data"})
     assert result.returncode == 0
 
 

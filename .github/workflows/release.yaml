@@ -54,7 +54,21 @@ on:
         type: string
 
 jobs:
+  validate-release-config:
+    name: Validate release config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate GitHub App configuration
+        env:
+          TENZIR_GITHUB_APP_ID: ${{ vars.TENZIR_GITHUB_APP_ID }}
+        run: |
+          if [ -z "$TENZIR_GITHUB_APP_ID" ]; then
+            echo "::error::Repository release workflow requires variable 'TENZIR_GITHUB_APP_ID'."
+            exit 1
+          fi
+
   release:
+    needs: validate-release-config
     permissions:
       contents: write
     uses: ./.github/workflows/reusable-release.yaml
