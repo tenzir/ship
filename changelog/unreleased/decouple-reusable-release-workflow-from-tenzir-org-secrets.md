@@ -7,4 +7,13 @@ authors:
 created: 2026-03-12T07:58:22Z
 ---
 
-The reusable GitHub Actions release workflows now work in external repositories by default. They fall back to the caller repository's `GITHUB_TOKEN`, make GitHub App authentication optional, only use `push_token` when a caller opts into it explicitly, and only enable GPG signing when a caller provides a signing key. The thin `reusable-release.yaml` wrapper preserves inherited caller secrets for secret-backed hook scripts and now exposes `skip-publish` for dry runs and smoke tests. Tenzir repositories can still opt into the existing bot identity, explicit push-token auth, GitHub App token flow, and signed commits and tags by passing those settings explicitly.
+The reusable GitHub Actions release workflow now works in external repositories
+by default. It falls back to the caller repository's `GITHUB_TOKEN`, makes
+GitHub App authentication optional, only uses `push_token` when a caller opts
+into it explicitly, and only enables GPG signing when a caller provides a
+signing key. The release hooks and publish controls now live directly on
+`reusable-release.yaml`, and the separate
+`reusable-release-advanced.yaml` entrypoint has been removed. Tenzir
+repositories can still opt into the existing bot identity, explicit push-token
+auth, GitHub App token flow, and signed commits and tags by passing those
+settings explicitly.

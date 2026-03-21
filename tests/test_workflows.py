@@ -68,57 +68,55 @@ def test_load_workflow_preserves_on_key() -> None:
     assert "workflow_call" in workflow_on
 
 
-def test_reusable_release_wrapper_preserves_hook_inputs_and_inherited_secrets() -> None:
+def test_reusable_release_workflow_is_the_only_public_entrypoint() -> None:
+    assert (WORKFLOWS_DIR / "reusable-release.yaml").exists()
+    assert not (WORKFLOWS_DIR / "reusable-release-advanced.yaml").exists()
+
+
+def test_reusable_release_exposes_full_workflow_contract() -> None:
     workflow = _load_workflow("reusable-release.yaml")
-    workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
-    workflow_secrets = _as_mapping(workflow_call["secrets"])
-    release_job = _job(workflow, "release")
-
-    assert release_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
-    permissions = _as_mapping(release_job["permissions"])
-    assert permissions["contents"] == "write"
-    assert release_job["secrets"] == "inherit"
-    assert _as_mapping(workflow_secrets["hook_env"])["required"] is False
-
-    forwarded_inputs = _as_mapping(release_job["with"])
-    assert forwarded_inputs["pre-create"] == "${{ inputs.pre-create }}"
-    assert forwarded_inputs["post-create"] == "${{ inputs.post-create }}"
-    assert forwarded_inputs["skip-publish"] == "${{ inputs.skip-publish }}"
-    assert forwarded_inputs["github_app_id"] == "${{ inputs.github_app_id }}"
-    assert forwarded_inputs["use_push_token"] == "${{ inputs.use_push_token }}"
-    assert forwarded_inputs["git_user_name"] == "${{ inputs.git_user_name }}"
-    assert forwarded_inputs["git_user_email"] == "${{ inputs.git_user_email }}"
-    assert forwarded_inputs["sign_commits"] == "${{ inputs.sign_commits }}"
-    assert forwarded_inputs["sign_tags"] == "${{ inputs.sign_tags }}"
-
-
-def test_advanced_reusable_release_allows_inherited_app_key_when_app_auth_is_unused() -> None:
-    workflow = _load_workflow("reusable-release-advanced.yaml")
     workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
     workflow_inputs = _as_mapping(workflow_call["inputs"])
     workflow_secrets = _as_mapping(workflow_call["secrets"])
+    release_job = _job(workflow, "release")
 
+    assert _as_mapping(workflow_inputs["pre-create"])["required"] is False
+    assert _as_mapping(workflow_inputs["post-create"])["required"] is False
+    assert _as_mapping(workflow_inputs["pre-publish"])["required"] is False
+    assert _as_mapping(workflow_inputs["post-publish"])["required"] is False
+    assert _as_mapping(workflow_inputs["skip-publish"])["required"] is False
+    assert _as_mapping(workflow_inputs["publish-no-latest-on-non-main"])["required"] is False
+    assert _as_mapping(workflow_inputs["copy-release-to-main-on-non-main"])["required"] is False
+    assert _as_mapping(workflow_inputs["update-latest-branch-on-main"])["required"] is False
     assert _as_mapping(workflow_inputs["github_app_id"])["required"] is False
     assert _as_mapping(workflow_inputs["use_push_token"])["required"] is False
+    assert _as_mapping(workflow_inputs["git_user_name"])["required"] is False
+    assert _as_mapping(workflow_inputs["git_user_email"])["required"] is False
+    assert _as_mapping(workflow_inputs["sign_commits"])["required"] is False
+    assert _as_mapping(workflow_inputs["sign_tags"])["required"] is False
+
+    assert "permissions" not in release_job
+    assert release_job["name"] == "Release"
     assert _as_mapping(workflow_secrets["push_token"])["required"] is False
+    assert _as_mapping(workflow_secrets["workflow_source_token"])["required"] is False
     assert _as_mapping(workflow_secrets["github_app_private_key"])["required"] is False
     assert _as_mapping(workflow_secrets["gpg_private_key"])["required"] is False
     assert _as_mapping(workflow_secrets["hook_env"])["required"] is False
 
-    release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
-
     validate_inputs = _step_by_name(steps, "Validate release inputs")
     validate_inputs_run = cast(str, validate_inputs["run"])
-    assert "Input 'github_app_id' requires secret 'github_app_private_key'." in validate_inputs_run
+    assert "Input 'github_app_id' requires secret 'github_app_private_key'." in (
+        validate_inputs_run
+    )
     assert "Input 'use_push_token' requires secret 'push_token'." in validate_inputs_run
     assert (
         "Secret 'github_app_private_key' requires input 'github_app_id'." not in validate_inputs_run
     )
 
 
-def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
-    workflow = _load_workflow("reusable-release-advanced.yaml")
+def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
     release_job = _job(workflow, "release")
     assert release_job["name"] == "Release"
     steps = _as_sequence(release_job["steps"])
@@ -161,11 +159,15 @@ def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps()
     workflow_source_token = _step_by_name(steps, "Resolve workflow source token")
     workflow_source_token_env = _as_mapping(workflow_source_token["env"])
     assert (
+        workflow_source_token_env["EXPLICIT_SOURCE_TOKEN"] == "${{ secrets.workflow_source_token }}"
+    )
+    assert (
         workflow_source_token_env["SOURCE_APP_TOKEN"]
         == "${{ steps.workflow-source-app-token.outputs.token }}"
     )
     assert workflow_source_token_env["DEFAULT_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
     workflow_source_token_run = cast(str, workflow_source_token["run"])
+    assert 'SOURCE="workflow-source-token"' in workflow_source_token_run
     assert 'SOURCE="workflow-source-github-app"' in workflow_source_token_run
     assert 'SOURCE="primary-auth"' in workflow_source_token_run
     assert "::add-mask::$TOKEN" in workflow_source_token_run
@@ -244,7 +246,7 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
 
     default_job = _job(workflow, "smoke-reusable-release-default-token")
     assert default_job["name"] == "Release smoke (default token)"
-    assert default_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
+    assert default_job["uses"] == "./.github/workflows/reusable-release.yaml"
     default_permissions = _as_mapping(default_job["permissions"])
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
@@ -252,7 +254,7 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
     assert push_job["name"] == "Release smoke (push token)"
-    assert push_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
+    assert push_job["uses"] == "./.github/workflows/reusable-release.yaml"
     push_permissions = _as_mapping(push_job["permissions"])
     assert push_permissions["contents"] == "write"
     push_with = _as_mapping(push_job["with"])
@@ -270,7 +272,7 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
 
 def _validation_script() -> str:
     """Extract the shell script from the 'Validate release inputs' step."""
-    workflow = _load_workflow("reusable-release-advanced.yaml")
+    workflow = _load_workflow("reusable-release.yaml")
     release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
     validate_step = _step_by_name(steps, "Validate release inputs")
