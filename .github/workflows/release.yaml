@@ -54,7 +54,23 @@ on:
         type: string
 
 jobs:
+  validate-release-config:
+    name: Validate release config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate GitHub App configuration
+        env:
+          TENZIR_GITHUB_APP_ID: ${{ vars.TENZIR_GITHUB_APP_ID }}
+        run: |
+          if [ -z "$TENZIR_GITHUB_APP_ID" ]; then
+            echo "::error::Repository release workflow requires variable 'TENZIR_GITHUB_APP_ID'."
+            exit 1
+          fi
+
   release:
+    needs: validate-release-config
+    permissions:
+      contents: write
     uses: ./.github/workflows/reusable-release.yaml
     with:
       bump: ${{ inputs.bump }}
@@ -62,6 +78,8 @@ jobs:
       rc: ${{ inputs.rc }}
       intro: ${{ inputs.intro }}
       title: ${{ inputs.title }}
+      workflow_source_repository: ${{ github.repository }}
+      workflow_source_ref: ${{ github.sha }}
       git-add-paths: pyproject.toml uv.lock
       pre-create: |
         uv sync --dev
@@ -72,4 +90,11 @@ jobs:
         uv build
       post-create: |
         uv lock
-    secrets: inherit
+      github_app_id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+      git_user_name: tenzir-bot
+      git_user_email: engineering@tenzir.com
+      sign_commits: true
+      sign_tags: true
+    secrets:
+      github_app_private_key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+      gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}

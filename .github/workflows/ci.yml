@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Tests (${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -53,8 +53,59 @@ jobs:
       - name: Run tests
         run: uv run pytest --durations=10
 
+  lint-workflows:
+    name: Actionlint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Run actionlint
+        run: |
+          ACTIONLINT_BIN="$(go env GOPATH)/bin/actionlint"
+          "$ACTIONLINT_BIN"
+
+  smoke-reusable-release-default-token:
+    name: Release smoke (default token)
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/reusable-release.yaml
+    with:
+      bump: patch
+      changelog-root: .github/workflow-fixtures/reusable-release-smoke
+      intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
+      workflow_source_repository: ${{ github.repository }}
+      workflow_source_ref: ${{ github.sha }}
+      skip-publish: true
+
+  smoke-reusable-release-push-token:
+    name: Release smoke (push token)
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/reusable-release.yaml
+    with:
+      bump: patch
+      changelog-root: .github/workflow-fixtures/reusable-release-smoke
+      intro: Smoke test the reusable release workflow with an explicit push token.
+      workflow_source_repository: ${{ github.repository }}
+      workflow_source_ref: ${{ github.sha }}
+      use_push_token: true
+      skip-publish: true
+    secrets:
+      push_token: ${{ secrets.GITHUB_TOKEN }}
+
   build:
-    name: Build distribution
+    name: Build
     runs-on: ubuntu-latest
     needs: test
 
@@ -87,7 +138,7 @@ jobs:
           retention-days: 7
 
   test-install:
-    name: Test installation from artifact
+    name: Install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build
     strategy:

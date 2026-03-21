@@ -1,0 +1,432 @@
+"""Tests for reusable GitHub Actions workflow contracts."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import cast
+
+import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+
+
+class _GitHubWorkflowLoader(yaml.SafeLoader):
+    yaml_implicit_resolvers = {
+        key: value[:] for key, value in yaml.SafeLoader.yaml_implicit_resolvers.items()
+    }
+
+
+for ch in "OoYyNn":
+    _GitHubWorkflowLoader.yaml_implicit_resolvers[ch] = [
+        entry
+        for entry in _GitHubWorkflowLoader.yaml_implicit_resolvers.get(ch, [])
+        if entry[0] != "tag:yaml.org,2002:bool"
+    ]
+
+
+def _load_workflow(name: str) -> dict[str, object]:
+    data = yaml.load(
+        (WORKFLOWS_DIR / name).read_text(encoding="utf-8"),
+        Loader=_GitHubWorkflowLoader,
+    )
+    assert isinstance(data, dict)
+    return cast(dict[str, object], data)
+
+
+def _as_mapping(value: object) -> dict[str, object]:
+    assert isinstance(value, dict)
+    return cast(dict[str, object], value)
+
+
+def _as_sequence(value: object) -> list[object]:
+    assert isinstance(value, list)
+    return cast(list[object], value)
+
+
+def _job(workflow: dict[str, object], name: str) -> dict[str, object]:
+    jobs = _as_mapping(workflow["jobs"])
+    return _as_mapping(jobs[name])
+
+
+def _step_by_name(steps: list[object], name: str) -> dict[str, object]:
+    for step in steps:
+        step_mapping = _as_mapping(step)
+        if step_mapping.get("name") == name:
+            return step_mapping
+    raise AssertionError(f"workflow step not found: {name}")
+
+
+def test_load_workflow_preserves_on_key() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
+
+    assert "on" in workflow
+    assert True not in workflow
+    workflow_on = _as_mapping(workflow["on"])
+    assert "workflow_call" in workflow_on
+
+
+def test_reusable_release_workflow_is_the_only_public_entrypoint() -> None:
+    assert (WORKFLOWS_DIR / "reusable-release.yaml").exists()
+    assert not (WORKFLOWS_DIR / "reusable-release-advanced.yaml").exists()
+
+
+def test_reusable_release_exposes_full_workflow_contract() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
+    workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
+    workflow_inputs = _as_mapping(workflow_call["inputs"])
+    workflow_secrets = _as_mapping(workflow_call["secrets"])
+    release_job = _job(workflow, "release")
+
+    assert _as_mapping(workflow_inputs["pre-create"])["required"] is False
+    assert _as_mapping(workflow_inputs["post-create"])["required"] is False
+    assert _as_mapping(workflow_inputs["pre-publish"])["required"] is False
+    assert _as_mapping(workflow_inputs["post-publish"])["required"] is False
+    assert _as_mapping(workflow_inputs["skip-publish"])["required"] is False
+    assert _as_mapping(workflow_inputs["publish-no-latest-on-non-main"])["required"] is False
+    assert _as_mapping(workflow_inputs["copy-release-to-main-on-non-main"])["required"] is False
+    assert _as_mapping(workflow_inputs["update-latest-branch-on-main"])["required"] is False
+    assert _as_mapping(workflow_inputs["workflow_source_repository"])["required"] is True
+    assert _as_mapping(workflow_inputs["workflow_source_ref"])["required"] is True
+    assert _as_mapping(workflow_inputs["github_app_id"])["required"] is False
+    assert _as_mapping(workflow_inputs["use_push_token"])["required"] is False
+    assert _as_mapping(workflow_inputs["git_user_name"])["required"] is False
+    assert _as_mapping(workflow_inputs["git_user_email"])["required"] is False
+    assert _as_mapping(workflow_inputs["sign_commits"])["required"] is False
+    assert _as_mapping(workflow_inputs["sign_tags"])["required"] is False
+
+    assert "permissions" not in release_job
+    assert release_job["name"] == "Release"
+    assert _as_mapping(workflow_secrets["push_token"])["required"] is False
+    assert _as_mapping(workflow_secrets["workflow_source_token"])["required"] is False
+    assert _as_mapping(workflow_secrets["github_app_private_key"])["required"] is False
+    assert _as_mapping(workflow_secrets["gpg_private_key"])["required"] is False
+    assert _as_mapping(workflow_secrets["hook_env"])["required"] is False
+
+    steps = _as_sequence(release_job["steps"])
+    validate_inputs = _step_by_name(steps, "Validate release inputs")
+    validate_inputs_run = cast(str, validate_inputs["run"])
+    assert "Input 'github_app_id' requires secret 'github_app_private_key'." in (
+        validate_inputs_run
+    )
+    assert "Input 'use_push_token' requires secret 'push_token'." in validate_inputs_run
+    assert "Both 'workflow_source_repository' and 'workflow_source_ref' must be non-empty." in (
+        validate_inputs_run
+    )
+    assert "Input 'workflow_source_repository' must use the form 'owner/repo'." in (
+        validate_inputs_run
+    )
+    assert (
+        "Signing requires secret 'gpg_private_key' when 'sign_commits' or 'sign_tags' is enabled."
+        in validate_inputs_run
+    )
+    assert (
+        "Secret 'github_app_private_key' requires input 'github_app_id'." not in validate_inputs_run
+    )
+
+
+def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
+    release_job = _job(workflow, "release")
+    assert release_job["name"] == "Release"
+    steps = _as_sequence(release_job["steps"])
+
+    resolve_auth = _step_by_name(steps, "Resolve auth token")
+    resolve_auth_env = _as_mapping(resolve_auth["env"])
+    assert resolve_auth_env["APP_TOKEN"] == "${{ steps.app-token.outputs.token }}"
+    assert resolve_auth_env["USE_PUSH_TOKEN"] == "${{ inputs.use_push_token }}"
+    assert resolve_auth_env["PUSH_TOKEN"] == "${{ secrets.push_token }}"
+    assert resolve_auth_env["DEFAULT_TOKEN"] == "${{ github.token }}"
+    resolve_auth_run = cast(str, resolve_auth["run"])
+    assert 'SOURCE="github-app"' in resolve_auth_run
+    assert 'SOURCE="push-token"' in resolve_auth_run
+    assert 'SOURCE="github-token"' in resolve_auth_run
+    assert '[ "$USE_PUSH_TOKEN" = "true" ]' in resolve_auth_run
+    assert "::add-mask::$TOKEN" in resolve_auth_run
+
+    checkout = _step_by_name(steps, "Checkout")
+    checkout_with = _as_mapping(checkout["with"])
+    assert checkout_with["token"] == "${{ steps.auth-token.outputs.token }}"
+
+    workflow_source = _step_by_name(steps, "Resolve workflow source")
+    workflow_source_env = _as_mapping(workflow_source["env"])
+    assert (
+        workflow_source_env["WORKFLOW_SOURCE_REPOSITORY"]
+        == "${{ inputs.workflow_source_repository }}"
+    )
+    workflow_source_run = cast(str, workflow_source["run"])
+    assert 'REPOSITORY="$WORKFLOW_SOURCE_REPOSITORY"' in workflow_source_run
+    assert 'echo "owner=${REPOSITORY%/*}"' in workflow_source_run
+    assert 'echo "name=${REPOSITORY#*/}"' in workflow_source_run
+
+    workflow_source_app_token = _step_by_name(steps, "Generate workflow source app token")
+    assert (
+        workflow_source_app_token["if"]
+        == "${{ inputs.github_app_id != '' && steps.workflow-source.outputs.repository != github.repository }}"
+    )
+    assert workflow_source_app_token["continue-on-error"] is True
+    workflow_source_app_token_with = _as_mapping(workflow_source_app_token["with"])
+    assert workflow_source_app_token_with["owner"] == "${{ steps.workflow-source.outputs.owner }}"
+    assert (
+        workflow_source_app_token_with["repositories"]
+        == "${{ steps.workflow-source.outputs.name }}"
+    )
+
+    workflow_source_token = _step_by_name(steps, "Resolve workflow source token")
+    workflow_source_token_env = _as_mapping(workflow_source_token["env"])
+    assert (
+        workflow_source_token_env["EXPLICIT_SOURCE_TOKEN"] == "${{ secrets.workflow_source_token }}"
+    )
+    assert (
+        workflow_source_token_env["SOURCE_APP_TOKEN"]
+        == "${{ steps.workflow-source-app-token.outputs.token }}"
+    )
+    assert workflow_source_token_env["DEFAULT_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
+    workflow_source_token_run = cast(str, workflow_source_token["run"])
+    assert 'SOURCE="workflow-source-token"' in workflow_source_token_run
+    assert 'SOURCE="workflow-source-github-app"' in workflow_source_token_run
+    assert 'SOURCE="primary-auth"' in workflow_source_token_run
+    assert "::add-mask::$TOKEN" in workflow_source_token_run
+
+    workflow_source_checkout = _step_by_name(steps, "Checkout tenzir-ship source")
+    workflow_source_checkout_with = _as_mapping(workflow_source_checkout["with"])
+    assert (
+        workflow_source_checkout_with["repository"]
+        == "${{ steps.workflow-source.outputs.repository }}"
+    )
+    assert workflow_source_checkout_with["ref"] == "${{ inputs.workflow_source_ref }}"
+    assert (
+        workflow_source_checkout_with["token"] == "${{ steps.workflow-source-token.outputs.token }}"
+    )
+
+    configure_git = _step_by_name(steps, "Configure Git")
+    configure_git_env = _as_mapping(configure_git["env"])
+    assert configure_git_env["AUTH_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
+    assert configure_git_env["GITHUB_SERVER_URL"] == "${{ github.server_url }}"
+    assert (
+        configure_git_env["GPG_ENABLED"] == "${{ steps.optional-credentials.outputs.has_gpg_key }}"
+    )
+    assert configure_git_env["SIGN_COMMITS"] == "${{ inputs.sign_commits }}"
+    assert configure_git_env["SIGN_TAGS"] == "${{ inputs.sign_tags }}"
+    configure_git_run = cast(str, configure_git["run"])
+    assert 'if [ "$GPG_ENABLED" = "true" ]; then' in configure_git_run
+    assert 'git config --global commit.gpgsign "$SIGN_COMMITS"' in configure_git_run
+    assert 'git config --global tag.gpgsign "$SIGN_TAGS"' in configure_git_run
+    assert "git config --global commit.gpgsign false" in configure_git_run
+    assert "git config --global tag.gpgsign false" in configure_git_run
+    assert "git config --global --unset-all user.signingkey || true" in configure_git_run
+    assert 'server_host="${GITHUB_SERVER_URL#https://}"' in configure_git_run
+    assert "git remote set-url origin" in configure_git_run
+    assert "AUTH_TOKEN" in configure_git_run
+    assert "${server_host}/${{ github.repository }}.git" in configure_git_run
+
+    for step_name in [
+        "Run pre-create script",
+        "Run post-create script",
+        "Run pre-publish script",
+        "Run post-publish script",
+    ]:
+        step = _step_by_name(steps, step_name)
+        env = _as_mapping(step["env"])
+        assert env["HOOK_ENV"] == "${{ secrets.hook_env }}"
+        run = cast(str, step["run"])
+        assert 'if [ -n "$HOOK_ENV" ]; then' in run
+        assert ". <(printf '%s\\n' \"$HOOK_ENV\")" in run
+
+    for step_name in ["Run pre-publish script", "Stage and publish", "Run post-publish script"]:
+        step = _step_by_name(steps, step_name)
+        env = _as_mapping(step["env"])
+        assert env["GH_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
+
+
+def test_repo_release_workflow_wires_github_app_auth_and_signing() -> None:
+    workflow = _load_workflow("release.yaml")
+    validate_job = _job(workflow, "validate-release-config")
+    release_job = _job(workflow, "release")
+
+    assert validate_job["name"] == "Validate release config"
+    validate_steps = _as_sequence(validate_job["steps"])
+    validate_step = _step_by_name(validate_steps, "Validate GitHub App configuration")
+    validate_env = _as_mapping(validate_step["env"])
+    assert validate_env["TENZIR_GITHUB_APP_ID"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
+    validate_run = cast(str, validate_step["run"])
+    assert "TENZIR_GITHUB_APP_ID" in validate_run
+    assert "Repository release workflow requires variable 'TENZIR_GITHUB_APP_ID'." in validate_run
+
+    assert release_job["needs"] == "validate-release-config"
+    assert release_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    permissions = _as_mapping(release_job["permissions"])
+    assert permissions["contents"] == "write"
+
+    forwarded_inputs = _as_mapping(release_job["with"])
+    assert forwarded_inputs["workflow_source_repository"] == "${{ github.repository }}"
+    assert forwarded_inputs["workflow_source_ref"] == "${{ github.sha }}"
+    assert forwarded_inputs["github_app_id"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
+    assert forwarded_inputs["git_user_name"] == "tenzir-bot"
+    assert forwarded_inputs["git_user_email"] == "engineering@tenzir.com"
+    assert forwarded_inputs["sign_commits"] is True
+    assert forwarded_inputs["sign_tags"] is True
+
+    forwarded_secrets = _as_mapping(release_job["secrets"])
+    assert (
+        forwarded_secrets["github_app_private_key"]
+        == "${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}"
+    )
+    assert forwarded_secrets["gpg_private_key"] == "${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}"
+
+
+def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes() -> None:
+    workflow = _load_workflow("ci.yml")
+
+    default_job = _job(workflow, "smoke-reusable-release-default-token")
+    assert default_job["name"] == "Release smoke (default token)"
+    assert default_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    default_permissions = _as_mapping(default_job["permissions"])
+    assert default_permissions["contents"] == "write"
+    default_with = _as_mapping(default_job["with"])
+    assert default_with["changelog-root"] == ".github/workflow-fixtures/reusable-release-smoke"
+    assert default_with["workflow_source_repository"] == "${{ github.repository }}"
+    assert default_with["workflow_source_ref"] == "${{ github.sha }}"
+    assert default_with["skip-publish"] is True
+
+    push_job = _job(workflow, "smoke-reusable-release-push-token")
+    assert push_job["name"] == "Release smoke (push token)"
+    assert push_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    push_permissions = _as_mapping(push_job["permissions"])
+    assert push_permissions["contents"] == "write"
+    push_with = _as_mapping(push_job["with"])
+    assert push_with["changelog-root"] == ".github/workflow-fixtures/reusable-release-smoke"
+    assert push_with["workflow_source_repository"] == "${{ github.repository }}"
+    assert push_with["workflow_source_ref"] == "${{ github.sha }}"
+    assert push_with["use_push_token"] is True
+    assert push_with["skip-publish"] is True
+    push_secrets = _as_mapping(push_job["secrets"])
+    assert push_secrets["push_token"] == "${{ secrets.GITHUB_TOKEN }}"
+
+
+# ---------------------------------------------------------------------------
+# Runtime validation tests — exercise the shell logic extracted from the
+# "Validate release inputs" step.
+# ---------------------------------------------------------------------------
+
+
+def _validation_script() -> str:
+    """Extract the shell script from the 'Validate release inputs' step."""
+    workflow = _load_workflow("reusable-release.yaml")
+    release_job = _job(workflow, "release")
+    steps = _as_sequence(release_job["steps"])
+    validate_step = _step_by_name(steps, "Validate release inputs")
+    return cast(str, validate_step["run"])
+
+
+def _run_validation(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the validation script with the given environment variables."""
+    base_env = {
+        "RELEASE_BUMP": "",
+        "RELEASE_VERSION": "",
+        "RELEASE_RC": "false",
+        "GITHUB_APP_ID": "",
+        "USE_PUSH_TOKEN": "false",
+        "PUSH_TOKEN": "",
+        "GITHUB_APP_PRIVATE_KEY": "",
+        "GIT_USER_NAME": "github-actions[bot]",
+        "GIT_USER_EMAIL": "41898282+github-actions[bot]@users.noreply.github.com",
+        "SIGN_COMMITS": "false",
+        "SIGN_TAGS": "false",
+        "GPG_PRIVATE_KEY": "",
+        "WORKFLOW_SOURCE_REPOSITORY": "tenzir/ship",
+        "WORKFLOW_SOURCE_REF": "v1.2.3",
+    }
+    base_env.update(env)
+    return subprocess.run(
+        ["bash", "-c", _validation_script()],
+        capture_output=True,
+        text=True,
+        env=base_env,
+    )
+
+
+def test_validation_accepts_valid_bump_values() -> None:
+    for bump in ["", "auto", "major", "minor", "patch"]:
+        result = _run_validation({"RELEASE_BUMP": bump})
+        assert result.returncode == 0, f"bump={bump!r} should pass: {result.stderr}"
+
+
+def test_validation_rejects_invalid_bump_value() -> None:
+    result = _run_validation({"RELEASE_BUMP": "bogus"})
+    assert result.returncode == 1
+    assert "Invalid bump value" in result.stdout
+
+
+def test_validation_rejects_version_and_bump_together() -> None:
+    result = _run_validation({"RELEASE_VERSION": "v1.2.3", "RELEASE_BUMP": "minor"})
+    assert result.returncode == 1
+    assert "Provide either an explicit version or a manual bump" in result.stdout
+
+
+def test_validation_allows_version_with_auto_bump() -> None:
+    result = _run_validation({"RELEASE_VERSION": "v1.2.3", "RELEASE_BUMP": "auto"})
+    assert result.returncode == 0
+
+
+def test_validation_rejects_rc_with_prerelease_version() -> None:
+    result = _run_validation({"RELEASE_RC": "true", "RELEASE_VERSION": "v1.2.3-rc.1"})
+    assert result.returncode == 1
+    assert "rc expects a stable base version" in result.stdout
+
+
+def test_validation_rejects_app_id_without_private_key() -> None:
+    result = _run_validation({"GITHUB_APP_ID": "12345", "GITHUB_APP_PRIVATE_KEY": ""})
+    assert result.returncode == 1
+    assert "requires secret 'github_app_private_key'" in result.stdout
+
+
+def test_validation_accepts_app_id_with_private_key() -> None:
+    result = _run_validation({"GITHUB_APP_ID": "12345", "GITHUB_APP_PRIVATE_KEY": "key-data"})
+    assert result.returncode == 0
+
+
+def test_validation_rejects_push_token_flag_without_secret() -> None:
+    result = _run_validation({"USE_PUSH_TOKEN": "true", "PUSH_TOKEN": ""})
+    assert result.returncode == 1
+    assert "requires secret 'push_token'" in result.stdout
+
+
+def test_validation_accepts_push_token_flag_with_secret() -> None:
+    result = _run_validation({"USE_PUSH_TOKEN": "true", "PUSH_TOKEN": "ghp_abc"})
+    assert result.returncode == 0
+
+
+def test_validation_rejects_missing_workflow_source() -> None:
+    result = _run_validation({"WORKFLOW_SOURCE_REPOSITORY": "", "WORKFLOW_SOURCE_REF": ""})
+    assert result.returncode == 1
+    assert "workflow_source_repository" in result.stdout
+
+
+def test_validation_rejects_invalid_workflow_source_repository() -> None:
+    result = _run_validation({"WORKFLOW_SOURCE_REPOSITORY": "tenzir-ship"})
+    assert result.returncode == 1
+    assert "must use the form 'owner/repo'" in result.stdout
+
+
+def test_validation_rejects_signing_without_gpg_key() -> None:
+    result = _run_validation({"SIGN_COMMITS": "true"})
+    assert result.returncode == 1
+    assert "Signing requires secret 'gpg_private_key'" in result.stdout
+
+
+def test_validation_accepts_signing_with_gpg_key() -> None:
+    result = _run_validation({"SIGN_TAGS": "true", "GPG_PRIVATE_KEY": "key-data"})
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "name,email",
+    [("", "a@b.com"), ("bot", ""), ("", "")],
+)
+def test_validation_rejects_empty_git_identity(name: str, email: str) -> None:
+    result = _run_validation({"GIT_USER_NAME": name, "GIT_USER_EMAIL": email})
+    assert result.returncode == 1
+    assert "must be non-empty" in result.stdout
