@@ -250,6 +250,7 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     default_permissions = _as_mapping(default_job["permissions"])
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
+    assert default_with["changelog-root"] == ".github/workflow-fixtures/reusable-release-smoke"
     assert default_with["skip-publish"] is True
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
@@ -258,6 +259,7 @@ def test_ci_smoke_jobs_use_concise_names_and_cover_default_and_push_token_modes(
     push_permissions = _as_mapping(push_job["permissions"])
     assert push_permissions["contents"] == "write"
     push_with = _as_mapping(push_job["with"])
+    assert push_with["changelog-root"] == ".github/workflow-fixtures/reusable-release-smoke"
     assert push_with["use_push_token"] is True
     assert push_with["skip-publish"] is True
     push_secrets = _as_mapping(push_job["secrets"])
