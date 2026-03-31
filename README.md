@@ -78,9 +78,9 @@ optional overrides for:
 - `github_app_id` + `github_app_private_key` to mint a GitHub App token
 - `push_token` to override the default `GITHUB_TOKEN`
 - `git_user_name` and `git_user_email` to customize the git author identity
-- `gpg_private_key` to sign commits and tags
-- `sign_commits` and `sign_tags` to control which Git objects are signed when a
-  GPG key is provided
+- `gpg_private_key` to supply the signing key material
+- `sign_commits` and `sign_tags` to opt into signing specific Git objects when
+  a GPG key is provided
 
 Use `reusable-release-advanced.yaml` when you also need the extra hooks and
 release controls it exposes. The simpler `reusable-release.yaml` wrapper keeps
@@ -127,8 +127,8 @@ Use the smallest option that fits your release process:
   workflow must trigger downstream workflows.
 - Use `github_app_id` and `github_app_private_key` when you want
   repository-scoped bot automation with a short-lived token.
-- Use `gpg_private_key` when you want to sign commits or tags. Signing stays
-  disabled unless you provide a key.
+- Use `gpg_private_key` together with `sign_commits` and/or `sign_tags` when
+you want to sign commits or tags. Signing stays disabled by default.
 </details>
 
 ## 📚 Documentation

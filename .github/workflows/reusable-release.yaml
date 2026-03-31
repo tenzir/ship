@@ -70,12 +70,12 @@ on:
       sign_commits:
         description: "Whether to sign commits when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
       sign_tags:
         description: "Whether to sign tags when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
     secrets:
       push_token:

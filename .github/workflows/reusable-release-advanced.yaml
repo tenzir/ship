@@ -95,12 +95,12 @@ on:
       sign_commits:
         description: "Whether to sign commits when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
       sign_tags:
         description: "Whether to sign tags when a GPG key is provided"
         required: false
-        default: true
+        default: false
         type: boolean
     secrets:
       push_token:
@@ -137,6 +137,9 @@ jobs:
           GITHUB_APP_PRIVATE_KEY: ${{ secrets.github_app_private_key }}
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
+          GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
+          SIGN_COMMITS: ${{ inputs.sign_commits }}
+          SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
           case "$RELEASE_BUMP" in
             ""|auto|major|minor|patch) ;;
@@ -161,6 +164,11 @@ jobs:
             exit 1
           fi
 
+          if { [ "$SIGN_COMMITS" = "true" ] || [ "$SIGN_TAGS" = "true" ]; } && [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::Inputs 'sign_commits' or 'sign_tags' require secret 'gpg_private_key'."
+            exit 1
+          fi
+
           if [ -z "$GIT_USER_NAME" ] || [ -z "$GIT_USER_EMAIL" ]; then
             echo "::error::Both 'git_user_name' and 'git_user_email' must be non-empty."
             exit 1
@@ -170,11 +178,19 @@ jobs:
         id: optional-credentials
         env:
           GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
+          SIGN_COMMITS: ${{ inputs.sign_commits }}
+          SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
           if [ -n "$GPG_PRIVATE_KEY" ]; then
             echo "has_gpg_key=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_gpg_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "$GPG_PRIVATE_KEY" ] && { [ "$SIGN_COMMITS" = "true" ] || [ "$SIGN_TAGS" = "true" ]; }; then
+            echo "use_gpg_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_gpg_signing=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Generate app token
@@ -225,7 +241,7 @@ jobs:
         run: uv tool install tenzir-ship
 
       - name: Set up GPG signing
-        if: ${{ steps.optional-credentials.outputs.has_gpg_key == 'true' }}
+        if: ${{ steps.optional-credentials.outputs.use_gpg_signing == 'true' }}
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
@@ -239,11 +255,22 @@ jobs:
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
+          USE_GPG_SIGNING: ${{ steps.optional-credentials.outputs.use_gpg_signing }}
+          SIGN_COMMITS: ${{ inputs.sign_commits }}
+          SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
           # Keep this after optional GPG setup so explicit workflow inputs win
           # over any identity inferred from the imported signing key.
           git config --global user.name "$GIT_USER_NAME"
           git config --global user.email "$GIT_USER_EMAIL"
+          if [ "$USE_GPG_SIGNING" = "true" ]; then
+            git config --global commit.gpgsign "$SIGN_COMMITS"
+            git config --global tag.gpgsign "$SIGN_TAGS"
+          else
+            git config --global --unset-all user.signingkey || true
+            git config --global commit.gpgsign false
+            git config --global tag.gpgsign false
+          fi
           server_host="${GITHUB_SERVER_URL#https://}"
           server_host="${server_host#http://}"
           git remote set-url origin "https://x-access-token:${AUTH_TOKEN}@${server_host}/${{ github.repository }}.git"
@@ -395,7 +422,7 @@ jobs:
 
       - name: Summary
         env:
-          GPG_ENABLED: ${{ steps.optional-credentials.outputs.has_gpg_key }}
+          GPG_ENABLED: ${{ steps.optional-credentials.outputs.use_gpg_signing }}
           SIGN_COMMITS: ${{ inputs.sign_commits }}
           SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
