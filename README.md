@@ -53,7 +53,8 @@ Use this mode when you want a self-contained release workflow in the caller
 repository. Grant at least `contents: write` on the calling job, and add any
 extra token scopes that your `pre-publish` / `post-publish` hooks need. If your
 release process must trigger downstream workflows from the resulting pushes or
-tags, use `push_token` or a GitHub App token instead.
+tags, use `use_push_token: true` with `push_token`, or use a GitHub App token
+instead.
 
 Pin the workflow to a released tag or full commit SHA instead of a moving branch
 name. Replace `<pinned-ref>` below with the immutable ref you want to consume.
@@ -77,7 +78,7 @@ jobs:
 `release.yaml` supports optional overrides for:
 
 - `github_app_id` + `github_app_private_key` to mint a GitHub App token
-- `push_token` to override the default `GITHUB_TOKEN`
+- `use_push_token: true` + `push_token` to override the default `GITHUB_TOKEN`
 - `git_user_name` and `git_user_email` to customize the git author identity
 - `gpg_private_key` to supply the signing key material
 - `sign_commits` and `sign_tags` to opt into signing specific Git objects when
@@ -111,25 +112,29 @@ jobs:
       gpg_private_key: ${{ secrets.MY_GPG_PRIVATE_KEY }}
 ```
 
+If you prefer a static token, replace the GitHub App settings with
+`use_push_token: true` and pass `push_token` in `secrets:`.
+
 Auth precedence is:
 
 1. GitHub App token, when `github_app_id` and `github_app_private_key` are set.
-2. `push_token`, when provided.
+2. `push_token`, when `use_push_token: true` is set.
 3. The caller repo's default `GITHUB_TOKEN`.
 
 Use `GITHUB_TOKEN` when the workflow only needs to update the current
-repository. Use `push_token` or a GitHub App token when you need pushes or tags
-created by the workflow to trigger downstream automation.
+repository. Use `use_push_token: true` with `push_token`, or use a GitHub App
+token, when you need pushes or tags created by the workflow to trigger
+downstream automation.
 
 ### Choose an auth mode
 
 Use the smallest option that fits your release process:
 
 - Use `GITHUB_TOKEN` when you only need to update the current repository.
-- Use `push_token` when you want to supply your own token for checkout,
-  pushes, or publishing.
-- Use `push_token` or a GitHub App token when pushes or tags from the
-  workflow must trigger downstream workflows.
+- Use `use_push_token: true` together with `push_token` when you want to supply
+  your own token for checkout, pushes, or publishing.
+- Use `use_push_token: true` with `push_token`, or use a GitHub App token,
+  when pushes or tags from the workflow must trigger downstream workflows.
 - Use `github_app_id` and `github_app_private_key` when you want
   repository-scoped bot automation with a short-lived token.
 - Use `gpg_private_key` together with `sign_commits` and/or `sign_tags` when

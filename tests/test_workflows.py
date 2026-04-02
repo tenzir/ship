@@ -87,6 +87,7 @@ def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
         "copy-release-to-main-on-non-main",
         "update-latest-branch-on-main",
         "github_app_id",
+        "use_push_token",
         "git_user_name",
         "git_user_email",
         "sign_commits",
@@ -95,26 +96,30 @@ def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
         assert input_name in inputs
 
 
-def test_reusable_release_signing_defaults_are_opt_in() -> None:
+def test_reusable_release_auth_and_signing_defaults_are_opt_in() -> None:
     workflow = _load_workflow("release.yaml")
     workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
     inputs = _as_mapping(workflow_call["inputs"])
+    assert _as_mapping(inputs["use_push_token"])["default"] is False
     assert _as_mapping(inputs["sign_commits"])["default"] is False
     assert _as_mapping(inputs["sign_tags"])["default"] is False
 
 
-def test_reusable_release_validates_optional_auth_and_signing_inputs() -> None:
+def test_reusable_release_validates_optional_auth_token_and_signing_inputs() -> None:
     workflow = _load_workflow("release.yaml")
     release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
 
     validate_inputs = _step_by_name(steps, "Validate workflow inputs")
     validate_inputs_env = _as_mapping(validate_inputs["env"])
+    assert validate_inputs_env["PUSH_TOKEN"] == "${{ secrets.push_token }}"
+    assert validate_inputs_env["USE_PUSH_TOKEN"] == "${{ inputs.use_push_token }}"
     assert validate_inputs_env["GPG_PRIVATE_KEY"] == "${{ secrets.gpg_private_key }}"
     assert validate_inputs_env["SIGN_COMMITS"] == "${{ inputs.sign_commits }}"
     assert validate_inputs_env["SIGN_TAGS"] == "${{ inputs.sign_tags }}"
     validate_inputs_run = cast(str, validate_inputs["run"])
     assert "Input 'github_app_id' requires secret 'github_app_private_key'." in validate_inputs_run
+    assert "Input 'use_push_token' requires secret 'push_token'." in validate_inputs_run
     assert (
         "Inputs 'sign_commits' or 'sign_tags' require secret 'gpg_private_key'."
         in validate_inputs_run
@@ -141,9 +146,11 @@ def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     resolve_auth_env = _as_mapping(resolve_auth["env"])
     assert resolve_auth_env["APP_TOKEN"] == "${{ steps.app-token.outputs.token }}"
     assert resolve_auth_env["PUSH_TOKEN"] == "${{ secrets.push_token }}"
+    assert resolve_auth_env["USE_PUSH_TOKEN"] == "${{ inputs.use_push_token }}"
     assert resolve_auth_env["DEFAULT_TOKEN"] == "${{ github.token }}"
     resolve_auth_run = cast(str, resolve_auth["run"])
     assert 'SOURCE="github-app"' in resolve_auth_run
+    assert 'elif [ "$USE_PUSH_TOKEN" = "true" ] && [ -n "$PUSH_TOKEN" ]; then' in resolve_auth_run
     assert 'SOURCE="push-token"' in resolve_auth_run
     assert 'SOURCE="github-token"' in resolve_auth_run
 
@@ -196,13 +203,39 @@ def test_ci_smoke_jobs_cover_reusable_release_for_default_and_push_token_modes()
     assert push_permissions["contents"] == "write"
     push_with = _as_mapping(push_job["with"])
     assert push_with["skip-publish"] is True
+    assert push_with["use_push_token"] is True
     push_secrets = _as_mapping(push_job["secrets"])
     assert push_secrets["push_token"] == "${{ github.token }}"
 
 
-def test_repo_release_workflow_opts_into_signed_releases_explicitly() -> None:
+def test_repo_release_workflow_validates_required_secrets_and_opts_into_signed_releases() -> None:
     workflow = _load_workflow("trigger-release.yaml")
+
+    validate_job = _job(workflow, "validate-release-config")
+    validate_steps = _as_sequence(validate_job["steps"])
+    validate_step = _step_by_name(validate_steps, "Validate release configuration")
+    validate_env = _as_mapping(validate_step["env"])
+    assert validate_env["TENZIR_GITHUB_APP_ID"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
+    assert (
+        validate_env["TENZIR_GITHUB_APP_PRIVATE_KEY"]
+        == "${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}"
+    )
+    assert validate_env["TENZIR_BOT_GPG_SIGNING_KEY"] == "${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}"
+    validate_run = cast(str, validate_step["run"])
+    assert (
+        "Repository variable 'TENZIR_GITHUB_APP_ID' must be set for release runs." in validate_run
+    )
+    assert (
+        "Repository secret 'TENZIR_GITHUB_APP_PRIVATE_KEY' must be set for release runs."
+        in validate_run
+    )
+    assert (
+        "Repository secret 'TENZIR_BOT_GPG_SIGNING_KEY' must be set for release runs."
+        in validate_run
+    )
+
     release_job = _job(workflow, "release")
+    assert release_job["needs"] == "validate-release-config"
 
     forwarded_inputs = _as_mapping(release_job["with"])
     assert forwarded_inputs["github_app_id"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"

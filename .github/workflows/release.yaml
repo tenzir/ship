@@ -82,6 +82,11 @@ on:
         required: false
         default: ""
         type: string
+      use_push_token:
+        description: "Whether to use secret push_token instead of the default GITHUB_TOKEN"
+        required: false
+        default: false
+        type: boolean
       git_user_name:
         description: "Git author name used for release commits"
         required: false
@@ -133,6 +138,8 @@ jobs:
           RELEASE_RC: ${{ inputs.rc }}
           GITHUB_APP_ID: ${{ inputs.github_app_id }}
           GITHUB_APP_PRIVATE_KEY: ${{ secrets.github_app_private_key }}
+          PUSH_TOKEN: ${{ secrets.push_token }}
+          USE_PUSH_TOKEN: ${{ inputs.use_push_token }}
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
@@ -159,6 +166,11 @@ jobs:
 
           if [ -n "$GITHUB_APP_ID" ] && [ -z "$GITHUB_APP_PRIVATE_KEY" ]; then
             echo "::error::Input 'github_app_id' requires secret 'github_app_private_key'."
+            exit 1
+          fi
+
+          if [ "$USE_PUSH_TOKEN" = "true" ] && [ -z "$PUSH_TOKEN" ]; then
+            echo "::error::Input 'use_push_token' requires secret 'push_token'."
             exit 1
           fi
 
@@ -204,12 +216,13 @@ jobs:
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
           PUSH_TOKEN: ${{ secrets.push_token }}
+          USE_PUSH_TOKEN: ${{ inputs.use_push_token }}
           DEFAULT_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$APP_TOKEN" ]; then
             TOKEN="$APP_TOKEN"
             SOURCE="github-app"
-          elif [ -n "$PUSH_TOKEN" ]; then
+          elif [ "$USE_PUSH_TOKEN" = "true" ] && [ -n "$PUSH_TOKEN" ]; then
             TOKEN="$PUSH_TOKEN"
             SOURCE="push-token"
           else
