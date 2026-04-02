@@ -66,37 +66,44 @@ def test_load_workflow_preserves_on_key() -> None:
     assert "workflow_call" in workflow_on
 
 
-def test_reusable_release_wrapper_preserves_hook_inputs_and_inherited_secrets() -> None:
+def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
     workflow = _load_workflow("reusable-release.yaml")
     release_job = _job(workflow, "release")
+    workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
+    inputs = _as_mapping(workflow_call["inputs"])
 
-    assert release_job["uses"] == "./.github/workflows/reusable-release-advanced.yaml"
-    assert release_job["secrets"] == "inherit"
+    assert not (WORKFLOWS_DIR / "reusable-release-advanced.yaml").exists()
+    assert release_job["runs-on"] == "ubuntu-latest"
+    assert "uses" not in release_job
 
-    forwarded_inputs = _as_mapping(release_job["with"])
-    assert forwarded_inputs["pre-create"] == "${{ inputs.pre-create }}"
-    assert forwarded_inputs["post-create"] == "${{ inputs.post-create }}"
-    assert forwarded_inputs["skip-publish"] == "${{ inputs.skip-publish }}"
-    assert forwarded_inputs["sign_commits"] == "${{ inputs.sign_commits }}"
-    assert forwarded_inputs["sign_tags"] == "${{ inputs.sign_tags }}"
+    for input_name in [
+        "pre-create",
+        "post-create",
+        "pre-publish",
+        "post-publish",
+        "skip-publish",
+        "publish-no-latest-on-non-main",
+        "copy-release-to-main-on-non-main",
+        "update-latest-branch-on-main",
+        "github_app_id",
+        "git_user_name",
+        "git_user_email",
+        "sign_commits",
+        "sign_tags",
+    ]:
+        assert input_name in inputs
 
 
 def test_reusable_release_signing_defaults_are_opt_in() -> None:
-    wrapper_workflow = _load_workflow("reusable-release.yaml")
-    wrapper_call = _as_mapping(_as_mapping(wrapper_workflow["on"])["workflow_call"])
-    wrapper_inputs = _as_mapping(wrapper_call["inputs"])
-    assert _as_mapping(wrapper_inputs["sign_commits"])["default"] is False
-    assert _as_mapping(wrapper_inputs["sign_tags"])["default"] is False
-
-    advanced_workflow = _load_workflow("reusable-release-advanced.yaml")
-    advanced_call = _as_mapping(_as_mapping(advanced_workflow["on"])["workflow_call"])
-    advanced_inputs = _as_mapping(advanced_call["inputs"])
-    assert _as_mapping(advanced_inputs["sign_commits"])["default"] is False
-    assert _as_mapping(advanced_inputs["sign_tags"])["default"] is False
+    workflow = _load_workflow("reusable-release.yaml")
+    workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
+    inputs = _as_mapping(workflow_call["inputs"])
+    assert _as_mapping(inputs["sign_commits"])["default"] is False
+    assert _as_mapping(inputs["sign_tags"])["default"] is False
 
 
-def test_advanced_reusable_release_validates_optional_auth_and_signing_inputs() -> None:
-    workflow = _load_workflow("reusable-release-advanced.yaml")
+def test_reusable_release_validates_optional_auth_and_signing_inputs() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
     release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
 
@@ -116,8 +123,8 @@ def test_advanced_reusable_release_validates_optional_auth_and_signing_inputs() 
     )
 
 
-def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
-    workflow = _load_workflow("reusable-release-advanced.yaml")
+def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
+    workflow = _load_workflow("reusable-release.yaml")
     release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
 
@@ -172,7 +179,7 @@ def test_advanced_reusable_release_uses_resolved_auth_token_for_stateful_steps()
         assert env["GH_TOKEN"] == "${{ steps.auth-token.outputs.token }}"
 
 
-def test_ci_smoke_jobs_cover_wrapper_workflow_for_default_and_push_token_modes() -> None:
+def test_ci_smoke_jobs_cover_reusable_release_for_default_and_push_token_modes() -> None:
     workflow = _load_workflow("ci.yml")
 
     default_job = _job(workflow, "smoke-reusable-release-default-token")
@@ -197,8 +204,13 @@ def test_repo_release_workflow_opts_into_signed_releases_explicitly() -> None:
     release_job = _job(workflow, "release")
 
     forwarded_inputs = _as_mapping(release_job["with"])
+    assert forwarded_inputs["github_app_id"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
     assert forwarded_inputs["sign_commits"] is True
     assert forwarded_inputs["sign_tags"] is True
 
     forwarded_secrets = _as_mapping(release_job["secrets"])
+    assert (
+        forwarded_secrets["github_app_private_key"]
+        == "${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}"
+    )
     assert forwarded_secrets["gpg_private_key"] == "${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}"

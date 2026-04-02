@@ -40,14 +40,14 @@ npx skills add tenzir/ship
 
 ## 🛠️ Reusable GitHub Actions workflow
 
-This repository ships reusable release workflows under `.github/workflows/`.
-External repositories can call them directly.
+This repository ships a reusable release workflow at
+`.github/workflows/reusable-release.yaml`. External repositories can call it
+directly.
 
 ### Default mode: use the caller repo token
 
-By default, `reusable-release.yaml` and `reusable-release-advanced.yaml` use the
-caller repository's built-in `GITHUB_TOKEN`. No Tenzir-specific secrets are
-required.
+By default, `reusable-release.yaml` uses the caller repository's built-in
+`GITHUB_TOKEN`. No Tenzir-specific secrets are required.
 
 Use this mode when you want a self-contained release workflow in the caller
 repository. If your release process must trigger downstream workflows from the
@@ -68,12 +68,11 @@ jobs:
 ```
 
 <details>
-<summary>Advanced auth, signing, and release-control options</summary>
+<summary>Auth, signing, hooks, and release-control options</summary>
 
 ### Auth and signing overrides
 
-Both `reusable-release.yaml` and `reusable-release-advanced.yaml` support
-optional overrides for:
+`reusable-release.yaml` supports optional overrides for:
 
 - `github_app_id` + `github_app_private_key` to mint a GitHub App token
 - `push_token` to override the default `GITHUB_TOKEN`
@@ -82,16 +81,19 @@ optional overrides for:
 - `sign_commits` and `sign_tags` to opt into signing specific Git objects when
   a GPG key is provided
 
-Use `reusable-release-advanced.yaml` when you also need the extra hooks and
-release controls it exposes. The simpler `reusable-release.yaml` wrapper keeps
-`pre-create`, `post-create`, and `skip-publish` for common release automation
-and CI smoke tests, while preserving inherited caller secrets for
-secret-backed hook scripts.
+The same workflow also exposes:
+
+- `pre-create` and `post-create` hooks
+- `pre-publish` and `post-publish` hooks
+- `skip-publish` for dry runs and smoke tests
+- `publish-no-latest-on-non-main` to pass `--no-latest` on non-main releases
+- `copy-release-to-main-on-non-main` to copy release manifests back to `main`
+- `update-latest-branch-on-main` to force-update the `latest` branch
 
 ```yaml
 jobs:
   release:
-    uses: tenzir/ship/.github/workflows/reusable-release-advanced.yaml@<pinned-ref>
+    uses: tenzir/ship/.github/workflows/reusable-release.yaml@<pinned-ref>
     permissions:
       contents: write
     with:
@@ -101,6 +103,7 @@ jobs:
       git_user_email: release-bot@example.com
       sign_commits: true
       sign_tags: true
+      skip-publish: true
     secrets:
       github_app_private_key: ${{ secrets.MY_GITHUB_APP_PRIVATE_KEY }}
       gpg_private_key: ${{ secrets.MY_GPG_PRIVATE_KEY }}
