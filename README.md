@@ -41,17 +41,19 @@ npx skills add tenzir/ship
 ## 🛠️ Reusable GitHub Actions workflow
 
 This repository ships a reusable release workflow at
-`.github/workflows/reusable-release.yaml`. External repositories can call it
+`.github/workflows/release.yaml`. External repositories can call it
 directly.
 
 ### Default mode: use the caller repo token
 
-By default, `reusable-release.yaml` uses the caller repository's built-in
+By default, `release.yaml` uses the caller repository's built-in
 `GITHUB_TOKEN`. No Tenzir-specific secrets are required.
 
 Use this mode when you want a self-contained release workflow in the caller
-repository. If your release process must trigger downstream workflows from the
-resulting pushes or tags, use `push_token` or a GitHub App token instead.
+repository. Grant at least `contents: write` on the calling job, and add any
+extra token scopes that your `pre-publish` / `post-publish` hooks need. If your
+release process must trigger downstream workflows from the resulting pushes or
+tags, use `push_token` or a GitHub App token instead.
 
 Pin the workflow to a released tag or full commit SHA instead of a moving branch
 name. Replace `<pinned-ref>` below with the immutable ref you want to consume.
@@ -59,9 +61,9 @@ name. Replace `<pinned-ref>` below with the immutable ref you want to consume.
 ```yaml
 jobs:
   release:
-    uses: tenzir/ship/.github/workflows/reusable-release.yaml@<pinned-ref>
+    uses: tenzir/ship/.github/workflows/release.yaml@<pinned-ref>
     permissions:
-      contents: write
+      contents: write # add other scopes here when hooks need them
     with:
       intro: This release improves parser coverage and fixes packaging.
       bump: auto
@@ -72,7 +74,7 @@ jobs:
 
 ### Auth and signing overrides
 
-`reusable-release.yaml` supports optional overrides for:
+`release.yaml` supports optional overrides for:
 
 - `github_app_id` + `github_app_private_key` to mint a GitHub App token
 - `push_token` to override the default `GITHUB_TOKEN`
@@ -93,9 +95,9 @@ The same workflow also exposes:
 ```yaml
 jobs:
   release:
-    uses: tenzir/ship/.github/workflows/reusable-release.yaml@<pinned-ref>
+    uses: tenzir/ship/.github/workflows/release.yaml@<pinned-ref>
     permissions:
-      contents: write
+      contents: write # add other scopes here when hooks need them
     with:
       intro: This release improves parser coverage and fixes packaging.
       github_app_id: ${{ vars.MY_GITHUB_APP_ID }}

@@ -58,7 +58,7 @@ def _step_by_name(steps: list[object], name: str) -> dict[str, object]:
 
 
 def test_load_workflow_preserves_on_key() -> None:
-    workflow = _load_workflow("reusable-release.yaml")
+    workflow = _load_workflow("release.yaml")
 
     assert "on" in workflow
     assert True not in workflow
@@ -67,7 +67,7 @@ def test_load_workflow_preserves_on_key() -> None:
 
 
 def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
-    workflow = _load_workflow("reusable-release.yaml")
+    workflow = _load_workflow("release.yaml")
     release_job = _job(workflow, "release")
     workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
     inputs = _as_mapping(workflow_call["inputs"])
@@ -75,6 +75,7 @@ def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
     assert not (WORKFLOWS_DIR / "reusable-release-advanced.yaml").exists()
     assert release_job["runs-on"] == "ubuntu-latest"
     assert "uses" not in release_job
+    assert "permissions" not in release_job
 
     for input_name in [
         "pre-create",
@@ -95,7 +96,7 @@ def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
 
 
 def test_reusable_release_signing_defaults_are_opt_in() -> None:
-    workflow = _load_workflow("reusable-release.yaml")
+    workflow = _load_workflow("release.yaml")
     workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
     inputs = _as_mapping(workflow_call["inputs"])
     assert _as_mapping(inputs["sign_commits"])["default"] is False
@@ -103,7 +104,7 @@ def test_reusable_release_signing_defaults_are_opt_in() -> None:
 
 
 def test_reusable_release_validates_optional_auth_and_signing_inputs() -> None:
-    workflow = _load_workflow("reusable-release.yaml")
+    workflow = _load_workflow("release.yaml")
     release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
 
@@ -124,7 +125,7 @@ def test_reusable_release_validates_optional_auth_and_signing_inputs() -> None:
 
 
 def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
-    workflow = _load_workflow("reusable-release.yaml")
+    workflow = _load_workflow("release.yaml")
     release_job = _job(workflow, "release")
     steps = _as_sequence(release_job["steps"])
 
@@ -183,14 +184,14 @@ def test_ci_smoke_jobs_cover_reusable_release_for_default_and_push_token_modes()
     workflow = _load_workflow("ci.yml")
 
     default_job = _job(workflow, "smoke-reusable-release-default-token")
-    assert default_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    assert default_job["uses"] == "./.github/workflows/release.yaml"
     default_permissions = _as_mapping(default_job["permissions"])
     assert default_permissions["contents"] == "write"
     default_with = _as_mapping(default_job["with"])
     assert default_with["skip-publish"] is True
 
     push_job = _job(workflow, "smoke-reusable-release-push-token")
-    assert push_job["uses"] == "./.github/workflows/reusable-release.yaml"
+    assert push_job["uses"] == "./.github/workflows/release.yaml"
     push_permissions = _as_mapping(push_job["permissions"])
     assert push_permissions["contents"] == "write"
     push_with = _as_mapping(push_job["with"])
@@ -200,7 +201,7 @@ def test_ci_smoke_jobs_cover_reusable_release_for_default_and_push_token_modes()
 
 
 def test_repo_release_workflow_opts_into_signed_releases_explicitly() -> None:
-    workflow = _load_workflow("release.yaml")
+    workflow = _load_workflow("trigger-release.yaml")
     release_job = _job(workflow, "release")
 
     forwarded_inputs = _as_mapping(release_job["with"])
