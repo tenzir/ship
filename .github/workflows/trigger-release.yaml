@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: |
+          Version bump type
+
+          Use `auto` to infer from unreleased changelog entries. Leave this as
+          `auto` when providing an explicit version below.
+        required: false
+        # workflow_dispatch choice inputs cannot represent an unset value.
+        # `auto` is the explicit sentinel for "infer bump".
+        default: auto
+        type: choice
+        options:
+          - auto
+          - minor
+          - patch
+          - major
+      version:
+        description: |
+          Explicit stable release version (for example `v1.2.3`)
+
+          Prefer `rc: true` for release candidates. Use `version` only for an
+          exact stable release or to override the stable base explicitly.
+        required: false
+        type: string
+      rc:
+        description: |
+          Create or continue the release-candidate series for the resolved
+          stable version.
+
+          When enabled, omit `version` to infer the RC base from changelog
+          entries, or provide a stable `version` like `v1.2.3` to override the
+          base explicitly.
+        required: false
+        default: false
+        type: boolean
+      intro:
+        description: |
+          Intro of the release
+
+          The intro should be 1-2 sentences long, must be written in active
+          voice, and should clearly communicate the theme of the release to the
+          user. Use full sentences and avoid abbreviations.
+        required: true
+        type: string
+      title:
+        description: |
+          User-facing release title (auto-generated if omitted)
+        required: false
+        type: string
+
+jobs:
+  validate-release-config:
+    name: Validate release workflow configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate release configuration
+        env:
+          TENZIR_GITHUB_APP_ID: ${{ vars.TENZIR_GITHUB_APP_ID }}
+          TENZIR_GITHUB_APP_PRIVATE_KEY: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+          TENZIR_BOT_GPG_SIGNING_KEY: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}
+        run: |
+          if [ -z "$TENZIR_GITHUB_APP_ID" ]; then
+            echo "::error::Repository variable 'TENZIR_GITHUB_APP_ID' must be set for release runs."
+            exit 1
+          fi
+
+          if [ -z "$TENZIR_GITHUB_APP_PRIVATE_KEY" ]; then
+            echo "::error::Repository secret 'TENZIR_GITHUB_APP_PRIVATE_KEY' must be set for release runs."
+            exit 1
+          fi
+
+          if [ -z "$TENZIR_BOT_GPG_SIGNING_KEY" ]; then
+            echo "::error::Repository secret 'TENZIR_BOT_GPG_SIGNING_KEY' must be set for release runs."
+            exit 1
+          fi
+
+  release:
+    needs: validate-release-config
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yaml
+    with:
+      bump: ${{ inputs.bump }}
+      version: ${{ inputs.version }}
+      rc: ${{ inputs.rc }}
+      intro: ${{ inputs.intro }}
+      title: ${{ inputs.title }}
+      git-add-paths: pyproject.toml uv.lock
+      pre-create: |
+        uv sync --dev
+        uv run ruff check
+        uv run ruff format --check
+        uv run mypy
+        uv run pytest
+        uv build
+      post-create: |
+        uv lock
+      github_app_id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+      git_user_name: tenzir-bot
+      git_user_email: engineering@tenzir.com
+      sign_commits: true
+      sign_tags: true
+    secrets:
+      github_app_private_key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
+      gpg_private_key: ${{ secrets.TENZIR_BOT_GPG_SIGNING_KEY }}

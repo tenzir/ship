@@ -53,6 +53,51 @@ jobs:
       - name: Run tests
         run: uv run pytest --durations=10
 
+  lint-workflows:
+    name: Lint GitHub Actions workflows
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Run actionlint
+        run: |
+          ACTIONLINT_BIN="$(go env GOPATH)/bin/actionlint"
+          "$ACTIONLINT_BIN"
+
+  smoke-reusable-release-default-token:
+    name: Smoke test reusable release workflow (default token)
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yaml
+    with:
+      bump: patch
+      intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
+      skip-publish: true
+
+  smoke-reusable-release-push-token:
+    name: Smoke test reusable release workflow (push token)
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yaml
+    with:
+      bump: patch
+      intro: Smoke test the reusable release workflow with an explicit push token.
+      use_push_token: true
+      skip-publish: true
+    secrets:
+      push_token: ${{ secrets.GITHUB_TOKEN }}
+
   build:
     name: Build distribution
     runs-on: ubuntu-latest

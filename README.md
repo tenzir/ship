@@ -38,6 +38,109 @@ Install the skill via Vercel Skills:
 npx skills add tenzir/ship
 ```
 
+## 🛠️ Reusable GitHub Actions workflow
+
+This repository ships a reusable release workflow at
+`.github/workflows/release.yaml`. External repositories can call it
+directly.
+
+### Default mode: use the caller repo token
+
+By default, `release.yaml` uses the caller repository's built-in
+`GITHUB_TOKEN`. No Tenzir-specific secrets are required.
+
+Use this mode when you want a self-contained release workflow in the caller
+repository. Grant at least `contents: write` on the calling job, and add any
+extra token scopes that your `pre-publish` / `post-publish` hooks need. If your
+release process must trigger downstream workflows from the resulting pushes or
+tags, use `use_push_token: true` with `push_token`, or use a GitHub App token
+instead.
+
+Pin the workflow to a released tag or full commit SHA instead of a moving branch
+name. Replace `<pinned-ref>` below with the immutable ref you want to consume.
+
+```yaml
+jobs:
+  release:
+    uses: tenzir/ship/.github/workflows/release.yaml@<pinned-ref>
+    permissions:
+      contents: write # add other scopes here when hooks need them
+    with:
+      intro: This release improves parser coverage and fixes packaging.
+      bump: auto
+```
+
+<details>
+<summary>Auth, signing, hooks, and release-control options</summary>
+
+### Auth and signing overrides
+
+`release.yaml` supports optional overrides for:
+
+- `github_app_id` + `github_app_private_key` to mint a GitHub App token
+- `use_push_token: true` + `push_token` to override the default `GITHUB_TOKEN`
+- `git_user_name` and `git_user_email` to customize the git author identity
+- `gpg_private_key` to supply the signing key material
+- `sign_commits` and `sign_tags` to opt into signing specific Git objects when
+  a GPG key is provided
+
+The same workflow also exposes:
+
+- `pre-create` and `post-create` hooks
+- `pre-publish` and `post-publish` hooks
+- `skip-publish` for dry runs and smoke tests
+- `publish-no-latest-on-non-main` to pass `--no-latest` on non-main releases
+- `copy-release-to-main-on-non-main` to copy release manifests back to `main`
+- `update-latest-branch-on-main` to force-update the `latest` branch
+
+```yaml
+jobs:
+  release:
+    uses: tenzir/ship/.github/workflows/release.yaml@<pinned-ref>
+    permissions:
+      contents: write # add other scopes here when hooks need them
+    with:
+      intro: This release improves parser coverage and fixes packaging.
+      github_app_id: ${{ vars.MY_GITHUB_APP_ID }}
+      git_user_name: release-bot
+      git_user_email: release-bot@example.com
+      sign_commits: true
+      sign_tags: true
+      skip-publish: true
+    secrets:
+      github_app_private_key: ${{ secrets.MY_GITHUB_APP_PRIVATE_KEY }}
+      gpg_private_key: ${{ secrets.MY_GPG_PRIVATE_KEY }}
+```
+
+If you prefer a static token, replace the GitHub App settings with
+`use_push_token: true` and pass `push_token` in `secrets:`.
+
+Auth precedence is:
+
+1. GitHub App token, when `github_app_id` and `github_app_private_key` are set.
+2. `push_token`, when `use_push_token: true` is set.
+3. The caller repo's default `GITHUB_TOKEN`.
+
+Use `GITHUB_TOKEN` when the workflow only needs to update the current
+repository. Use `use_push_token: true` with `push_token`, or use a GitHub App
+token, when you need pushes or tags created by the workflow to trigger
+downstream automation.
+
+### Choose an auth mode
+
+Use the smallest option that fits your release process:
+
+- Use `GITHUB_TOKEN` when you only need to update the current repository.
+- Use `use_push_token: true` together with `push_token` when you want to supply
+  your own token for checkout, pushes, or publishing.
+- Use `use_push_token: true` with `push_token`, or use a GitHub App token,
+  when pushes or tags from the workflow must trigger downstream workflows.
+- Use `github_app_id` and `github_app_private_key` when you want
+  repository-scoped bot automation with a short-lived token.
+- Use `gpg_private_key` together with `sign_commits` and/or `sign_tags` when
+you want to sign commits or tags. Signing stays disabled by default.
+</details>
+
 ## 📚 Documentation
 
 Consult our [user
