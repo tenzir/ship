@@ -205,7 +205,7 @@ def test_ci_smoke_jobs_cover_reusable_release_for_default_and_push_token_modes()
     assert push_with["skip-publish"] is True
     assert push_with["use_push_token"] is True
     push_secrets = _as_mapping(push_job["secrets"])
-    assert push_secrets["push_token"] == "${{ github.token }}"
+    assert push_secrets["push_token"] == "${{ secrets.GITHUB_TOKEN }}"
 
 
 def test_repo_release_workflow_validates_required_secrets_and_opts_into_signed_releases() -> None:

@@ -96,7 +96,7 @@ jobs:
       use_push_token: true
       skip-publish: true
     secrets:
-      push_token: ${{ github.token }}
+      push_token: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build distribution
