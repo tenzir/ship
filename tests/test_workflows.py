@@ -158,6 +158,10 @@ def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     checkout_with = _as_mapping(checkout["with"])
     assert checkout_with["token"] == "${{ steps.auth-token.outputs.token }}"
 
+    install_uv = _step_by_name(steps, "Install uv")
+    install_uv_with = _as_mapping(install_uv["with"])
+    assert install_uv_with["enable-cache"] is False
+
     setup_gpg_signing = _step_by_name(steps, "Set up GPG signing")
     assert (
         setup_gpg_signing["if"]
