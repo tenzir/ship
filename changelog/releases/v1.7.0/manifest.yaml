@@ -1,0 +1,8 @@
+created: 2026-04-03
+title: Portable release workflow
+intro: >-
+  The reusable release workflow now works out of the box in external repositories
+  without requiring Tenzir-org-specific secrets.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.6.1
