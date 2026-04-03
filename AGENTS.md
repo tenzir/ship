@@ -21,6 +21,7 @@
   - `releases.py` — release manifest and release-entry storage helpers
   - `modules.py` — nested changelog project discovery via glob patterns
   - `validate.py` — structure + semantic validation routines
+  - `version_files.py` — package-manager version file update helpers
   - `utils.py` — logging, formatting, git/github helpers
 - `tests/` — pytest suite (unit + CliRunner integration tests)
 - `changelog/` — this repo’s own dogfooded changelog project
@@ -39,6 +40,14 @@
   - `uv run pytest`
 - Build package:
   - `uv build`
+
+## Releasing
+
+This repo dogfoods its own reusable release workflow. To cut a release, trigger
+the **Release** workflow (`.github/workflows/trigger-release.yaml`) via
+`workflow_dispatch` on GitHub Actions. It calls the reusable
+`.github/workflows/release.yaml` with project-specific hooks for quality gates,
+version bumping, and PyPI publish.
 
 ## Skills
 
