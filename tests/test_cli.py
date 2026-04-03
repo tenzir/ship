@@ -3784,7 +3784,7 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
         check=True,
     )
     subprocess.run(
-        ["git", "config", "commit.gpgsign", "false"],
+        ["git", "config", "tag.gpgsign", "false"],
         cwd=project_dir,
         check=True,
     )
@@ -3913,6 +3913,16 @@ def test_release_publish_skips_existing_tag(tmp_path: Path) -> None:
     )
     subprocess.run(
         ["git", "config", "user.name", "Codex"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "tag.gpgsign", "false"],
         cwd=project_dir,
         check=True,
     )
