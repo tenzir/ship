@@ -3,7 +3,7 @@ title: Simplify reusable release workflow and decouple Tenzir org secrets
 type: change
 authors:
   - mavam
-  - pi
+  - codex
 created: 2026-03-12T07:58:22Z
 ---
 
