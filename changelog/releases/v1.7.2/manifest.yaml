@@ -1,0 +1,9 @@
+created: 2026-04-15
+title: Cleaner release logs for GitHub App workflows
+intro: >-
+  This patch release removes the Node 20 deprecation warning from the reusable release
+  workflow when it generates GitHub App tokens on GitHub-hosted runners. Repositories
+  that call the shared release workflow now get clean release logs without extra configuration.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.7.1
