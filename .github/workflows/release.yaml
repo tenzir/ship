@@ -206,7 +206,7 @@ jobs:
       - name: Generate app token
         id: app-token
         if: ${{ inputs.github_app_id != '' }}
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ inputs.github_app_id }}
           private-key: ${{ secrets.github_app_private_key }}
