@@ -89,7 +89,7 @@ def load_config(path: Path) -> Config:
         if normalized_export_style not in EXPORT_STYLE_CHOICES:
             allowed = ", ".join(EXPORT_STYLE_CHOICES)
             raise ValueError(f"Config option 'export_style' must be one of: {allowed}")
-        export_style = cast(ExportStyle, normalized_export_style)
+        export_style = normalized_export_style
 
     explicit_links_raw = raw.get("explicit_links")
     explicit_links = False
@@ -204,7 +204,7 @@ def load_package_config(path: Path) -> Config:
         if normalized_export_style not in EXPORT_STYLE_CHOICES:
             allowed = ", ".join(EXPORT_STYLE_CHOICES)
             raise ValueError(f"Package metadata option 'export_style' must be one of: {allowed}")
-        export_style = cast(ExportStyle, normalized_export_style)
+        export_style = normalized_export_style
 
     explicit_links_raw = raw.get("explicit_links")
     explicit_links = False

@@ -152,7 +152,7 @@ def _parse_scope_from_identifiers(
                     "Use only one scope token."
                 )
             scope_token_found = ident
-            scope = cast(Scope, lowered)
+            scope = lowered
         else:
             remaining.append(ident)
 
