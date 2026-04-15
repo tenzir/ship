@@ -1,0 +1,10 @@
+created: 2026-04-15
+title: Patched dependencies and release tags
+intro: >-
+  This release updates locked Python dependencies to patched upstream versions and
+  aligns generated release commits with `v`-prefixed tags. It keeps release publishing,
+  local development, and CI installs on maintained versions without changing normal
+  `tenzir-ship` usage.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.7.0
