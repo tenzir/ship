@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from tenzir_ship.config import (
+    DEFAULT_RELEASE_COMMIT_MESSAGE,
     Config,
     ReleaseConfig,
     dump_config,
@@ -66,6 +67,21 @@ def test_load_package_config_requires_id(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="missing required 'id'"):
         load_package_config(package_path)
+
+
+def test_load_config_uses_tag_prefixed_default_release_commit_message(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "id": "demo",
+            "name": "Demo",
+        },
+    )
+
+    config = load_config(config_path)
+
+    assert config.release.commit_message == DEFAULT_RELEASE_COMMIT_MESSAGE
 
 
 def test_load_config_release_version_bump_settings(tmp_path: Path) -> None:

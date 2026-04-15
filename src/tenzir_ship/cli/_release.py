@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..config import EXPORT_STYLE_COMPACT, Config
+from ..config import DEFAULT_RELEASE_COMMIT_MESSAGE, EXPORT_STYLE_COMPACT, Config
 from ..entries import Entry, iter_entries
 from ..releases import (
     NOTES_FILENAME,
@@ -1214,7 +1214,8 @@ def publish_release(
                 "No staged changes to commit. Stage changes with 'git add' first."
             )
         final_commit_message = commit_message or config.release.commit_message.format(
-            version=release_version
+            version=release_version,
+            tag=tag_name,
         )
 
     # Initialize step tracker with all planned steps
@@ -1234,7 +1235,7 @@ def publish_release(
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
 
-        tracker.add("tag", f'git tag -a {tag_name} -m "Release {release_version}"')
+        tracker.add("tag", f'git tag -a {tag_name} -m "Release {tag_name}"')
         tracker.add("push_branch", f"git push {push_remote} {push_branch}:{push_remote_ref}")
         tracker.add("push_tag", f"git push {push_remote} {tag_name}")
     tracker.add("publish", f"gh release create {tag_name} --repo {config.repository} ...")
@@ -1257,7 +1258,7 @@ def publish_release(
 
     # Execute tag and push steps
     if create_tag:
-        tag_message = f"Release {release_version}"
+        tag_message = f"Release {tag_name}"
         try:
             created = create_annotated_git_tag(project_root, tag_name, tag_message)
         except RuntimeError as exc:
@@ -1512,7 +1513,7 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
 )
 @click.option(
     "--commit-message",
-    help="Custom commit message (default: from config or 'Release {version}').",
+    help=(f"Custom commit message (default: from config or '{DEFAULT_RELEASE_COMMIT_MESSAGE}')."),
 )
 @click.option(
     "--yes",

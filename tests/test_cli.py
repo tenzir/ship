@@ -3894,6 +3894,153 @@ def test_release_publish_creates_git_tag(tmp_path: Path) -> None:
     )
     assert "v9.9.9" in [line.strip() for line in tag_result.stdout.splitlines()]
 
+    tag_message_result = subprocess.run(
+        ["git", "cat-file", "-p", "v9.9.9"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert tag_message_result.stdout.rstrip().endswith("Release v9.9.9")
+
+    gh_calls = gh_log.read_text(encoding="utf-8").strip().splitlines()
+    assert any(line.startswith("release create v9.9.9") for line in gh_calls)
+
+
+def test_release_publish_creates_tag_prefixed_release_commit(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    changelog_root = project_dir / "changelog"
+    changelog_root.mkdir()
+
+    subprocess.run(["git", "init"], cwd=project_dir, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "config", "user.email", "codex@example.com"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Codex"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "tag.gpgsign", "false"],
+        cwd=project_dir,
+        check=True,
+    )
+    remote_dir = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote_dir)],
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote_dir)],
+        cwd=project_dir,
+        check=True,
+    )
+    (project_dir / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=project_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit", "--no-gpg-sign"],
+        cwd=project_dir,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+
+    config_path = changelog_root / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "id": "demo",
+                "name": "Demo",
+                "repository": "tenzir/example",
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    release_dir = changelog_root / "releases" / "v9.9.9"
+    release_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "version: v9.9.9\ncreated: 2024-01-01\n",
+        encoding="utf-8",
+    )
+    (release_dir / "notes.md").write_text("Ready for launch.\n", encoding="utf-8")
+
+    (project_dir / "release.txt").write_text("staged release artifact\n", encoding="utf-8")
+    subprocess.run(["git", "add", "release.txt"], cwd=project_dir, check=True)
+
+    gh_log = project_dir / "gh.log"
+    gh_stub = project_dir / "gh"
+    gh_stub.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env python3",
+                "import os",
+                "import sys",
+                "log = os.environ.get('GH_LOG')",
+                "if log:",
+                "    with open(log, 'a', encoding='utf-8') as handle:",
+                "        handle.write(' '.join(sys.argv[1:]) + '\\n')",
+                "if len(sys.argv) >= 3 and sys.argv[1] == 'release' and sys.argv[2] == 'view':",
+                "    sys.exit(1)",
+                "sys.exit(0)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gh_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{project_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["GH_LOG"] = str(gh_log)
+
+    publish_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_root),
+            "release",
+            "publish",
+            "v9.9.9",
+            "--commit",
+            "--tag",
+            "--yes",
+        ],
+        env=env,
+    )
+
+    assert publish_result.exit_code == 0, publish_result.output
+    publish_plain = click.utils.strip_ansi(publish_result.output)
+    assert "created commit: Release v9.9.9" in publish_plain
+
+    commit_subject_result = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert commit_subject_result.stdout.strip() == "Release v9.9.9"
+
+    tag_message_result = subprocess.run(
+        ["git", "cat-file", "-p", "v9.9.9"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert tag_message_result.stdout.rstrip().endswith("Release v9.9.9")
+
     gh_calls = gh_log.read_text(encoding="utf-8").strip().splitlines()
     assert any(line.startswith("release create v9.9.9") for line in gh_calls)
 

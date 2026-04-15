@@ -22,6 +22,7 @@ EXPORT_STYLE_CHOICES: tuple[ExportStyle, ...] = (
     EXPORT_STYLE_STANDARD,
     EXPORT_STYLE_COMPACT,
 )
+DEFAULT_RELEASE_COMMIT_MESSAGE = "Release v{version}"
 
 
 def default_config_path(project_root: Path) -> Path:
@@ -39,7 +40,7 @@ def package_metadata_path(project_root: Path) -> Path:
 class ReleaseConfig:
     """Configuration for release operations."""
 
-    commit_message: str = "Release {version}"
+    commit_message: str = DEFAULT_RELEASE_COMMIT_MESSAGE
     version_bump_mode: ReleaseVersionBumpMode = "auto"
     version_files: list[str] = field(default_factory=list)
 
@@ -334,7 +335,7 @@ def dump_config(config: Config) -> dict[str, Any]:
     if config.modules:
         data["modules"] = config.modules
     release_data: dict[str, Any] = {}
-    if config.release.commit_message != "Release {version}":
+    if config.release.commit_message != DEFAULT_RELEASE_COMMIT_MESSAGE:
         release_data["commit_message"] = config.release.commit_message
     if config.release.version_bump_mode != "auto":
         release_data["version_bump_mode"] = config.release.version_bump_mode
