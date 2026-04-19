@@ -10,6 +10,7 @@ from .cli import (
     CLIContext,
     ShowView,
     _get_latest_release_manifest,
+    build_release_plan_payload,
     create_cli_context,
     create_entry,
     create_release,
@@ -145,6 +146,22 @@ class Changelog:
             release_candidate=release_candidate,
             title_explicit=title is not None,
             compact_explicit=compact is not None,
+        )
+
+    def release_plan(
+        self,
+        *,
+        version: str | None = None,
+        version_bump: str | None = None,
+        release_candidate: bool = False,
+    ) -> dict[str, Any]:
+        """Describe the release snapshot that would be created for the current queue."""
+
+        return build_release_plan_payload(
+            self._ctx,
+            version=version,
+            version_bump=version_bump,
+            release_candidate=release_candidate,
         )
 
     def release_version(self, *, bare: bool = False) -> str:

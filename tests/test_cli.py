@@ -6529,6 +6529,137 @@ def test_release_create_major_bump_closing_active_rc_preserves_metadata(tmp_path
     assert (release_dir / "notes.md").read_text(encoding="utf-8").startswith("Curated RC intro.")
 
 
+def test_release_plan_command_outputs_json_payload(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Feature",
+            "--type",
+            "feature",
+            "--description",
+            "A test feature.",
+            "--author",
+            "tester",
+            "--pr",
+            "42",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    plan_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "plan",
+            "--json",
+        ],
+    )
+    assert plan_result.exit_code == 0, plan_result.output
+
+    payload = json.loads(plan_result.stdout)
+    assert payload["project"]["name"] == "Project"
+    assert payload["release"]["version"] == "v0.1.0"
+    assert payload["release"]["mode"] == "sync-stable-queue"
+    assert payload["release"]["entry_counts"] == {
+        "breaking": 0,
+        "feature": 1,
+        "bugfix": 0,
+        "change": 0,
+        "total": 1,
+    }
+    assert payload["entries"][0]["title"] == "Test Feature"
+    assert payload["entries"][0]["prs"] == [
+        {"number": 42},
+    ]
+    assert payload["highlights"][0]["excerpt"] == "A test feature."
+
+
+def test_release_plan_reuses_release_candidate_intro_when_promoting(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    stable_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Ships stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert stable_entry.exit_code == 0, stable_entry.output
+
+    stable_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+
+    rc_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Preview Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Queued for a later stable.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert rc_entry.exit_code == 0, rc_entry.output
+
+    rc_release = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.1.0",
+            "--rc",
+            "--intro",
+            "Preview intro.",
+            "--yes",
+        ],
+    )
+    assert rc_release.exit_code == 0, rc_release.output
+
+    plan_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "plan", "--json"],
+    )
+    assert plan_result.exit_code == 0, plan_result.output
+
+    payload = json.loads(plan_result.stdout)
+    assert payload["release"]["version"] == "v1.1.0"
+    assert payload["release"]["mode"] == "promote-prerelease"
+    assert payload["release"]["source_release_candidate"] == "v1.1.0-rc.1"
+    assert payload["release"]["resolved_intro"] == "Preview intro."
+
+
 def test_release_version_command(tmp_path: Path) -> None:
     """Test the release version command outputs the latest stable version."""
     runner = CliRunner()

@@ -112,6 +112,7 @@ from ._validate import (
 
 # Re-export release commands
 from ._release import (
+    build_release_plan_payload,
     create_release,
     publish_release,
     release_group,
@@ -173,6 +174,7 @@ __all__ = [
     "create_entry",
     "add",
     # Release
+    "build_release_plan_payload",
     "create_release",
     "publish_release",
     "release_group",
