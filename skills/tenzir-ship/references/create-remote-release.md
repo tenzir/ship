@@ -29,7 +29,9 @@ Inspect the workflow to understand its shape. The release workflow in this
 repository accepts these common inputs:
 
 - **intro**: Summarize unreleased entries in `changelog/unreleased/` into 1–2
-  sentences describing the release highlights.
+  sentences describing the release highlights. Some wrapper workflows can now
+  auto-generate this from `tenzir-ship release plan --json` when you leave the
+  input empty.
 - **title**: Identify the lead topic—the single most important change from a
   user's perspective.
 - **bump**: Optional manual bump for a stable release (`patch`, `minor`, or
@@ -55,6 +57,9 @@ gh workflow run <workflow-file> \
   -f intro="<intro text>" \
   -f title="<title>"
 ```
+
+If the workflow auto-generates the intro, you can omit `-f intro=...` and let
+it derive the text from the pending changelog entries.
 
 Do not specify a version bump unless explicitly requested. The workflow will
 pick the appropriate bump according to the changelog entry types. If an

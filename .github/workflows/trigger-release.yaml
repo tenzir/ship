@@ -7,10 +7,13 @@ on:
         description: |
           Intro of the release
 
-          The intro should be 1-2 sentences long, must be written in active
-          voice, and should clearly communicate the theme of the release to the
-          user. Use full sentences and avoid abbreviations.
-        required: true
+          Leave empty to auto-generate the intro from the pending changelog
+          entries. When set manually, the intro should be 1-2 sentences long,
+          must be written in active voice, and should clearly communicate the
+          theme of the release to the user. Use full sentences and avoid
+          abbreviations.
+        required: false
+        default: ""
         type: string
       title:
         description: |
@@ -19,6 +22,33 @@ on:
         type: string
 
 jobs:
+  prepare-release-metadata:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      intro: ${{ steps.metadata.outputs.intro }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Generate release metadata
+        id: metadata
+        run: |
+          uv sync --dev
+          uv run tenzir-ship release plan --json > release-plan.json
+          python .github/scripts/generate_release_metadata.py release-plan.json >> "$GITHUB_OUTPUT"
+
   validate-release-config:
     name: Validate release workflow configuration
     runs-on: ubuntu-latest
@@ -47,12 +77,14 @@ jobs:
 
   release:
     name: Create GitHub release
-    needs: validate-release-config
+    needs:
+      - prepare-release-metadata
+      - validate-release-config
     permissions:
       contents: write
     uses: ./.github/workflows/release.yaml
     with:
-      intro: ${{ inputs.intro }}
+      intro: ${{ inputs.intro != '' && inputs.intro || needs.prepare-release-metadata.outputs.intro }}
       title: ${{ inputs.title }}
       git-add-paths: pyproject.toml uv.lock
       pre-create: |

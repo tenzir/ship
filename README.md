@@ -61,6 +61,12 @@ pre/post hooks, and several release-control options. See the
 [reference](https://docs.tenzir.com/reference/ship-framework) for the full list
 of inputs, secrets, and auth modes.
 
+For release automation, `tenzir-ship release plan --json` emits a structured
+snapshot of the pending release queue, including the resolved target version,
+entry counts, highlights, and inherited release metadata. This repository's
+`trigger-release.yaml` wrapper uses that plan to auto-generate the release
+intro when the workflow dispatch leaves `intro` empty.
+
 ## 📚 Documentation
 
 Consult our [user

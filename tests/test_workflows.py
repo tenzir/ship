@@ -212,8 +212,20 @@ def test_ci_smoke_jobs_cover_reusable_release_for_default_and_push_token_modes()
     assert push_secrets["push_token"] == "${{ secrets.GITHUB_TOKEN }}"
 
 
-def test_repo_release_workflow_validates_required_secrets_and_opts_into_signed_releases() -> None:
+def test_repo_release_workflow_validates_required_secrets_and_prepares_intro() -> None:
     workflow = _load_workflow("trigger-release.yaml")
+
+    workflow_inputs = _as_mapping(_as_mapping(workflow["on"])["workflow_dispatch"])["inputs"]
+    intro_input = _as_mapping(_as_mapping(workflow_inputs)["intro"])
+    assert intro_input["required"] is False
+    assert intro_input["default"] == ""
+
+    prepare_job = _job(workflow, "prepare-release-metadata")
+    prepare_steps = _as_sequence(prepare_job["steps"])
+    metadata_step = _step_by_name(prepare_steps, "Generate release metadata")
+    metadata_run = cast(str, metadata_step["run"])
+    assert "uv run tenzir-ship release plan --json > release-plan.json" in metadata_run
+    assert "python .github/scripts/generate_release_metadata.py release-plan.json" in metadata_run
 
     validate_job = _job(workflow, "validate-release-config")
     validate_steps = _as_sequence(validate_job["steps"])
@@ -239,9 +251,13 @@ def test_repo_release_workflow_validates_required_secrets_and_opts_into_signed_r
     )
 
     release_job = _job(workflow, "release")
-    assert release_job["needs"] == "validate-release-config"
+    assert release_job["needs"] == ["prepare-release-metadata", "validate-release-config"]
 
     forwarded_inputs = _as_mapping(release_job["with"])
+    assert (
+        forwarded_inputs["intro"]
+        == "${{ inputs.intro != '' && inputs.intro || needs.prepare-release-metadata.outputs.intro }}"
+    )
     assert forwarded_inputs["github_app_id"] == "${{ vars.TENZIR_GITHUB_APP_ID }}"
     assert forwarded_inputs["sign_commits"] is True
     assert forwarded_inputs["sign_tags"] is True
