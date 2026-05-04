@@ -69,9 +69,7 @@ class ReleaseManifest:
     """Representation of a release manifest.
 
     The manifest contains a single free-form `intro` field which may include
-    a one-line summary and additional introductory Markdown. Older manifests
-    used a `description` field; we continue to read it for compatibility but
-    only write `intro` going forward.
+    a one-line summary and additional introductory Markdown.
 
     For projects with modules, `modules` tracks which version of each
     module was current at release time, enabling incremental module summaries.
@@ -199,10 +197,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
     for path in manifest_paths:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
-        # Prefer `intro`; fall back to legacy `description` if present.
         raw_intro = str(data.get("intro", "") or "").strip()
-        if not raw_intro:
-            raw_intro = str(data.get("description", "") or "").strip()
         created_value = _parse_created_date(data.get("created"))
 
         version_value = data.get("version") or path.parent.name

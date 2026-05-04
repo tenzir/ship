@@ -1,7 +1,8 @@
 ---
 title: Support plural components key in entry frontmatter
 type: feature
-author: mavam
+authors:
+  - mavam
 components:
   - cli
   - python

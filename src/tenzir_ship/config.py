@@ -31,7 +31,7 @@ def default_config_path(project_root: Path) -> Path:
 
 
 def package_metadata_path(project_root: Path) -> Path:
-    """Return the expected package metadata path for a project root."""
+    """Return the expected package metadata path for a changelog project root."""
 
     return project_root.parent / PACKAGE_METADATA_FILENAME
 
@@ -69,11 +69,8 @@ def load_config(path: Path) -> Config:
     if not isinstance(raw, MutableMapping):
         raise ValueError("Config root must be a mapping")
 
-    project_value_raw = raw.get("id", raw.get("project"))
-    if isinstance(project_value_raw, str):
-        project_value = project_value_raw.strip()
-    else:
-        project_value = str(raw.get("project_name", raw.get("product", "")) or "").strip()
+    project_value_raw = raw.get("id")
+    project_value = project_value_raw.strip() if isinstance(project_value_raw, str) else ""
     if not project_value:
         raise ValueError("Config missing 'id'")
 
@@ -178,7 +175,7 @@ def load_config(path: Path) -> Config:
 
 
 def load_package_config(path: Path) -> Config:
-    """Load configuration metadata from a package manifest."""
+    """Load changelog configuration metadata from a package manifest."""
 
     with path.open("r", encoding="utf-8") as handle:
         raw = yaml.safe_load(handle) or {}
@@ -231,7 +228,6 @@ def load_package_config(path: Path) -> Config:
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
 
-    # Parse release config
     release_config = ReleaseConfig()
     release_raw = raw.get("release")
     if release_raw is not None:

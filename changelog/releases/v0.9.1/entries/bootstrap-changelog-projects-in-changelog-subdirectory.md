@@ -1,8 +1,10 @@
 ---
 title: Bootstrap changelog projects in changelog/ subdirectory
 type: bugfix
-author: claude
-component: cli
+authors:
+  - claude
+components:
+  - cli
 created: 2025-12-04T04:55:13.813782Z
 ---
 

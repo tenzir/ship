@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from tenzir_ship.entries import iter_entries, read_entry, sort_entries_desc, write_entry
 
 
@@ -13,13 +15,13 @@ def test_sort_entries_desc_orders_by_created_datetime(tmp_path: Path) -> None:
     metadata_a = {
         "title": "Entry A",
         "type": "change",
-        "component": "cli",
+        "components": ["cli"],
         "created": datetime(2024, 1, 1, 10, 0, 0),
     }
     metadata_b = {
         "title": "Entry B",
         "type": "change",
-        "component": "cli",
+        "components": ["cli"],
         "created": datetime(2024, 2, 1, 11, 0, 0),
     }
 
@@ -29,95 +31,79 @@ def test_sort_entries_desc_orders_by_created_datetime(tmp_path: Path) -> None:
     entries = list(iter_entries(tmp_path))
     ordered = sort_entries_desc(entries)
 
-    # Entry B is newer, so it should come first in descending order
     assert [entry.entry_id for entry in ordered] == ["entry-b", "entry-a"]
     assert ordered[0].created_at == datetime(2024, 2, 1, 11, 0, 0, tzinfo=timezone.utc)
     assert ordered[1].created_at == datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
 
-def test_read_entry_normalizes_singular_pr_to_prs(tmp_path: Path) -> None:
-    """Singular `pr` key should be normalized to plural `prs` list."""
+def test_read_entry_normalizes_list_metadata(tmp_path: Path) -> None:
     entry_file = tmp_path / "test.md"
     entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\npr: 42\n---\nBody text.\n",
+        "---\ntitle: Test Entry\ntype: feature\nauthors: mavam\nprs: 42\ncomponents: cli\n---\nBody text.\n",
         encoding="utf-8",
     )
 
     entry = read_entry(entry_file)
-    assert "pr" not in entry.metadata
-    assert entry.metadata["prs"] == [42]
 
-
-def test_read_entry_normalizes_singular_author_to_authors(tmp_path: Path) -> None:
-    """Singular `author` key should be normalized to plural `authors` list."""
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\nauthor: codex\n---\nBody text.\n",
-        encoding="utf-8",
-    )
-
-    entry = read_entry(entry_file)
-    assert "author" not in entry.metadata
-    assert entry.metadata["authors"] == ["codex"]
-
-
-def test_read_entry_normalizes_authors_string_to_list(tmp_path: Path) -> None:
-    """Plural `authors` key as a string should be normalized to a list."""
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\nauthors: mavam\n---\nBody text.\n",
-        encoding="utf-8",
-    )
-
-    entry = read_entry(entry_file)
     assert entry.metadata["authors"] == ["mavam"]
-
-
-def test_read_entry_rejects_both_pr_and_prs(tmp_path: Path) -> None:
-    """Having both `pr` and `prs` should raise an error."""
-    import pytest
-
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\npr: 99\nprs:\n  - 42\n  - 43\n---\nBody.\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="cannot have both 'pr' and 'prs'"):
-        read_entry(entry_file)
-
-
-def test_read_entry_rejects_both_author_and_authors(tmp_path: Path) -> None:
-    """Having both `author` and `authors` should raise an error."""
-    import pytest
-
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\nauthor: ignored\nauthors:\n  - alice\n  - bob\n---\nBody.\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="cannot have both 'author' and 'authors'"):
-        read_entry(entry_file)
-
-
-def test_read_entry_normalizes_singular_component_to_components(tmp_path: Path) -> None:
-    """Singular `component` key should be normalized to plural `components` list."""
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\ncomponent: cli\n---\nBody text.\n",
-        encoding="utf-8",
-    )
-
-    entry = read_entry(entry_file)
-    assert "component" not in entry.metadata
+    assert entry.metadata["prs"] == [42]
     assert entry.metadata["components"] == ["cli"]
     assert entry.components == ["cli"]
-    assert entry.component == "cli"  # backwards compat
+
+
+def test_read_entry_normalizes_singular_legacy_metadata(tmp_path: Path) -> None:
+    entry_file = tmp_path / "test.md"
+    entry_file.write_text(
+        "---\ntitle: Test Entry\ntype: feature\nauthor: codex\npr: 42\ncomponent: cli\n---\nBody text.\n",
+        encoding="utf-8",
+    )
+
+    entry = read_entry(entry_file)
+
+    assert "author" not in entry.metadata
+    assert "pr" not in entry.metadata
+    assert "component" not in entry.metadata
+    assert entry.metadata["authors"] == ["codex"]
+    assert entry.metadata["prs"] == [42]
+    assert entry.metadata["components"] == ["cli"]
+    assert entry.component == "cli"
+
+
+def test_read_entry_rejects_mixed_singular_and_plural_metadata(tmp_path: Path) -> None:
+    entry_file = tmp_path / "test.md"
+    entry_file.write_text(
+        "---\ntitle: Test Entry\ntype: feature\nauthor: codex\nauthors:\n  - mavam\n---\nBody text.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="both 'author' and 'authors'"):
+        read_entry(entry_file)
+
+
+def test_write_entry_normalizes_singular_legacy_metadata(tmp_path: Path) -> None:
+    path = write_entry(
+        tmp_path,
+        {
+            "title": "Test Entry",
+            "type": "feature",
+            "author": "codex",
+            "pr": 42,
+            "component": "cli",
+        },
+        "Body text.",
+    )
+
+    text = path.read_text(encoding="utf-8")
+
+    assert "author:" not in text
+    assert "pr:" not in text
+    assert "component:" not in text
+    assert "authors:" in text
+    assert "prs:" in text
+    assert "components:" in text
 
 
 def test_read_entry_preserves_plural_components(tmp_path: Path) -> None:
-    """Plural `components` key should be preserved as a list."""
     entry_file = tmp_path / "test.md"
     entry_file.write_text(
         "---\ntitle: Test Entry\ntype: feature\ncomponents:\n  - cli\n  - api\n---\nBody text.\n",
@@ -125,20 +111,6 @@ def test_read_entry_preserves_plural_components(tmp_path: Path) -> None:
     )
 
     entry = read_entry(entry_file)
+
     assert entry.metadata["components"] == ["cli", "api"]
     assert entry.components == ["cli", "api"]
-    assert entry.component == "cli"  # returns first
-
-
-def test_read_entry_rejects_both_component_and_components(tmp_path: Path) -> None:
-    """Having both `component` and `components` should raise an error."""
-    import pytest
-
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\ncomponent: cli\ncomponents:\n  - api\n---\nBody.\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="cannot have both 'component' and 'components'"):
-        read_entry(entry_file)

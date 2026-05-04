@@ -1,7 +1,8 @@
 ---
 title: Support multi-project changelog operations
 type: feature
-author: claude
+authors:
+  - claude
 created: 2025-10-29
 ---
 

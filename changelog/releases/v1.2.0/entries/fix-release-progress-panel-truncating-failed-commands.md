@@ -4,7 +4,8 @@ type: bugfix
 authors:
   - mavam
   - claude
-pr: 7
+prs:
+  - 7
 created: 2026-02-15T10:29:09.765161Z
 ---
 

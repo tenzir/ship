@@ -292,22 +292,12 @@ def create_entry(
         "type": entry_type,
         "project": project_value,
     }
-    # Use singular form for single values, plural for multiple
     if authors_list:
-        if len(authors_list) == 1:
-            metadata["author"] = authors_list[0]
-        else:
-            metadata["authors"] = authors_list
+        metadata["authors"] = authors_list
     if component_values:
-        if len(component_values) == 1:
-            metadata["component"] = component_values[0]
-        else:
-            metadata["components"] = component_values
+        metadata["components"] = component_values
     if pr_numbers:
-        if len(pr_numbers) == 1:
-            metadata["pr"] = pr_numbers[0]
-        else:
-            metadata["prs"] = pr_numbers
+        metadata["prs"] = pr_numbers
 
     path = write_entry(project_root, metadata, body, default_project=config.id)
     try:

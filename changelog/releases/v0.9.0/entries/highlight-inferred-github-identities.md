@@ -4,7 +4,8 @@ type: change
 authors:
 - codex
 - mavam
-component: cli
+components:
+  - cli
 created: 2025-11-10
 ---
 

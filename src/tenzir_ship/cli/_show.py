@@ -37,7 +37,6 @@ from ..releases import (
     is_release_candidate,
     iter_release_manifests,
     load_release_entry,
-    normalize_release_version,
     parse_release_version,
     render_release_tag,
     unused_entries,
@@ -103,21 +102,11 @@ SCOPE_TOKENS: set[Scope] = {"all", "unreleased", "released", "latest"}
 
 
 def _get_known_release_versions(project_root: Path) -> dict[str, str]:
-    """Return mapping of lowercase version aliases to original version strings.
-
-    Returns a dict for case-insensitive version lookups:
-    - Keys: lowercase version strings (with and without a leading ``v``)
-    - Values: original case-preserved versions (use for display and loading)
-
-    Example: {"1.0.0": "v1.0.0", "v1.0.0": "v1.0.0"}
-    """
+    """Return mapping of lowercase release versions to original version strings."""
     known_versions: dict[str, str] = {}
     for manifest in iter_release_manifests(project_root):
         original = manifest.version
-        normalized = normalize_release_version(original)
-        known_versions[original.lower()] = original
-        known_versions[normalized.lower()] = original
-        known_versions[f"v{normalized}".lower()] = original
+        known_versions[render_release_tag(original).lower()] = original
     return known_versions
 
 
@@ -351,11 +340,11 @@ def _load_release_entries_for_display(
     entry_map: dict[str, Entry],
 ) -> tuple[ReleaseManifest, list[Entry]]:
     """Load entries for a specific release version."""
-    normalized_version = normalize_release_version(release_version)
+    normalized_version = render_release_tag(release_version).lower()
     manifests = [
         manifest
         for manifest in iter_release_manifests(project_root)
-        if normalize_release_version(manifest.version) == normalized_version
+        if render_release_tag(manifest.version).lower() == normalized_version
     ]
     if not manifests:
         raise click.ClickException(f"Release '{release_version}' not found.")
@@ -403,12 +392,6 @@ def _resolve_identifier(
         raise click.ClickException(
             f"'{token}' is a scope token and should be handled before identifier resolution."
         )
-    # The "-" shorthand for unreleased is deprecated - use the "unreleased" scope token
-    if token == "-":
-        raise click.ClickException(
-            "'-' is not a valid identifier. Use 'unreleased' scope token instead."
-        )
-
     try:
         row_num = int(token)
     except ValueError:

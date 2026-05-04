@@ -45,7 +45,7 @@ class Entry:
 
     @property
     def component(self) -> Optional[str]:
-        """Return the first component (for backwards compatibility)."""
+        """Return the first component."""
         components = self.components
         return components[0] if components else None
 
@@ -63,10 +63,6 @@ class Entry:
     def projects(self) -> list[str]:
         project = self.project
         return [project] if project else []
-
-    @property
-    def products(self) -> list[str]:  # backwards compatibility
-        return self.projects
 
     @property
     def created_at(self) -> Optional[datetime]:
@@ -94,9 +90,9 @@ def read_entry(path: Path) -> Entry:
     frontmatter, _, body = remainder.partition("\n---\n")
     metadata = yaml.safe_load(frontmatter) or {}
     _normalize_created_metadata(metadata)
-    _normalize_prs_metadata(metadata)
-    _normalize_authors_metadata(metadata)
-    _normalize_components_metadata(metadata)
+    _normalize_legacy_list_metadata(metadata, "pr", "prs")
+    _normalize_legacy_list_metadata(metadata, "author", "authors")
+    _normalize_legacy_list_metadata(metadata, "component", "components")
     entry_id = path.stem
     return Entry(
         entry_id=entry_id,
@@ -171,20 +167,8 @@ def normalize_project(
 ) -> Optional[str]:
     """Normalize project metadata to the singular `project` key."""
     project = _coerce_project(metadata.get("project"), source="project")
-    legacy_keys = ("projects", "products")
-
-    if project is None:
-        for key in legacy_keys:
-            if key in metadata:
-                project = _coerce_project(metadata.get(key), source=key)
-            metadata.pop(key, None)
-            if project is not None:
-                break
-        if project is None and default is not None:
-            project = default
-    else:
-        for key in legacy_keys:
-            metadata.pop(key, None)
+    if project is None and default is not None:
+        project = default
 
     if project is None:
         metadata.pop("project", None)
@@ -218,64 +202,39 @@ def _normalize_created_metadata(
     raise ValueError(f"Invalid created datetime value: {raw_created!r}")
 
 
-def _normalize_prs_metadata(metadata: dict[str, Any]) -> None:
-    """Normalize singular `pr` key to plural `prs` key."""
-    if "pr" in metadata:
-        if "prs" in metadata:
-            raise ValueError("Entry cannot have both 'pr' and 'prs' keys; use one or the other.")
-        pr_value = metadata.pop("pr")
-        if pr_value is not None:
-            metadata["prs"] = [pr_value] if not isinstance(pr_value, list) else pr_value
-
-
-def _normalize_authors_metadata(metadata: dict[str, Any]) -> None:
-    """Normalize singular `author` key to plural `authors` key."""
-    if "author" in metadata:
-        if "authors" in metadata:
+def _normalize_legacy_list_metadata(
+    metadata: dict[str, Any], singular_key: str, plural_key: str
+) -> None:
+    """Normalize a singular legacy metadata key to its plural canonical key."""
+    if singular_key in metadata:
+        if plural_key in metadata:
             raise ValueError(
-                "Entry cannot have both 'author' and 'authors' keys; use one or the other."
+                f"Entry cannot have both '{singular_key}' and '{plural_key}' keys; use one or the other."
             )
-        author_value = metadata.pop("author")
-        if author_value is not None:
-            metadata["authors"] = (
-                [author_value] if not isinstance(author_value, list) else author_value
-            )
-    # Also normalize authors if it's a singleton string
-    elif "authors" in metadata:
-        authors_value = metadata["authors"]
-        if authors_value is not None and not isinstance(authors_value, list):
-            metadata["authors"] = [authors_value]
+        value = metadata.pop(singular_key)
+        if value is not None:
+            metadata[plural_key] = value
+    _normalize_list_metadata(metadata, plural_key)
 
 
-def _normalize_components_metadata(metadata: dict[str, Any]) -> None:
-    """Normalize singular `component` key to plural `components` key."""
-    if "component" in metadata:
-        if "components" in metadata:
-            raise ValueError(
-                "Entry cannot have both 'component' and 'components' keys; use one or the other."
-            )
-        component_value = metadata.pop("component")
-        if component_value is not None:
-            if isinstance(component_value, str):
-                stripped = component_value.strip()
-                if stripped:
-                    metadata["components"] = [stripped]
-            elif isinstance(component_value, list):
-                normalized = [str(item).strip() for item in component_value if str(item).strip()]
-                if normalized:
-                    metadata["components"] = normalized
-    elif "components" in metadata:
-        # Normalize existing plural key
-        components_value = metadata["components"]
-        if components_value is not None:
-            if isinstance(components_value, str):
-                stripped = components_value.strip()
-                metadata["components"] = [stripped] if stripped else None
-            elif isinstance(components_value, list):
-                normalized = [str(item).strip() for item in components_value if str(item).strip()]
-                metadata["components"] = normalized if normalized else None
-            if metadata.get("components") is None:
-                metadata.pop("components", None)
+def _normalize_list_metadata(metadata: dict[str, Any], key: str) -> None:
+    """Normalize an optional list metadata field."""
+    if key not in metadata:
+        return
+    value = metadata[key]
+    if value is None:
+        metadata.pop(key, None)
+        return
+    if not isinstance(value, list):
+        value = [value]
+    if key == "prs":
+        normalized = [item for item in value if str(item).strip()]
+    else:
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+    if normalized:
+        metadata[key] = normalized
+    else:
+        metadata.pop(key, None)
 
 
 class _IndentedDumper(yaml.SafeDumper):
@@ -323,7 +282,9 @@ def write_entry(
     project_value = normalize_project(metadata, default=default_project)
     if default_project is not None and project_value == default_project:
         metadata.pop("project", None)
-    _normalize_components_metadata(metadata)
+    _normalize_legacy_list_metadata(metadata, "pr", "prs")
+    _normalize_legacy_list_metadata(metadata, "author", "authors")
+    _normalize_legacy_list_metadata(metadata, "component", "components")
 
     if entry_id is None:
         title = metadata.get("title")

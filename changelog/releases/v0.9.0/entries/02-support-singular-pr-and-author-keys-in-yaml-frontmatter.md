@@ -4,8 +4,10 @@ type: feature
 authors:
 - claude
 - mavam
-pr: 2
-component: cli
+prs:
+  - 2
+components:
+  - cli
 created: 2025-12-03
 ---
 

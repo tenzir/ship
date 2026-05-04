@@ -4,7 +4,8 @@ type: bugfix
 authors:
 - codex
 - mavam
-component: python
+components:
+  - python
 created: 2025-11-10
 ---
 

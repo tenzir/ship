@@ -69,6 +69,11 @@ def test_load_package_config_requires_id(tmp_path: Path) -> None:
         load_package_config(package_path)
 
 
+def test_load_project_config_requires_config_yaml_or_package_metadata(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="No config found"):
+        load_project_config(tmp_path)
+
+
 def test_load_config_uses_tag_prefixed_default_release_commit_message(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     write_yaml(

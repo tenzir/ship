@@ -1,7 +1,8 @@
 ---
 title: Add structured URL fields to JSON export format
 type: feature
-author: mavam
+authors:
+  - mavam
 components: [cli]
 created: 2025-12-15T08:39:53.673596Z
 ---

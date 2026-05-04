@@ -6,7 +6,8 @@ authors:
 - mavam
 prs:
 - 3
-component: cli
+components:
+  - cli
 created: 2025-12-03T18:36:11Z
 ---
 

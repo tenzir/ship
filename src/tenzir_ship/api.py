@@ -6,17 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
 
-from .cli import (
-    CLIContext,
-    ShowView,
-    _get_latest_release_manifest,
-    create_cli_context,
-    create_entry,
-    create_release,
-    publish_release,
-    run_show_entries,
-    run_validate,
-)
+from .cli._add import create_entry
+from .cli._core import CLIContext, create_cli_context
+from .cli._manifests import _get_latest_release_manifest
+from .cli._release import create_release, publish_release
+from .cli._show import ShowView, run_show_entries
+from .cli._validate import run_validate
 from .releases import normalize_release_version, render_release_tag
 
 LiteralMarkdownJson = Literal["markdown", "json"]
@@ -62,9 +57,9 @@ class Changelog:
         """Render entries using the same layouts as ``tenzir-ship show``.
 
         Args:
-            identifiers: Row numbers, entry IDs, release versions, scope tokens,
-                or "-". Scope tokens control which entries to display:
-                "all" (default), "unreleased", "released", or "latest".
+            identifiers: Row numbers, entry IDs, release versions, or scope tokens.
+                Scope tokens control which entries to display: "all" (default),
+                "unreleased", "released", or "latest".
             view: Output format ("table", "card", "markdown", "json").
             project_filter: Filter to specific project IDs.
             component_filter: Filter to specific component labels.

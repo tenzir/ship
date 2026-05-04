@@ -450,10 +450,10 @@ def create_cli_context(
     configure_logging(debug)
 
     if root is None:
-        # No explicit --root: bootstrap into changelog/ subdirectory if needed.
+        # No explicit --root: initialize into changelog/ subdirectory if needed.
         resolved_root = _resolve_project_root(Path("."), bootstrap_in_subdir=True)
     else:
-        # Explicit --root: use that directory as-is for bootstrapping, even when
+        # Explicit --root: use that directory as-is for initialization, even when
         # it does not exist yet.
         resolved_root = root.resolve() if not root.exists() else _resolve_project_root(root)
 
@@ -554,7 +554,7 @@ def _type_emoji(entry_type: str, *, include_emoji: bool = True) -> str:
 
 def _parse_pr_numbers(metadata: Mapping[str, Any]) -> list[int]:
     """Extract PR numbers from metadata, handling various formats."""
-    raw = metadata.get("prs") or metadata.get("pr")
+    raw = metadata.get("prs")
     if raw is None:
         return []
     if isinstance(raw, int):

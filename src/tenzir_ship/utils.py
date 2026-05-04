@@ -361,28 +361,19 @@ def normalize_string_choices(values: object | None) -> tuple[str, ...]:
 
 
 def parse_components(values: object | None) -> dict[str, str]:
-    """Parse components from config, supporting both list and dict formats.
-
-    Accepts:
-      - A list of strings: ["cli", "python"] -> {"cli": "", "python": ""}
-      - A dict mapping names to descriptions: {cli: "desc"} -> {"cli": "desc"}
-      - A single string: "cli" -> {"cli": ""}
-      - None: -> {}
-    """
+    """Parse component descriptions from config."""
     if values is None:
         return {}
-    if isinstance(values, Mapping):
-        result: dict[str, str] = {}
-        for key, value in values.items():
-            name = str(key).strip()
-            if not name:
-                continue
-            desc = str(value).strip() if value else ""
-            result[name] = desc
-        return result
-    # Fall back to list-style parsing
-    names = normalize_string_choices(values)
-    return {name: "" for name in names}
+    if not isinstance(values, Mapping):
+        raise ValueError("Config option 'components' must be a mapping.")
+    result: dict[str, str] = {}
+    for key, value in values.items():
+        name = str(key).strip()
+        if not name:
+            continue
+        desc = str(value).strip() if value else ""
+        result[name] = desc
+    return result
 
 
 def extract_excerpt(text: str) -> str:

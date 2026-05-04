@@ -107,7 +107,8 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert feature_entry.stem == "exciting-feature"
     entry_text = feature_entry.read_text(encoding="utf-8")
     assert "created:" in entry_text
-    assert "pr: 42" in entry_text  # singular form for single PR
+    assert "prs:" in entry_text
+    assert "  - 42" in entry_text
     assert "project:" not in entry_text
     parsed_entry = read_entry(feature_entry)
     assert isinstance(parsed_entry.metadata["created"], datetime)
@@ -964,7 +965,7 @@ def test_init_root_changelog_uses_parent_for_default_metadata(tmp_path: Path) ->
         os.chdir(project_dir)
         result = runner.invoke(
             cli,
-            ["--root", "changelog", "init", "--standalone"],
+            ["--root", "changelog", "init"],
             input="\n\n\n\ny\n",
         )
     finally:
@@ -1007,7 +1008,6 @@ def test_init_with_explicit_nonexistent_root_creates_target(tmp_path: Path) -> N
                 "--root",
                 "nested/changelog",
                 "init",
-                "--standalone",
                 "--yes",
                 "--id",
                 "workspace",
@@ -1349,10 +1349,6 @@ def test_get_unreleased_scope(tmp_path: Path) -> None:
     )
     assert table_result.exit_code == 0, table_result.output
 
-    # Test that '-' as identifier is rejected
-    dash_result = runner.invoke(cli, ["--root", str(project_dir), "show", "--", "-"])
-    assert dash_result.exit_code != 0
-
 
 def test_unreleased_scope_cannot_combine_with_versions(tmp_path: Path) -> None:
     """Test that 'unreleased' scope cannot be combined with version identifiers."""
@@ -1526,8 +1522,8 @@ def test_component_filtering(tmp_path: Path) -> None:
                 "id: sample",
                 "name: Sample Project",
                 "components:",
-                "  - cli",
-                "  - docs",
+                "  cli: Command-line interface",
+                "  docs: Documentation",
             ]
         ),
         encoding="utf-8",

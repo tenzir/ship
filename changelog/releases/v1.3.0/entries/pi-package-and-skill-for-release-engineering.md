@@ -5,7 +5,8 @@ authors:
   - mavam
   - claude
   - codex
-pr: 11
+prs:
+  - 11
 created: 2026-03-01T10:17:24.939854Z
 ---
 

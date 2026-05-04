@@ -1,8 +1,10 @@
 ---
 title: Add --description-file option to add command
 type: feature
-author: mavam
-component: cli
+authors:
+  - mavam
+components:
+  - cli
 created: 2025-12-05T07:10:56.943326Z
 ---
 

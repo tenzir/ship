@@ -7,7 +7,8 @@ authors:
 components:
   - cli
   - python
-pr: 20
+prs:
+  - 20
 created: 2026-03-20T10:00:06.37057Z
 ---
 
