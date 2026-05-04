@@ -1,0 +1,8 @@
+created: 2026-05-04
+title: Validation for unknown entry metadata keys
+intro: >-
+  This release tightens changelog validation so unknown entry metadata keys are reported
+  before they can be ignored by release workflows.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.7.2
