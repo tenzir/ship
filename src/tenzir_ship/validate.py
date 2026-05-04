@@ -21,6 +21,15 @@ if TYPE_CHECKING:
 
 _ALLOWED_CHANGELOG_ROOT_ITEMS = {"config.yaml", "unreleased", "releases"}
 _ALLOWED_RELEASE_ITEMS = {"manifest.yaml", "notes.md", "entries"}
+_ALLOWED_ENTRY_METADATA_KEYS = {
+    "authors",
+    "components",
+    "created",
+    "prs",
+    "project",
+    "title",
+    "type",
+}
 
 
 @dataclass
@@ -192,6 +201,14 @@ def run_structure_validation_with_modules(
 def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
     """Validate a single entry."""
     metadata = entry.metadata
+    unknown_keys = sorted(set(metadata) - _ALLOWED_ENTRY_METADATA_KEYS)
+    if unknown_keys:
+        unknown_display = ", ".join(f"'{key}'" for key in unknown_keys)
+        allowed_display = ", ".join(sorted(_ALLOWED_ENTRY_METADATA_KEYS))
+        yield ValidationIssue(
+            entry.path,
+            f"Unknown metadata key(s) {unknown_display}. Allowed keys: {allowed_display}",
+        )
     title = metadata.get("title")
     if not title:
         yield ValidationIssue(entry.path, "Missing title")

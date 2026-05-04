@@ -5441,6 +5441,20 @@ def test_validate_reports_structure_issues_without_preflight_warning(tmp_path: P
     assert "changelog structure issues detected; release commands may fail." not in result.output
 
 
+def test_validate_rejects_unknown_entry_metadata_key(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "unreleased" / "bad-co-authors.md").write_text(
+        "---\ntitle: Bad co-authors\ntype: change\nco-authors:\n     - codex\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    assert result.exit_code != 0
+    assert "Unknown metadata key(s) 'co-authors'" in result.output
+
+
 def test_release_create_release_candidate_keeps_unreleased_entries(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
