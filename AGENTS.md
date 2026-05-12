@@ -34,10 +34,9 @@
 - Run CLI locally:
   - `uv run tenzir-ship --help`
 - Main checks:
-  - `uv run ruff check`
-  - `uv run ruff format --check`
-  - `uv run mypy`
-  - `uv run pytest`
+  - `uv run lefthook run pre-push --all-files`
+- Apply formatting and safe lint fixes:
+  - `uv run lefthook run fix --all-files`
 - Build package:
   - `uv build`
 
