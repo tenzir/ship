@@ -21,7 +21,7 @@ changelogs, generate release notes, and publish GitHub releases.
 
 `tenzir-ship` ships on PyPI. Use
 [`uvx`](https://docs.astral.sh/uv/concepts/tools/) to fetch and execute the
-latest compatible version on demand (requires Python 3.12+):
+latest compatible version on demand (requires Python 3.13+):
 
 ```sh
 uvx tenzir-ship --help
