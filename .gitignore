@@ -30,6 +30,3 @@ htmlcov/
 
 # Local documentation clone
 .docs/
-
-# Pi agent dependencies
-.pi/npm/
