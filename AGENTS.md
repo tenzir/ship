@@ -33,10 +33,16 @@
   - `uv sync --dev`
 - Run CLI locally:
   - `uv run tenzir-ship --help`
-- Main checks:
+- Local pre-push formatting checks:
   - `uv run lefthook run pre-push --all-files`
 - Apply formatting and safe lint fixes:
   - `uv run lefthook run fix --all-files`
+- Full validation:
+  - `uv run ruff check`
+  - `uv run ruff format --check`
+  - `uv run mypy`
+  - `uv run pytest --durations=10`
+  - `uv run tenzir-ship --root changelog validate`
 - Build package:
   - `uv build`
 
