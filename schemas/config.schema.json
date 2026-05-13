@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tenzir.com/schemas/ship/config.schema.json",
+  "title": "tenzir-ship config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    },
+    "components": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "minLength": 1
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "minLength": 1
+          }
+        }
+      ]
+    },
+    "modules": {
+      "type": "object"
+    },
+    "release": {
+      "type": "object"
+    }
+  }
+}

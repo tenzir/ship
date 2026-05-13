@@ -199,7 +199,7 @@ def test_run_validation_with_modules_prefixes_issues(tmp_path: Path) -> None:
     # Find the module issue
     module_issues = [i for i in issues if "[mymod]" in i.message]
     assert len(module_issues) >= 1
-    assert "Unknown type" in module_issues[0].message
+    assert "Missing type" in module_issues[0].message
 
 
 # --- CLI Tests ---

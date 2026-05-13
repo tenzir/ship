@@ -5451,6 +5451,109 @@ def test_validate_rejects_unknown_entry_metadata_key(tmp_path: Path) -> None:
     assert "Unknown metadata key(s) 'co-authors'" in result.output
 
 
+def test_validate_rejects_invalid_pr_metadata_type(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "unreleased" / "bad-pr.md").write_text(
+        "---\ntitle: Bad PR\ntype: change\nprs: nope\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "metadata.prs[0]: 'nope' is not valid under any of the given schemas" in result.output
+
+
+def test_validate_accepts_numeric_pr_string_metadata(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "unreleased" / "string-pr.md").write_text(
+        "---\ntitle: String PR\ntype: change\nprs: '#42'\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_rejects_invalid_entry_metadata_shapes(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "unreleased" / "bad-shapes.md").write_text(
+        "---\n"
+        "title:\n"
+        "  - Bad title\n"
+        "type:\n"
+        "  - change\n"
+        "authors:\n"
+        "  - codex\n"
+        "  - 7\n"
+        "components:\n"
+        "  - cli\n"
+        "  - false\n"
+        "project:\n"
+        "  - project\n"
+        "---\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "metadata.title: ['Bad title'] is not of type 'string'" in result.output
+    assert "metadata.type: ['change'] is not of type 'string'" in result.output
+    assert "metadata.authors[1]: 7 is not of type 'string'" in result.output
+    assert "metadata.components[1]: False is not of type 'string'" in result.output
+    assert "metadata.project: ['project'] is not of type 'string'" in result.output
+
+
+def test_validate_rejects_invalid_released_entry_metadata(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - bad-released\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "bad-released.md").write_text(
+        "---\ntitle: Bad Released\ntype: change\nprs: nope\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "bad-released.md" in result.output
+    assert "metadata.prs[0]: 'nope' is not valid under any of the given schemas" in result.output
+
+
+def test_validate_rejects_invalid_release_manifest_schema(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    release_dir = project_dir / "releases" / "v1.0.0"
+    release_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries: bad-entry\nmodules:\n  plugin: false\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "manifest.entries: 'bad-entry' is not of type 'array'" in result.output
+    assert "manifest.modules.plugin: False is not of type 'string'" in result.output
+
+
 def test_release_create_release_candidate_keeps_unreleased_entries(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
