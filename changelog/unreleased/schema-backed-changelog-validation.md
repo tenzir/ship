@@ -1,6 +1,11 @@
 ---
 title: Schema-backed changelog validation
 type: bugfix
+authors:
+  - mavam
+  - codex
+prs:
+  - 26
 created: 2026-05-13T00:00:00Z
 ---
 
