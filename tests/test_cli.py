@@ -5513,6 +5513,21 @@ def test_validate_rejects_invalid_entry_metadata_shapes(tmp_path: Path) -> None:
     assert "metadata.project: ['project'] is not of type 'string'" in result.output
 
 
+def test_show_handles_invalid_author_metadata_without_crashing(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    (project_dir / "unreleased" / "bad-author.md").write_text(
+        "---\ntitle: Bad Author\ntype: change\nauthors:\n  - codex\n  - 7\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "show", "--card", "bad-author"])
+
+    assert result.exit_code == 0, result.output
+    assert "@codex, @7" in click.utils.strip_ansi(result.output)
+
+
 def test_validate_rejects_invalid_released_entry_metadata(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"

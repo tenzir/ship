@@ -530,18 +530,33 @@ def _format_section_title(entry_type: str, include_emoji: bool) -> str:
     return f"{emoji} {section_title}"
 
 
-def _format_author(author: str, *, explicit_links: bool = False) -> str:
+def _normalize_author_values(raw_authors: object) -> list[str]:
+    """Return non-empty author values coerced to strings for display/export."""
+    if raw_authors is None:
+        return []
+    values: list[object]
+    if isinstance(raw_authors, str):
+        values = [raw_authors]
+    elif isinstance(raw_authors, list):
+        values = raw_authors
+    else:
+        values = [raw_authors]
+    return [str(author).strip() for author in values if str(author).strip()]
+
+
+def _format_author(author: object, *, explicit_links: bool = False) -> str:
     """Format an author for display, adding @ prefix only for GitHub-style handles.
 
     Args:
         author: The author name or GitHub handle.
         explicit_links: If True, wrap GitHub handles in markdown links.
     """
-    if " " in author:
-        return author
-    handle = f"@{author}"
+    author_text = str(author).strip()
+    if " " in author_text:
+        return author_text
+    handle = f"@{author_text}"
     if explicit_links:
-        return f"[{handle}](https://github.com/{author})"
+        return f"[{handle}](https://github.com/{author_text})"
     return handle
 
 
@@ -597,9 +612,8 @@ def _build_prs_structured(
 
 def _build_authors_structured(metadata: Mapping[str, Any]) -> list[dict[str, str]]:
     """Build structured author objects with URLs for JSON export."""
-    raw_authors = metadata.get("authors") or []
     result: list[dict[str, str]] = []
-    for author in raw_authors:
+    for author in _normalize_author_values(metadata.get("authors")):
         if " " in author:
             # Full name, not a GitHub handle
             result.append({"name": author})
@@ -680,10 +694,7 @@ def _collect_author_pr_text(
     authors = metadata.get("authors")
     if authors is None:
         authors = metadata.get("author")
-    authors = authors or []
-    if isinstance(authors, str):
-        authors = [authors]
-    authors = [author.strip() for author in authors if author and author.strip()]
+    authors = _normalize_author_values(authors)
 
     author_handles = [_format_author(author, explicit_links=explicit_links) for author in authors]
     author_text = _join_with_conjunction(author_handles)
