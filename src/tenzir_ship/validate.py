@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+from importlib import resources
+import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, cast
+
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError
+import yaml
 
 from .config import Config
 from .entries import ENTRY_TYPES, Entry, iter_entries
@@ -30,6 +37,11 @@ _ALLOWED_ENTRY_METADATA_KEYS = {
     "title",
     "type",
 }
+_SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
+_ENTRY_SCHEMA_PATH = _SCHEMA_DIR / "changelog-entry.schema.json"
+_RELEASE_MANIFEST_SCHEMA_PATH = _SCHEMA_DIR / "release-manifest.schema.json"
+_ENTRY_SCHEMA_VALIDATOR: Draft202012Validator | None = None
+_RELEASE_MANIFEST_SCHEMA_VALIDATOR: Draft202012Validator | None = None
 
 
 @dataclass
@@ -198,27 +210,164 @@ def run_structure_validation_with_modules(
     return issues
 
 
+def _load_schema(path: Path) -> dict[str, Any]:
+    if path.exists():
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    schema_text = (
+        resources.files("tenzir_ship").joinpath(f"schemas/{path.name}").read_text(encoding="utf-8")
+    )
+    return cast(dict[str, Any], json.loads(schema_text))
+
+
+def _schema_validator(path: Path) -> Draft202012Validator:
+    if path == _ENTRY_SCHEMA_PATH:
+        global _ENTRY_SCHEMA_VALIDATOR
+        if _ENTRY_SCHEMA_VALIDATOR is None:
+            schema = _load_schema(path)
+            Draft202012Validator.check_schema(schema)
+            _ENTRY_SCHEMA_VALIDATOR = Draft202012Validator(
+                schema,
+                format_checker=FormatChecker(),
+            )
+        return _ENTRY_SCHEMA_VALIDATOR
+    if path == _RELEASE_MANIFEST_SCHEMA_PATH:
+        global _RELEASE_MANIFEST_SCHEMA_VALIDATOR
+        if _RELEASE_MANIFEST_SCHEMA_VALIDATOR is None:
+            schema = _load_schema(path)
+            Draft202012Validator.check_schema(schema)
+            _RELEASE_MANIFEST_SCHEMA_VALIDATOR = Draft202012Validator(
+                schema,
+                format_checker=FormatChecker(),
+            )
+        return _RELEASE_MANIFEST_SCHEMA_VALIDATOR
+    schema = _load_schema(path)
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def _entry_schema_validator() -> Draft202012Validator:
+    return _schema_validator(_ENTRY_SCHEMA_PATH)
+
+
+def _release_manifest_schema_validator() -> Draft202012Validator:
+    return _schema_validator(_RELEASE_MANIFEST_SCHEMA_PATH)
+
+
+def _json_schema_data(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_schema_data(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_schema_data(item) for item in value]
+    return value
+
+
+def _metadata_for_json_schema(metadata: dict[str, Any]) -> dict[str, Any]:
+    converted = _json_schema_data(metadata)
+    if isinstance(converted, dict):
+        return converted
+    return {}
+
+
+def _json_schema_path(error: ValidationError) -> str:
+    parts = ["metadata"]
+    for part in error.absolute_path:
+        if isinstance(part, int):
+            parts[-1] = f"{parts[-1]}[{part}]"
+        else:
+            parts.append(str(part))
+    return ".".join(parts)
+
+
+def _json_schema_issue_path(error: ValidationError, root: str) -> str:
+    parts = [root]
+    for part in error.absolute_path:
+        if isinstance(part, int):
+            parts[-1] = f"{parts[-1]}[{part}]"
+        else:
+            parts.append(str(part))
+    return ".".join(parts)
+
+
+def _is_required_error(error: ValidationError, key: str) -> bool:
+    return error.validator == "required" and key in error.message
+
+
+def _validate_entry_metadata_schema(entry: Entry) -> Iterable[ValidationIssue]:
+    """Validate normalized entry metadata against the changelog entry schema."""
+    schema_metadata = _metadata_for_json_schema(entry.metadata)
+    validator = _entry_schema_validator()
+    errors = sorted(
+        validator.iter_errors(schema_metadata),
+        key=lambda error: (list(error.absolute_path), error.message),
+    )
+    for error in errors:
+        if error.validator == "additionalProperties":
+            unknown_keys = sorted(set(entry.metadata) - _ALLOWED_ENTRY_METADATA_KEYS)
+            if unknown_keys:
+                unknown_display = ", ".join(f"'{key}'" for key in unknown_keys)
+                allowed_display = ", ".join(sorted(_ALLOWED_ENTRY_METADATA_KEYS))
+                yield ValidationIssue(
+                    entry.path,
+                    f"Unknown metadata key(s) {unknown_display}. Allowed keys: {allowed_display}",
+                )
+                continue
+        if _is_required_error(error, "title"):
+            yield ValidationIssue(entry.path, "Missing title")
+            continue
+        if _is_required_error(error, "type"):
+            yield ValidationIssue(entry.path, "Missing type")
+            continue
+        schema_path = _json_schema_path(error)
+        yield ValidationIssue(entry.path, f"{schema_path}: {error.message}")
+
+
+def _validate_release_manifest_schema(path: Path) -> Iterable[ValidationIssue]:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        yield ValidationIssue(path, f"Failed to parse release manifest YAML: {exc}")
+        return
+    schema_data = _json_schema_data(data)
+    validator = _release_manifest_schema_validator()
+    errors = sorted(
+        validator.iter_errors(schema_data),
+        key=lambda error: (list(error.absolute_path), error.message),
+    )
+    for error in errors:
+        issue_path = _json_schema_issue_path(error, "manifest")
+        yield ValidationIssue(path, f"{issue_path}: {error.message}")
+
+
+def _validate_release_manifest_schemas(project_root: Path) -> list[ValidationIssue]:
+    manifests_dir = project_root / "releases"
+    if not manifests_dir.is_dir():
+        return []
+    issues: list[ValidationIssue] = []
+    for manifest_path in sorted(manifests_dir.glob("*/manifest.yaml")):
+        if manifest_path.is_file():
+            issues.extend(_validate_release_manifest_schema(manifest_path))
+    return issues
+
+
 def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
     """Validate a single entry."""
     metadata = entry.metadata
-    unknown_keys = sorted(set(metadata) - _ALLOWED_ENTRY_METADATA_KEYS)
-    if unknown_keys:
-        unknown_display = ", ".join(f"'{key}'" for key in unknown_keys)
-        allowed_display = ", ".join(sorted(_ALLOWED_ENTRY_METADATA_KEYS))
-        yield ValidationIssue(
-            entry.path,
-            f"Unknown metadata key(s) {unknown_display}. Allowed keys: {allowed_display}",
-        )
-    title = metadata.get("title")
-    if not title:
-        yield ValidationIssue(entry.path, "Missing title")
+    yield from _validate_entry_metadata_schema(entry)
     entry_type = metadata.get("type")
-    if entry_type not in ENTRY_TYPES:
+    if isinstance(entry_type, str) and entry_type not in ENTRY_TYPES:
         yield ValidationIssue(
             entry.path,
             f"Unknown type '{entry_type}'. Allowed types: {', '.join(ENTRY_TYPES)}",
         )
-    project = entry.project or config.id
+    try:
+        project = entry.project or config.id
+    except ValueError as exc:
+        yield ValidationIssue(entry.path, str(exc))
+        project = config.id
     if project != config.id:
         yield ValidationIssue(
             entry.path,
@@ -261,7 +410,12 @@ def validate_release_ids(
 def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
     """Validate entries and releases, returning a list of issues."""
     issues: list[ValidationIssue] = run_structure_validation(project_root)
-    releases = list(iter_release_manifests(project_root))
+    issues.extend(_validate_release_manifest_schemas(project_root))
+    try:
+        releases = list(iter_release_manifests(project_root))
+    except (AttributeError, TypeError, ValueError, yaml.YAMLError) as exc:
+        issues.append(ValidationIssue(project_root / "releases", f"Failed to read releases: {exc}"))
+        releases = []
     entries = list(iter_entries(project_root))
     release_entries: list[Entry] = []
     for manifest in releases:

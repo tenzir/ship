@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tenzir.com/schemas/ship/changelog-entry.schema.json",
+  "title": "tenzir-ship changelog entry metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "type"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": ["breaking", "feature", "bugfix", "change"]
+    },
+    "created": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "string",
+          "format": "date"
+        }
+      ]
+    },
+    "authors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S",
+        "minLength": 1
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S",
+        "minLength": 1
+      }
+    },
+    "prs": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "minimum": 1
+          },
+          {
+            "type": "string",
+            "pattern": "^#?[1-9][0-9]*$"
+          }
+        ]
+      }
+    },
+    "project": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    }
+  }
+}

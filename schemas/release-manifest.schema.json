@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tenzir.com/schemas/ship/release-manifest.schema.json",
+  "title": "tenzir-ship release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["created"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    },
+    "created": {
+      "type": "string",
+      "format": "date"
+    },
+    "title": {
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
+    },
+    "intro": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S",
+        "minLength": 1
+      }
+    },
+    "modules": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "\\S",
+        "minLength": 1
+      },
+      "propertyNames": {
+        "minLength": 1
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "pattern": "\\S",
+          "minLength": 1
+        },
+        "previous_stable": {
+          "type": "string",
+          "pattern": "\\S",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

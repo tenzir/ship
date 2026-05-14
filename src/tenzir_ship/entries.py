@@ -230,7 +230,9 @@ def _normalize_list_metadata(metadata: dict[str, Any], key: str) -> None:
     if key == "prs":
         normalized = [item for item in value if str(item).strip()]
     else:
-        normalized = [str(item).strip() for item in value if str(item).strip()]
+        normalized = [
+            item.strip() if isinstance(item, str) else item for item in value if str(item).strip()
+        ]
     if normalized:
         metadata[key] = normalized
     else:
