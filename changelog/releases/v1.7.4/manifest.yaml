@@ -1,0 +1,9 @@
+created: 2026-05-14
+title: Schema-backed changelog validation
+intro: >-
+  This release validates changelog entry metadata and release manifests with JSON
+  Schema. It reports malformed fields such as non-numeric pull request references
+  instead of silently accepting invalid changelog data.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.7.3
