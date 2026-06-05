@@ -2,14 +2,18 @@
 
 `tenzir-ship` is a changelog and release engineering toolkit.
 
-- creating structured changelog entries,
-- generating release notes,
-- validating changelog structure/content,
-- publishing GitHub releases.
+Use cases:
+
+- Creating structured changelog entries
+- Generating release notes
+- Validating changelog structure/content
+- Publishing GitHub releases
 
 ## Documentation
 
-<https://docs.tenzir.com/reference/ship-framework.md>
+Documentation for `tenzir-ship` lives in the `tenzir/docs` GitHub repository.
+When making user-facing changes, update the docs by creating a local clone in
+`.docs` and file a companion PR alongside the main code PR.
 
 ## Repository Layout
 
@@ -33,10 +37,6 @@
   - `uv sync --dev`
 - Run CLI locally:
   - `uv run tenzir-ship --help`
-- Local pre-push formatting checks:
-  - `uv run lefthook run pre-push --all-files`
-- Apply formatting and safe lint fixes:
-  - `uv run lefthook run fix --all-files`
 - Full validation:
   - `uv run ruff check`
   - `uv run ruff format --check`
@@ -48,15 +48,15 @@
 
 ## Releasing
 
-This repo dogfoods its own reusable release workflow. To cut a release, trigger
-the **Release** workflow (`.github/workflows/trigger-release.yaml`) via
-`workflow_dispatch` on GitHub Actions. It calls the reusable
+This repo dogfoods its own reusable release workflow.
+
+To cut a release, trigger the **Release** workflow
+(`.github/workflows/trigger-release.yaml`). It calls the reusable
 `.github/workflows/release.yaml` with project-specific hooks for quality gates,
 version bumping, and PyPI publish.
 
-## Skills
+## Agent skill
 
-The agent skill lives under `skills/tenzir-ship/`.
-Keep the skill and its reference files in sync with key user-facing workflows,
-especially when changing bootstrap/setup, changelog entry, release, or publish
-behavior.
+The `tenzir-ship` agent skill lives under `skills/tenzir-ship/`.
+
+Keep the skill and its reference files in sync with documentation.
