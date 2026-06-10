@@ -3,6 +3,8 @@ title: RC promotion includes entries added after the last candidate
 type: bugfix
 authors:
   - mavam
+prs:
+  - 28
 created: 2026-06-10T16:28:31.963542Z
 ---
 
