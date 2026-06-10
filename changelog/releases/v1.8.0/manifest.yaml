@@ -1,0 +1,10 @@
+created: 2026-06-10
+title: RC promotion with complete changelog notes
+intro: >-
+  This release makes stable promotion from a release candidate include changelog entries
+  added after the last candidate, so the final manifest and notes no longer miss late
+  fixes. It also improves changelog automation guidance and gives the validation status
+  check a clearer name.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.7.4
