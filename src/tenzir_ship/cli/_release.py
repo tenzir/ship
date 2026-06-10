@@ -641,6 +641,11 @@ def _plan_promoted_unreleased_cleanup(
     config: Config,
     source_manifest: ReleaseManifest,
 ) -> tuple[list[Path], list[str]]:
+    """Plan which unreleased entry files the promotion consumes.
+
+    Covers both entries snapshotted in the candidate manifest and entries
+    added to unreleased/ afterwards, since promotion folds in the latter.
+    """
     current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
     unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
     promoted_entries_by_id = {
@@ -667,7 +672,7 @@ def _plan_promoted_unreleased_cleanup(
 
     cleanup_paths: list[Path] = []
     missing_entry_ids: list[str] = []
-    for entry_id in sorted(promoted_entries_by_id):
+    for entry_id in sorted(promoted_entries_by_id.keys() | unreleased_entries_by_id.keys()):
         current_entry = unreleased_entries_by_id.get(entry_id)
         if current_entry is None:
             missing_entry_ids.append(entry_id)
@@ -834,7 +839,11 @@ def create_release(
             project_root, config, active_rc_series
         )
     elif source_manifest is not None:
-        selected_entries = _load_manifest_entries(project_root, source_manifest)
+        # Promotion is cumulative: fold in entries added to unreleased/ after
+        # the candidate snapshot, mirroring how a follow-up RC would.
+        selected_entries = _build_cumulative_release_candidate_entries(
+            project_root, config, active_rc_series
+        )
     else:
         selected_entries = _collect_unused_entries_for_release(
             project_root,
@@ -916,8 +925,16 @@ def create_release(
         table.add_column("Type", no_wrap=True, justify="center")
         table.add_column("ID", style="cyan")
         new_entry_ids = {entry.entry_id for entry in new_entries}
+        # During promotion every entry is "new" relative to the (absent) stable
+        # manifest, so distinguish provenance against the candidate snapshot
+        # instead: carried-over RC entries are "existing", folded-in unreleased
+        # entries are "new".
+        promoted_entry_ids = set(source_manifest.entries) if source_manifest is not None else None
         for entry in entries_sorted:
-            status = "new" if entry.entry_id in new_entry_ids else "existing"
+            if promoted_entry_ids is not None:
+                status = "existing" if entry.entry_id in promoted_entry_ids else "new"
+            else:
+                status = "new" if entry.entry_id in new_entry_ids else "existing"
             status_cell = STATUS_TABLE_CELLS.get(status, Text("•"))
             if isinstance(status_cell, Text):
                 status_cell = status_cell.copy()
@@ -1140,6 +1157,15 @@ def create_release(
         log_success(
             f"synchronized {len(entries_to_sync)} promoted entries in: {relative_release_dir}"
         )
+        snapshot_entry_ids = set(source_manifest.entries)
+        folded_count = sum(
+            1 for entry in entries_to_sync if entry.entry_id not in snapshot_entry_ids
+        )
+        if folded_count:
+            log_success(
+                f"folded {folded_count} unreleased entr{'ies' if folded_count != 1 else 'y'} "
+                f"added after {render_release_tag(source_manifest.version)} into {tag_version}."
+            )
     elif new_entries:
         log_success(f"appended {len(new_entries)} entries to: {relative_release_dir}")
     else:

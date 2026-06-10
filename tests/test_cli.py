@@ -6411,6 +6411,143 @@ def test_release_create_warns_when_promoted_entries_are_missing_from_unreleased(
     assert (project_dir / "releases" / "v1.2.3" / "entries" / "rc-feature.md").exists()
 
 
+def test_release_create_promotion_folds_in_unreleased_entries_added_after_rc(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "RC Feature",
+            "--type",
+            "feature",
+            "--description",
+            "Snapshot me.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    rc_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
+    )
+    assert rc_result.exit_code == 0, rc_result.output
+
+    late_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Late Bugfix",
+            "--type",
+            "bugfix",
+            "--description",
+            "Merged after the last candidate.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert late_entry.exit_code == 0, late_entry.output
+
+    promote_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "--yes",
+        ],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+    assert "folded 1 unreleased entry added after v1.2.3-rc.1" in promote_result.stderr
+
+    release_dir = project_dir / "releases" / "v1.2.3"
+    release_entries = {path.stem for path in (release_dir / "entries").glob("*.md")}
+    assert release_entries == {"rc-feature", "late-bugfix"}
+    assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
+    assert not any((project_dir / "unreleased").glob("*.md"))
+
+    notes = (release_dir / "notes.md").read_text(encoding="utf-8")
+    assert "Snapshot me." in notes
+    assert "Merged after the last candidate." in notes
+
+
+def test_release_create_promotion_folds_entries_across_rc_series(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    entries = [
+        ("First RC Feature", "feature", "In rc1."),
+        ("Second RC Feature", "bugfix", "Added for rc2."),
+        ("Late Bugfix", "bugfix", "Merged after rc2."),
+    ]
+
+    def add_entry(title: str, entry_type: str, description: str) -> None:
+        result = runner.invoke(
+            cli,
+            [
+                "--root",
+                str(project_dir),
+                "add",
+                "--title",
+                title,
+                "--type",
+                entry_type,
+                "--description",
+                description,
+                "--author",
+                "tester",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+    add_entry(*entries[0])
+    rc1_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
+    )
+    assert rc1_result.exit_code == 0, rc1_result.output
+
+    add_entry(*entries[1])
+    rc2_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--rc", "--yes"],
+    )
+    assert rc2_result.exit_code == 0, rc2_result.output
+
+    add_entry(*entries[2])
+    promote_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+
+    release_entries = {
+        path.stem for path in (project_dir / "releases" / "v1.2.3" / "entries").glob("*.md")
+    }
+    assert release_entries == {
+        "first-rc-feature",
+        "second-rc-feature",
+        "late-bugfix",
+    }
+    assert not any((project_dir / "unreleased").glob("*.md"))
+    assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
+    assert not (project_dir / "releases" / "v1.2.3-rc.2").exists()
+
+
 def test_release_create_sequential_release_candidates_include_new_entries(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
