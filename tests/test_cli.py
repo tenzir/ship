@@ -18,7 +18,7 @@ from tenzir_ship.cli import INFO_PREFIX, cli, main
 from tenzir_ship.cli._core import create_cli_context
 from tenzir_ship.cli._show import _collect_unused_entries_for_release
 from tenzir_ship.config import Config, ReleaseConfig, load_config, save_config
-from tenzir_ship.entries import read_entry, write_entry
+from tenzir_ship.entries import ENTRY_DIRECTORY_ANCHOR, read_entry, write_entry
 
 
 def test_cli_version_option(capsys: pytest.CaptureFixture[str]) -> None:
@@ -224,7 +224,8 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "exciting-feature" in release_entry_stems
     assert "remove-legacy-api" in release_entry_stems
     assert "fix-ingest-crash" in release_entry_stems
-    assert not any(entries_dir.iterdir())
+    assert not any(entries_dir.glob("*.md"))
+    assert (entries_dir / ENTRY_DIRECTORY_ANCHOR).exists()
 
     idempotent_result = runner.invoke(
         cli,
@@ -607,6 +608,79 @@ def _bootstrap_changelog_project(project_dir: Path, *, repository: str | None = 
         project_dir / "config.yaml",
     )
     (project_dir / "unreleased").mkdir(parents=True, exist_ok=True)
+
+
+def _run_git(
+    repo: Path,
+    *args: str,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _write_legacy_entry(project_root: Path, entry_id: str, title: str) -> Path:
+    """Write an entry without the current tracked-directory anchor."""
+    entry_path = project_root / "unreleased" / f"{entry_id}.md"
+    entry_path.parent.mkdir(parents=True, exist_ok=True)
+    entry_path.write_text(
+        f"""---
+title: {title}
+type: feature
+created: 2026-01-01T00:00:00Z
+---
+
+{title} body.
+""",
+        encoding="utf-8",
+    )
+    return entry_path
+
+
+def test_release_create_anchors_unreleased_directory_for_git_merges(tmp_path: Path) -> None:
+    runner = CliRunner()
+    repo = tmp_path / "repo"
+    project_dir = repo / "changelog"
+    project_dir.mkdir(parents=True)
+    save_config(Config(id="project", name="Project"), project_dir / "config.yaml")
+    _write_legacy_entry(project_dir, "released-entry", "Released Entry")
+
+    _run_git(repo, "init")
+    _run_git(repo, "config", "user.email", "codex@example.com")
+    _run_git(repo, "config", "user.name", "Codex")
+    _run_git(repo, "config", "commit.gpgsign", "false")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "Base", "--no-gpg-sign")
+    base_branch = _run_git(repo, "branch", "--show-current").stdout.strip()
+
+    _run_git(repo, "checkout", "-b", "feature")
+    _write_legacy_entry(project_dir, "future-entry", "Future Entry")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "Add future changelog", "--no-gpg-sign")
+
+    _run_git(repo, "checkout", base_branch)
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+    assert not any((project_dir / "unreleased").glob("*.md"))
+    assert (project_dir / "unreleased" / ENTRY_DIRECTORY_ANCHOR).exists()
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "Release", "--no-gpg-sign")
+
+    _run_git(repo, "checkout", "feature")
+    merge_result = _run_git(repo, "merge", "--no-edit", base_branch, check=False)
+
+    assert merge_result.returncode == 0, merge_result.stdout + merge_result.stderr
+    assert (project_dir / "unreleased" / "future-entry.md").exists()
+    assert not (project_dir / "releases" / "v1.0.0" / "entries" / "future-entry.md").exists()
 
 
 def test_missing_project_reports_info_message(tmp_path: Path) -> None:
@@ -1689,7 +1763,8 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
     initial_entries = {path.stem for path in release_entries_dir.glob("*.md")}
     assert len(initial_entries) == 2
     unreleased_dir = project_dir / "unreleased"
-    assert not any(unreleased_dir.iterdir())
+    assert not any(unreleased_dir.glob("*.md"))
+    assert (unreleased_dir / ENTRY_DIRECTORY_ANCHOR).exists()
 
     add_gamma = runner.invoke(
         cli,
@@ -1738,7 +1813,8 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
     assert append_apply.exit_code == 0, append_apply.output
     new_release_entries = {path.stem for path in release_entries_dir.glob("*.md")}
     assert gamma_entry in new_release_entries
-    assert not any(unreleased_dir.iterdir())
+    assert not any(unreleased_dir.glob("*.md"))
+    assert (unreleased_dir / ENTRY_DIRECTORY_ANCHOR).exists()
 
     manifest_path = project_dir / "releases" / "v0.3.0" / "manifest.yaml"
     manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))

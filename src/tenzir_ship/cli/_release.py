@@ -20,7 +20,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ..config import DEFAULT_RELEASE_COMMIT_MESSAGE, EXPORT_STYLE_COMPACT, Config
-from ..entries import Entry, iter_entries
+from ..entries import Entry, ensure_entry_directory, iter_entries
 from ..releases import (
     NOTES_FILENAME,
     ReleaseManifest,
@@ -1108,6 +1108,7 @@ def create_release(
 
     release_dir.mkdir(parents=True, exist_ok=True)
     release_entries_dir.mkdir(parents=True, exist_ok=True)
+    ensure_entry_directory(project_root)
 
     if version_file_updates:
         apply_version_file_updates(version_file_updates)

@@ -27,7 +27,7 @@ from ..config import (
     package_metadata_path,
     save_config,
 )
-from ..entries import Entry, entry_directory
+from ..entries import Entry, ensure_entry_directory
 from ..modules import Module, discover_modules_from_config
 from ..utils import (
     INFO_PREFIX,
@@ -313,7 +313,7 @@ def _initialize_project_scaffold(*, project_root: Path, config_path: Path) -> Co
     project_name = _default_project_name(project_id)
     config = Config(id=project_id, name=project_name)
     save_config(config, config_path)
-    entry_directory(project_root).mkdir(parents=True, exist_ok=True)
+    ensure_entry_directory(project_root)
     log_success(f"initialized changelog project at {project_root}")
     return config
 

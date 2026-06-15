@@ -15,7 +15,7 @@ from ..config import (
     package_metadata_path,
     save_config,
 )
-from ..entries import entry_directory
+from ..entries import ensure_entry_directory, entry_directory
 from ..utils import abort_on_user_interrupt, guess_git_remote, log_info, log_success, slugify
 from ._add import _prompt_optional, _prompt_text
 from ._core import CLIContext, DEFAULT_PROJECT_ID
@@ -238,7 +238,7 @@ def init_cmd(
             _confirm_initialization("Initialize package changelog scaffold?")
 
         project_root.mkdir(parents=True, exist_ok=True)
-        entry_directory(project_root).mkdir(parents=True, exist_ok=True)
+        ensure_entry_directory(project_root)
         log_success(f"initialized package changelog at {project_root}")
         return
 
@@ -262,5 +262,5 @@ def init_cmd(
 
     project_root.mkdir(parents=True, exist_ok=True)
     save_config(config, default_config_path(project_root))
-    entry_directory(project_root).mkdir(parents=True, exist_ok=True)
+    ensure_entry_directory(project_root)
     log_success(f"initialized changelog project at {project_root}")
