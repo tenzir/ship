@@ -3,6 +3,8 @@ title: Stable unreleased changelog directory after releases
 type: bugfix
 authors:
   - codex
+prs:
+  - 29
 created: 2026-06-15T15:08:28.822042Z
 ---
 
