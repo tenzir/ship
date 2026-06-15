@@ -1,0 +1,9 @@
+created: 2026-06-15
+title: Keep unreleased changelog entries in place after releases
+intro: >-
+  This release keeps the unreleased changelog directory anchored after creating releases.
+  It prevents changelog entries from long-lived branches from moving into already
+  cut release notes during rebases or merges.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.8.0
