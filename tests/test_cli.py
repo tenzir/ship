@@ -683,6 +683,32 @@ def test_release_create_anchors_unreleased_directory_for_git_merges(tmp_path: Pa
     assert not (project_dir / "releases" / "v1.0.0" / "entries" / "future-entry.md").exists()
 
 
+def test_release_create_restores_missing_unreleased_anchor_for_up_to_date_release(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    _write_legacy_entry(project_dir, "released-entry", "Released Entry")
+
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+
+    anchor_path = project_dir / "unreleased" / ENTRY_DIRECTORY_ANCHOR
+    anchor_path.unlink()
+
+    rerun_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert rerun_result.exit_code == 0, rerun_result.output
+    assert anchor_path.exists()
+    assert "already up to date" not in rerun_result.output
+
+
 def test_missing_project_reports_info_message(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["--root", str(tmp_path), "show"])

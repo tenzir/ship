@@ -20,7 +20,13 @@ from rich.table import Table
 from rich.text import Text
 
 from ..config import DEFAULT_RELEASE_COMMIT_MESSAGE, EXPORT_STYLE_COMPACT, Config
-from ..entries import Entry, ensure_entry_directory, iter_entries
+from ..entries import (
+    ENTRY_DIRECTORY_ANCHOR,
+    Entry,
+    ensure_entry_directory,
+    entry_directory,
+    iter_entries,
+)
 from ..releases import (
     NOTES_FILENAME,
     ReleaseManifest,
@@ -1079,6 +1085,9 @@ def create_release(
     if _normalize_block(readme_content) != _normalize_block(existing_notes_payload):
         changes_required = True
         change_reasons.append("refresh release notes")
+    if not (entry_directory(project_root) / ENTRY_DIRECTORY_ANCHOR).exists():
+        changes_required = True
+        change_reasons.append("restore unreleased directory anchor")
 
     version_file_updates = []
     if not is_prerelease and _is_current_or_newer_release(project_root, version):
