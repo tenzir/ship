@@ -13,6 +13,14 @@ from click import ClickException
 from .utils import coerce_datetime, slugify
 
 UNRELEASED_DIR = Path("unreleased")
+ENTRY_DIRECTORY_ANCHOR = ".gitkeep"
+ENTRY_DIRECTORY_ANCHOR_TEXT = (
+    "# Keep this directory tracked.\n"
+    "#\n"
+    "# Release creation moves changelog entries into releases/<version>/entries.\n"
+    "# Keeping unreleased/ present prevents Git from inferring a directory\n"
+    "# rename and moving entries from long-lived branches into a release.\n"
+)
 ENTRY_TYPES = ("breaking", "feature", "bugfix", "change")
 
 
@@ -78,6 +86,16 @@ class Entry:
 def entry_directory(project_root: Path) -> Path:
     """Return the directory containing unreleased changelog entries."""
     return project_root / UNRELEASED_DIR
+
+
+def ensure_entry_directory(project_root: Path) -> Path:
+    """Create the unreleased entry directory and its tracked anchor file."""
+    directory = entry_directory(project_root)
+    directory.mkdir(parents=True, exist_ok=True)
+    anchor_path = directory / ENTRY_DIRECTORY_ANCHOR
+    if not anchor_path.exists():
+        anchor_path.write_text(ENTRY_DIRECTORY_ANCHOR_TEXT, encoding="utf-8")
+    return directory
 
 
 def read_entry(path: Path) -> Entry:
@@ -273,8 +291,7 @@ def write_entry(
     default_project: Optional[str] = None,
 ) -> Path:
     """Write a new entry file and return its path."""
-    directory = entry_directory(project_root)
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = ensure_entry_directory(project_root)
     entry_type = str(metadata.get("type", "change"))
     if entry_type not in ENTRY_TYPES:
         raise ValueError(
