@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal, Sequence, cast
 
 import click
 
@@ -268,13 +268,7 @@ def _replace_toml_table_version(
     )
 
 
-def _update_package_json(
-    path: Path,
-    content: str,
-    new_version: str,
-    *,
-    skip_if_missing_static_version: bool,
-) -> tuple[str, str | None]:
+def _load_json_object(path: Path, content: str) -> dict[str, object]:
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -282,6 +276,22 @@ def _update_package_json(
 
     if not isinstance(parsed, dict):
         raise click.ClickException(f"Expected a JSON object in {path}.")
+
+    return cast(dict[str, object], parsed)
+
+
+def _dump_json_object(parsed: dict[str, object]) -> str:
+    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
+
+
+def _update_package_json(
+    path: Path,
+    content: str,
+    new_version: str,
+    *,
+    skip_if_missing_static_version: bool,
+) -> tuple[str, str | None]:
+    parsed = _load_json_object(path, content)
 
     if "version" not in parsed:
         if skip_if_missing_static_version:
@@ -298,7 +308,58 @@ def _update_package_json(
         return content, old_value
 
     parsed["version"] = new_version
-    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n", old_value
+    return _dump_json_object(parsed), old_value
+
+
+def _update_package_lock_json(
+    path: Path,
+    content: str,
+    new_version: str,
+) -> tuple[str, str | None]:
+    parsed = _load_json_object(path, content)
+    old_version: str | None = None
+    changed = False
+
+    root_version = parsed.get("version")
+    if root_version is not None:
+        if not isinstance(root_version, str):
+            raise click.ClickException(
+                f"Expected 'version' in {path} to be a string, got {type(root_version).__name__}."
+            )
+        old_version = root_version
+        if root_version != new_version:
+            parsed["version"] = new_version
+            changed = True
+
+    packages = parsed.get("packages")
+    if packages is not None:
+        if not isinstance(packages, dict):
+            raise click.ClickException(
+                f"Expected 'packages' in {path} to be an object, got {type(packages).__name__}."
+            )
+        root_package = packages.get("")
+        if root_package is not None:
+            if not isinstance(root_package, dict):
+                raise click.ClickException(
+                    f"Expected root package metadata in {path} to be an object, "
+                    f"got {type(root_package).__name__}."
+                )
+            root_package_version = root_package.get("version")
+            if root_package_version is not None:
+                if not isinstance(root_package_version, str):
+                    raise click.ClickException(
+                        f"Expected root package 'version' in {path} to be a string, "
+                        f"got {type(root_package_version).__name__}."
+                    )
+                if old_version is None:
+                    old_version = root_package_version
+                if root_package_version != new_version:
+                    root_package["version"] = new_version
+                    changed = True
+
+    if not changed:
+        return content, old_version
+    return _dump_json_object(parsed), old_version
 
 
 def _update_pyproject_like(
@@ -421,6 +482,58 @@ def _plan_single_version_file_update(
     )
 
 
+def _plan_package_lock_json_update(path: Path, new_version: str) -> VersionFileUpdate | None:
+    if not path.is_file():
+        return None
+
+    content = path.read_text(encoding="utf-8")
+    updated_content, old_version = _update_package_lock_json(path, content, new_version)
+    if updated_content == content:
+        return None
+    return VersionFileUpdate(
+        path=path,
+        old_version=old_version,
+        new_version=new_version,
+        content=updated_content,
+    )
+
+
+def _plan_package_json_version_file_updates(
+    path: Path,
+    release_version: str,
+    *,
+    strict: bool,
+) -> list[VersionFileUpdate]:
+    content = path.read_text(encoding="utf-8")
+    new_version = _strip_release_prefix(release_version)
+    updated_content, old_version = _update_package_json(
+        path,
+        content,
+        new_version,
+        skip_if_missing_static_version=not strict,
+    )
+    if old_version is None:
+        return []
+
+    updates: list[VersionFileUpdate] = []
+    if updated_content != content:
+        updates.append(
+            VersionFileUpdate(
+                path=path,
+                old_version=old_version,
+                new_version=new_version,
+                content=updated_content,
+            )
+        )
+
+    package_lock_update = _plan_package_lock_json_update(
+        path.with_name("package-lock.json"), new_version
+    )
+    if package_lock_update is not None:
+        updates.append(package_lock_update)
+    return updates
+
+
 def plan_version_file_updates(
     project_root: Path,
     release_version: str,
@@ -441,6 +554,16 @@ def plan_version_file_updates(
     targets = _resolve_version_file_targets(project_root, explicit_paths)
     updates: list[VersionFileUpdate] = []
     for target in targets:
+        if _version_file_kind(target.path) == "package_json":
+            updates.extend(
+                _plan_package_json_version_file_updates(
+                    target.path,
+                    release_version,
+                    strict=target.explicit,
+                )
+            )
+            continue
+
         update = _plan_single_version_file_update(
             target.path,
             release_version,

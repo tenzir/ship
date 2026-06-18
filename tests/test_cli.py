@@ -2836,6 +2836,138 @@ def test_release_create_updates_detected_package_json_version(tmp_path: Path) ->
     assert package_payload["version"] == "2.3.4"
 
 
+def test_release_create_updates_detected_package_lock_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    package_json_path.write_text(
+        json.dumps({"name": "demo", "version": "0.1.0"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    package_lock_path = project_dir / "package-lock.json"
+    package_lock_path.write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "0.1.0"},
+                    "node_modules/example": {"version": "9.9.9"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Package lock bump",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies package-lock.json bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v2.3.4",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    package_lock_payload = json.loads(package_lock_path.read_text(encoding="utf-8"))
+    assert package_lock_payload["version"] == "2.3.4"
+    assert package_lock_payload["packages"][""]["version"] == "2.3.4"
+    assert package_lock_payload["packages"]["node_modules/example"]["version"] == "9.9.9"
+
+
+def test_release_create_updates_stale_package_lock_when_package_json_is_current(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    package_json_path.write_text(
+        json.dumps({"name": "demo", "version": "2.3.4"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    package_lock_path = project_dir / "package-lock.json"
+    package_lock_path.write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "lockfileVersion": 3,
+                "packages": {"": {"name": "demo", "version": "0.1.0"}},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Stale package lock bump",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies stale package-lock.json bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v2.3.4",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    package_payload = json.loads(package_json_path.read_text(encoding="utf-8"))
+    package_lock_payload = json.loads(package_lock_path.read_text(encoding="utf-8"))
+    assert package_payload["version"] == "2.3.4"
+    assert package_lock_payload["version"] == "2.3.4"
+    assert package_lock_payload["packages"][""]["version"] == "2.3.4"
+
+
 def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -2845,6 +2977,11 @@ def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path
     package_json_path = project_dir / "package.json"
     original_content = json.dumps({"name": "demo", "private": True}, indent=2) + "\n"
     package_json_path.write_text(original_content, encoding="utf-8")
+    package_lock_path = project_dir / "package-lock.json"
+    original_lock_content = (
+        json.dumps({"name": "demo", "version": "0.1.0", "lockfileVersion": 3}, indent=2) + "\n"
+    )
+    package_lock_path.write_text(original_lock_content, encoding="utf-8")
 
     add_result = runner.invoke(
         cli,
@@ -2877,6 +3014,7 @@ def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path
     )
     assert create_result.exit_code == 0, create_result.output
     assert package_json_path.read_text(encoding="utf-8") == original_content
+    assert package_lock_path.read_text(encoding="utf-8") == original_lock_content
 
 
 def test_release_create_version_bump_mode_off_skips_version_files(tmp_path: Path) -> None:
