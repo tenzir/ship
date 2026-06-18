@@ -2,6 +2,7 @@
 title: npm lockfile version updates
 type: feature
 authors:
+  - mavam
   - codex
 prs:
   - 30
