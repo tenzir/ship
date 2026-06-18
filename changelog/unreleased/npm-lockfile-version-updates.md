@@ -3,6 +3,8 @@ title: npm lockfile version updates
 type: feature
 authors:
   - codex
+prs:
+  - 30
 created: 2026-06-18T09:26:46.814972Z
 ---
 
