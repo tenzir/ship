@@ -1,0 +1,9 @@
+created: 2026-06-18
+title: Package lockfile version updates
+intro: >-
+  This release keeps package lockfiles in sync when release creation updates package
+  manifest versions. It updates npm package-lock metadata and regenerates uv lockfile
+  metadata so generated release commits stay consistent.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.8.1
