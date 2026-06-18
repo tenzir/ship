@@ -2410,6 +2410,230 @@ def test_release_create_updates_detected_pyproject_version(tmp_path: Path) -> No
     assert 'version = "1.0.0"' in pyproject_path.read_text(encoding="utf-8")
 
 
+def test_release_create_runs_uv_lock_for_detected_pyproject_with_uv_lock(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    pyproject_path.write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    uv_lock_path = project_dir / "uv.lock"
+    uv_lock_path.write_text('locked-version = "0.1.0"\n', encoding="utf-8")
+
+    fake_bin_dir = tmp_path / "bin"
+    fake_bin_dir.mkdir()
+    fake_uv_path = fake_bin_dir / "uv"
+    fake_uv_path.write_text(
+        """#!/bin/sh
+original="$*"
+project=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --project)
+      project="$2"
+      shift 2
+      ;;
+    --no-progress|lock)
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ -z "$project" ]; then
+  echo "missing --project" >&2
+  exit 2
+fi
+version=$(sed -n 's/^version = "\\(.*\\)"/\\1/p' "$project/pyproject.toml" | head -n 1)
+printf 'locked-version = "%s"\\n' "$version" > "$project/uv.lock"
+printf '%s\\n' "$original" > "$project/uv-args.txt"
+""",
+        encoding="utf-8",
+    )
+    fake_uv_path.chmod(0o755)
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Uv lock bump",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies uv.lock bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        env={"PATH": f"{fake_bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"},
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert 'version = "1.0.0"' in pyproject_path.read_text(encoding="utf-8")
+    assert uv_lock_path.read_text(encoding="utf-8") == 'locked-version = "1.0.0"\n'
+    assert f"--project {project_dir}" in (project_dir / "uv-args.txt").read_text(encoding="utf-8")
+    assert "updated version file:" in create_result.output
+    assert "uv.lock" in create_result.output
+
+
+def test_release_create_fails_before_pyproject_update_when_uv_is_missing(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    pyproject_path = project_dir / "pyproject.toml"
+    original_pyproject = '[project]\nname = "demo"\nversion = "0.1.0"\n'
+    pyproject_path.write_text(original_pyproject, encoding="utf-8")
+    uv_lock_path = project_dir / "uv.lock"
+    original_uv_lock = 'locked-version = "0.1.0"\n'
+    uv_lock_path.write_text(original_uv_lock, encoding="utf-8")
+    empty_bin_dir = tmp_path / "empty-bin"
+    empty_bin_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Uv missing",
+            "--type",
+            "feature",
+            "--description",
+            "Missing uv should fail cleanly.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        env={"PATH": str(empty_bin_dir)},
+    )
+    assert create_result.exit_code != 0
+    assert "'uv' is not installed or not on PATH" in create_result.output
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject
+    assert uv_lock_path.read_text(encoding="utf-8") == original_uv_lock
+
+
+def test_release_create_restores_version_files_when_uv_lock_fails(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    original_package_json = json.dumps({"name": "demo", "version": "0.1.0"}, indent=2) + "\n"
+    package_json_path.write_text(original_package_json, encoding="utf-8")
+    package_lock_path = project_dir / "package-lock.json"
+    original_package_lock = (
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "lockfileVersion": 3,
+                "packages": {"": {"name": "demo", "version": "0.1.0"}},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    package_lock_path.write_text(original_package_lock, encoding="utf-8")
+    pyproject_path = project_dir / "pyproject.toml"
+    original_pyproject = '[project]\nname = "demo"\nversion = "0.1.0"\n'
+    pyproject_path.write_text(original_pyproject, encoding="utf-8")
+    uv_lock_path = project_dir / "uv.lock"
+    original_uv_lock = 'locked-version = "0.1.0"\n'
+    uv_lock_path.write_text(original_uv_lock, encoding="utf-8")
+
+    fake_bin_dir = tmp_path / "bin"
+    fake_bin_dir.mkdir()
+    fake_uv_path = fake_bin_dir / "uv"
+    fake_uv_path.write_text(
+        f"""#!/bin/sh
+printf 'partial lock update\\n' > {uv_lock_path}
+echo 'resolver failed' >&2
+exit 42
+""",
+        encoding="utf-8",
+    )
+    fake_uv_path.chmod(0o755)
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Uv lock failure",
+            "--type",
+            "feature",
+            "--description",
+            "Failing uv lock should roll back version files.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        env={"PATH": f"{fake_bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"},
+    )
+    assert create_result.exit_code != 0
+    assert "Cannot update" in create_result.output
+    assert "resolver failed" in create_result.output
+    assert package_json_path.read_text(encoding="utf-8") == original_package_json
+    assert package_lock_path.read_text(encoding="utf-8") == original_package_lock
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject
+    assert uv_lock_path.read_text(encoding="utf-8") == original_uv_lock
+
+
 def test_release_create_updates_configured_pyproject_version_after_multiline_string(
     tmp_path: Path,
 ) -> None:
@@ -2533,6 +2757,11 @@ def test_release_create_falls_back_to_poetry_version_in_auto_mode(tmp_path: Path
         ),
         encoding="utf-8",
     )
+    uv_lock_path = project_dir / "uv.lock"
+    original_uv_lock = 'locked-version = "0.1.0"\n'
+    uv_lock_path.write_text(original_uv_lock, encoding="utf-8")
+    empty_bin_dir = tmp_path / "empty-bin"
+    empty_bin_dir.mkdir()
 
     add_result = runner.invoke(
         cli,
@@ -2562,9 +2791,11 @@ def test_release_create_falls_back_to_poetry_version_in_auto_mode(tmp_path: Path
             "v1.2.3",
             "--yes",
         ],
+        env={"PATH": str(empty_bin_dir)},
     )
     assert create_result.exit_code == 0, create_result.output
     assert 'version = "1.2.3"' in pyproject_path.read_text(encoding="utf-8")
+    assert uv_lock_path.read_text(encoding="utf-8") == original_uv_lock
 
 
 def test_release_create_falls_back_to_poetry_without_touching_array_table_versions(
@@ -2836,6 +3067,138 @@ def test_release_create_updates_detected_package_json_version(tmp_path: Path) ->
     assert package_payload["version"] == "2.3.4"
 
 
+def test_release_create_updates_detected_package_lock_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    package_json_path.write_text(
+        json.dumps({"name": "demo", "version": "0.1.0"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    package_lock_path = project_dir / "package-lock.json"
+    package_lock_path.write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "0.1.0"},
+                    "node_modules/example": {"version": "9.9.9"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Package lock bump",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies package-lock.json bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v2.3.4",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    package_lock_payload = json.loads(package_lock_path.read_text(encoding="utf-8"))
+    assert package_lock_payload["version"] == "2.3.4"
+    assert package_lock_payload["packages"][""]["version"] == "2.3.4"
+    assert package_lock_payload["packages"]["node_modules/example"]["version"] == "9.9.9"
+
+
+def test_release_create_updates_stale_package_lock_when_package_json_is_current(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    package_json_path.write_text(
+        json.dumps({"name": "demo", "version": "2.3.4"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    package_lock_path = project_dir / "package-lock.json"
+    package_lock_path.write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "lockfileVersion": 3,
+                "packages": {"": {"name": "demo", "version": "0.1.0"}},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Stale package lock bump",
+            "--type",
+            "feature",
+            "--description",
+            "Verifies stale package-lock.json bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v2.3.4",
+            "--yes",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    package_payload = json.loads(package_json_path.read_text(encoding="utf-8"))
+    package_lock_payload = json.loads(package_lock_path.read_text(encoding="utf-8"))
+    assert package_payload["version"] == "2.3.4"
+    assert package_lock_payload["version"] == "2.3.4"
+    assert package_lock_payload["packages"][""]["version"] == "2.3.4"
+
+
 def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -2845,6 +3208,11 @@ def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path
     package_json_path = project_dir / "package.json"
     original_content = json.dumps({"name": "demo", "private": True}, indent=2) + "\n"
     package_json_path.write_text(original_content, encoding="utf-8")
+    package_lock_path = project_dir / "package-lock.json"
+    original_lock_content = (
+        json.dumps({"name": "demo", "version": "0.1.0", "lockfileVersion": 3}, indent=2) + "\n"
+    )
+    package_lock_path.write_text(original_lock_content, encoding="utf-8")
 
     add_result = runner.invoke(
         cli,
@@ -2877,6 +3245,7 @@ def test_release_create_skips_package_json_without_version_in_auto_mode(tmp_path
     )
     assert create_result.exit_code == 0, create_result.output
     assert package_json_path.read_text(encoding="utf-8") == original_content
+    assert package_lock_path.read_text(encoding="utf-8") == original_lock_content
 
 
 def test_release_create_version_bump_mode_off_skips_version_files(tmp_path: Path) -> None:

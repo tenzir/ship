@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal, Sequence, cast
 
 import click
 
@@ -117,6 +119,7 @@ class VersionFileUpdate:
     old_version: str | None
     new_version: str
     content: str
+    uv_lockfile: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -268,13 +271,7 @@ def _replace_toml_table_version(
     )
 
 
-def _update_package_json(
-    path: Path,
-    content: str,
-    new_version: str,
-    *,
-    skip_if_missing_static_version: bool,
-) -> tuple[str, str | None]:
+def _load_json_object(path: Path, content: str) -> dict[str, object]:
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -282,6 +279,22 @@ def _update_package_json(
 
     if not isinstance(parsed, dict):
         raise click.ClickException(f"Expected a JSON object in {path}.")
+
+    return cast(dict[str, object], parsed)
+
+
+def _dump_json_object(parsed: dict[str, object]) -> str:
+    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
+
+
+def _update_package_json(
+    path: Path,
+    content: str,
+    new_version: str,
+    *,
+    skip_if_missing_static_version: bool,
+) -> tuple[str, str | None]:
+    parsed = _load_json_object(path, content)
 
     if "version" not in parsed:
         if skip_if_missing_static_version:
@@ -298,7 +311,58 @@ def _update_package_json(
         return content, old_value
 
     parsed["version"] = new_version
-    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n", old_value
+    return _dump_json_object(parsed), old_value
+
+
+def _update_package_lock_json(
+    path: Path,
+    content: str,
+    new_version: str,
+) -> tuple[str, str | None]:
+    parsed = _load_json_object(path, content)
+    old_version: str | None = None
+    changed = False
+
+    root_version = parsed.get("version")
+    if root_version is not None:
+        if not isinstance(root_version, str):
+            raise click.ClickException(
+                f"Expected 'version' in {path} to be a string, got {type(root_version).__name__}."
+            )
+        old_version = root_version
+        if root_version != new_version:
+            parsed["version"] = new_version
+            changed = True
+
+    packages = parsed.get("packages")
+    if packages is not None:
+        if not isinstance(packages, dict):
+            raise click.ClickException(
+                f"Expected 'packages' in {path} to be an object, got {type(packages).__name__}."
+            )
+        root_package = packages.get("")
+        if root_package is not None:
+            if not isinstance(root_package, dict):
+                raise click.ClickException(
+                    f"Expected root package metadata in {path} to be an object, "
+                    f"got {type(root_package).__name__}."
+                )
+            root_package_version = root_package.get("version")
+            if root_package_version is not None:
+                if not isinstance(root_package_version, str):
+                    raise click.ClickException(
+                        f"Expected root package 'version' in {path} to be a string, "
+                        f"got {type(root_package_version).__name__}."
+                    )
+                if old_version is None:
+                    old_version = root_package_version
+                if root_package_version != new_version:
+                    root_package["version"] = new_version
+                    changed = True
+
+    if not changed:
+        return content, old_version
+    return _dump_json_object(parsed), old_version
 
 
 def _update_pyproject_like(
@@ -379,6 +443,19 @@ def _version_file_kind(path: Path) -> Literal["package_json", "pyproject", "carg
     )
 
 
+def _sibling_uv_lockfile(path: Path) -> Path | None:
+    if path.name != "pyproject.toml":
+        return None
+    uv_lockfile = path.with_name("uv.lock")
+    if not uv_lockfile.is_file():
+        return None
+    return uv_lockfile
+
+
+def _has_static_project_version(content: str, new_version: str) -> bool:
+    return _replace_toml_table_version(content, "project", new_version).found_version
+
+
 def _plan_single_version_file_update(
     path: Path,
     release_version: str,
@@ -418,7 +495,64 @@ def _plan_single_version_file_update(
         old_version=old_version,
         new_version=new_version,
         content=updated_content,
+        uv_lockfile=(
+            _sibling_uv_lockfile(path)
+            if kind == "pyproject" and _has_static_project_version(content, new_version)
+            else None
+        ),
     )
+
+
+def _plan_package_lock_json_update(path: Path, new_version: str) -> VersionFileUpdate | None:
+    if not path.is_file():
+        return None
+
+    content = path.read_text(encoding="utf-8")
+    updated_content, old_version = _update_package_lock_json(path, content, new_version)
+    if updated_content == content:
+        return None
+    return VersionFileUpdate(
+        path=path,
+        old_version=old_version,
+        new_version=new_version,
+        content=updated_content,
+    )
+
+
+def _plan_package_json_version_file_updates(
+    path: Path,
+    release_version: str,
+    *,
+    strict: bool,
+) -> list[VersionFileUpdate]:
+    content = path.read_text(encoding="utf-8")
+    new_version = _strip_release_prefix(release_version)
+    updated_content, old_version = _update_package_json(
+        path,
+        content,
+        new_version,
+        skip_if_missing_static_version=not strict,
+    )
+    if old_version is None:
+        return []
+
+    updates: list[VersionFileUpdate] = []
+    if updated_content != content:
+        updates.append(
+            VersionFileUpdate(
+                path=path,
+                old_version=old_version,
+                new_version=new_version,
+                content=updated_content,
+            )
+        )
+
+    package_lock_update = _plan_package_lock_json_update(
+        path.with_name("package-lock.json"), new_version
+    )
+    if package_lock_update is not None:
+        updates.append(package_lock_update)
+    return updates
 
 
 def plan_version_file_updates(
@@ -441,6 +575,16 @@ def plan_version_file_updates(
     targets = _resolve_version_file_targets(project_root, explicit_paths)
     updates: list[VersionFileUpdate] = []
     for target in targets:
+        if _version_file_kind(target.path) == "package_json":
+            updates.extend(
+                _plan_package_json_version_file_updates(
+                    target.path,
+                    release_version,
+                    strict=target.explicit,
+                )
+            )
+            continue
+
         update = _plan_single_version_file_update(
             target.path,
             release_version,
@@ -451,8 +595,80 @@ def plan_version_file_updates(
     return updates
 
 
-def apply_version_file_updates(updates: Sequence[VersionFileUpdate]) -> None:
+def version_file_update_paths(updates: Sequence[VersionFileUpdate]) -> list[Path]:
+    """Return all manifest and lockfile paths that applying updates may touch."""
+
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for update in updates:
+        for path in (update.path, update.uv_lockfile):
+            if path is None or path in seen:
+                continue
+            paths.append(path)
+            seen.add(path)
+    return paths
+
+
+def _run_uv_lock(uv_lockfile: Path) -> None:
+    project_dir = uv_lockfile.parent
+    result = subprocess.run(
+        ["uv", "--no-progress", "--project", str(project_dir), "lock"],
+        check=False,
+        capture_output=True,
+        cwd=project_dir,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        message = f"Cannot update {uv_lockfile} with 'uv lock'."
+        if details:
+            message = f"{message} {details}"
+        raise click.ClickException(message)
+
+
+def _snapshot_files(paths: Sequence[Path]) -> dict[Path, bytes | None]:
+    snapshots: dict[Path, bytes | None] = {}
+    for path in paths:
+        snapshots[path] = path.read_bytes() if path.exists() else None
+    return snapshots
+
+
+def _restore_file_snapshots(snapshots: dict[Path, bytes | None]) -> None:
+    for path, content in snapshots.items():
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(content)
+
+
+def apply_version_file_updates(updates: Sequence[VersionFileUpdate]) -> list[Path]:
     """Write planned version file updates to disk."""
 
+    uv_lockfiles: list[Path] = []
+    seen_uv_lockfiles: set[Path] = set()
     for update in updates:
-        update.path.write_text(update.content, encoding="utf-8")
+        if update.uv_lockfile is None or update.uv_lockfile in seen_uv_lockfiles:
+            continue
+        uv_lockfiles.append(update.uv_lockfile)
+        seen_uv_lockfiles.add(update.uv_lockfile)
+
+    if uv_lockfiles and shutil.which("uv") is None:
+        lockfile_list = ", ".join(str(path) for path in uv_lockfiles)
+        raise click.ClickException(
+            f"Cannot update {lockfile_list}: 'uv' is not installed or not on PATH."
+        )
+
+    updated_paths = version_file_update_paths(updates)
+    snapshots = _snapshot_files(updated_paths)
+    try:
+        for update in updates:
+            update.path.write_text(update.content, encoding="utf-8")
+
+        for uv_lockfile in uv_lockfiles:
+            _run_uv_lock(uv_lockfile)
+    except Exception:
+        _restore_file_snapshots(snapshots)
+        raise
+
+    return updated_paths
