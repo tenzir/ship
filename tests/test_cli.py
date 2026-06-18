@@ -2550,6 +2550,90 @@ def test_release_create_fails_before_pyproject_update_when_uv_is_missing(
     assert uv_lock_path.read_text(encoding="utf-8") == original_uv_lock
 
 
+def test_release_create_restores_version_files_when_uv_lock_fails(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+
+    package_json_path = project_dir / "package.json"
+    original_package_json = json.dumps({"name": "demo", "version": "0.1.0"}, indent=2) + "\n"
+    package_json_path.write_text(original_package_json, encoding="utf-8")
+    package_lock_path = project_dir / "package-lock.json"
+    original_package_lock = (
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "lockfileVersion": 3,
+                "packages": {"": {"name": "demo", "version": "0.1.0"}},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    package_lock_path.write_text(original_package_lock, encoding="utf-8")
+    pyproject_path = project_dir / "pyproject.toml"
+    original_pyproject = '[project]\nname = "demo"\nversion = "0.1.0"\n'
+    pyproject_path.write_text(original_pyproject, encoding="utf-8")
+    uv_lock_path = project_dir / "uv.lock"
+    original_uv_lock = 'locked-version = "0.1.0"\n'
+    uv_lock_path.write_text(original_uv_lock, encoding="utf-8")
+
+    fake_bin_dir = tmp_path / "bin"
+    fake_bin_dir.mkdir()
+    fake_uv_path = fake_bin_dir / "uv"
+    fake_uv_path.write_text(
+        f"""#!/bin/sh
+printf 'partial lock update\\n' > {uv_lock_path}
+echo 'resolver failed' >&2
+exit 42
+""",
+        encoding="utf-8",
+    )
+    fake_uv_path.chmod(0o755)
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Uv lock failure",
+            "--type",
+            "feature",
+            "--description",
+            "Failing uv lock should roll back version files.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--yes",
+        ],
+        env={"PATH": f"{fake_bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"},
+    )
+    assert create_result.exit_code != 0
+    assert "Cannot update" in create_result.output
+    assert "resolver failed" in create_result.output
+    assert package_json_path.read_text(encoding="utf-8") == original_package_json
+    assert package_lock_path.read_text(encoding="utf-8") == original_package_lock
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject
+    assert uv_lock_path.read_text(encoding="utf-8") == original_uv_lock
+
+
 def test_release_create_updates_configured_pyproject_version_after_multiline_string(
     tmp_path: Path,
 ) -> None:

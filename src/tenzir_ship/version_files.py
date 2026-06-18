@@ -627,6 +627,21 @@ def _run_uv_lock(uv_lockfile: Path) -> None:
         raise click.ClickException(message)
 
 
+def _snapshot_files(paths: Sequence[Path]) -> dict[Path, bytes | None]:
+    snapshots: dict[Path, bytes | None] = {}
+    for path in paths:
+        snapshots[path] = path.read_bytes() if path.exists() else None
+    return snapshots
+
+
+def _restore_file_snapshots(snapshots: dict[Path, bytes | None]) -> None:
+    for path, content in snapshots.items():
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(content)
+
+
 def apply_version_file_updates(updates: Sequence[VersionFileUpdate]) -> list[Path]:
     """Write planned version file updates to disk."""
 
@@ -644,10 +659,16 @@ def apply_version_file_updates(updates: Sequence[VersionFileUpdate]) -> list[Pat
             f"Cannot update {lockfile_list}: 'uv' is not installed or not on PATH."
         )
 
-    for update in updates:
-        update.path.write_text(update.content, encoding="utf-8")
+    updated_paths = version_file_update_paths(updates)
+    snapshots = _snapshot_files(updated_paths)
+    try:
+        for update in updates:
+            update.path.write_text(update.content, encoding="utf-8")
 
-    for uv_lockfile in uv_lockfiles:
-        _run_uv_lock(uv_lockfile)
+        for uv_lockfile in uv_lockfiles:
+            _run_uv_lock(uv_lockfile)
+    except Exception:
+        _restore_file_snapshots(snapshots)
+        raise
 
-    return version_file_update_paths(updates)
+    return updated_paths
