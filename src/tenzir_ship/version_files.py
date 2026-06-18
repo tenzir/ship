@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Sequence, cast
@@ -117,6 +119,7 @@ class VersionFileUpdate:
     old_version: str | None
     new_version: str
     content: str
+    uv_lockfile: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -440,6 +443,19 @@ def _version_file_kind(path: Path) -> Literal["package_json", "pyproject", "carg
     )
 
 
+def _sibling_uv_lockfile(path: Path) -> Path | None:
+    if path.name != "pyproject.toml":
+        return None
+    uv_lockfile = path.with_name("uv.lock")
+    if not uv_lockfile.is_file():
+        return None
+    return uv_lockfile
+
+
+def _has_static_project_version(content: str, new_version: str) -> bool:
+    return _replace_toml_table_version(content, "project", new_version).found_version
+
+
 def _plan_single_version_file_update(
     path: Path,
     release_version: str,
@@ -479,6 +495,11 @@ def _plan_single_version_file_update(
         old_version=old_version,
         new_version=new_version,
         content=updated_content,
+        uv_lockfile=(
+            _sibling_uv_lockfile(path)
+            if kind == "pyproject" and _has_static_project_version(content, new_version)
+            else None
+        ),
     )
 
 
@@ -574,8 +595,59 @@ def plan_version_file_updates(
     return updates
 
 
-def apply_version_file_updates(updates: Sequence[VersionFileUpdate]) -> None:
+def version_file_update_paths(updates: Sequence[VersionFileUpdate]) -> list[Path]:
+    """Return all manifest and lockfile paths that applying updates may touch."""
+
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for update in updates:
+        for path in (update.path, update.uv_lockfile):
+            if path is None or path in seen:
+                continue
+            paths.append(path)
+            seen.add(path)
+    return paths
+
+
+def _run_uv_lock(uv_lockfile: Path) -> None:
+    project_dir = uv_lockfile.parent
+    result = subprocess.run(
+        ["uv", "--no-progress", "--project", str(project_dir), "lock"],
+        check=False,
+        capture_output=True,
+        cwd=project_dir,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        message = f"Cannot update {uv_lockfile} with 'uv lock'."
+        if details:
+            message = f"{message} {details}"
+        raise click.ClickException(message)
+
+
+def apply_version_file_updates(updates: Sequence[VersionFileUpdate]) -> list[Path]:
     """Write planned version file updates to disk."""
+
+    uv_lockfiles: list[Path] = []
+    seen_uv_lockfiles: set[Path] = set()
+    for update in updates:
+        if update.uv_lockfile is None or update.uv_lockfile in seen_uv_lockfiles:
+            continue
+        uv_lockfiles.append(update.uv_lockfile)
+        seen_uv_lockfiles.add(update.uv_lockfile)
+
+    if uv_lockfiles and shutil.which("uv") is None:
+        lockfile_list = ", ".join(str(path) for path in uv_lockfiles)
+        raise click.ClickException(
+            f"Cannot update {lockfile_list}: 'uv' is not installed or not on PATH."
+        )
 
     for update in updates:
         update.path.write_text(update.content, encoding="utf-8")
+
+    for uv_lockfile in uv_lockfiles:
+        _run_uv_lock(uv_lockfile)
+
+    return version_file_update_paths(updates)

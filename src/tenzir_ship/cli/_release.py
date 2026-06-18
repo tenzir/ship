@@ -62,7 +62,11 @@ from ..utils import (
     push_current_branch,
     push_git_tag,
 )
-from ..version_files import apply_version_file_updates, plan_version_file_updates
+from ..version_files import (
+    apply_version_file_updates,
+    plan_version_file_updates,
+    version_file_update_paths,
+)
 from ._core import (
     CLIContext,
     ENTRY_TYPE_EMOJIS,
@@ -1099,7 +1103,7 @@ def create_release(
         )
     if version_file_updates:
         changes_required = True
-        count = len(version_file_updates)
+        count = len(version_file_update_paths(version_file_updates))
         plural = "s" if count != 1 else ""
         change_reasons.append(f"update {count} version file{plural}")
 
@@ -1120,12 +1124,11 @@ def create_release(
     ensure_entry_directory(project_root)
 
     if version_file_updates:
-        apply_version_file_updates(version_file_updates)
-        for update in version_file_updates:
+        for path in apply_version_file_updates(version_file_updates):
             try:
-                display_path = update.path.relative_to(project_root)
+                display_path = path.relative_to(project_root)
             except ValueError:
-                display_path = update.path
+                display_path = path
             log_success(f"updated version file: {display_path}")
 
     entries_to_sync = selected_entries if copy_entries else new_entries
