@@ -174,10 +174,9 @@ implemented.
 
 ## Merge with a related unreleased entry
 
-Before creating a new entry, inspect existing entries in the unreleased queue.
-If the current change completes, corrects, or extends a change that is already
-documented there, merge it into that unreleased entry instead of creating a
-duplicate.
+Before creating a new entry, inspect existing unreleased entries. If the current
+change completes, corrects, or extends a change that is already documented
+there, merge it into that unreleased entry instead of creating a duplicate.
 
 Only merge when the relationship is clear from the user-facing outcome. A
 related entry should describe the same feature, bug, behavior change, or
@@ -195,6 +194,9 @@ When merging into an unreleased entry:
   user-facing outcome.
 - Merge list-valued frontmatter such as `authors`, `prs`, and `components`,
   preserving existing values and appending new distinct values.
+
+Never touch already-released changelog entries outside the `unreleased`
+directory.
 
 ## Create the entry
 
