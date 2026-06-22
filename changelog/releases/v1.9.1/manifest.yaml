@@ -1,0 +1,8 @@
+created: 2026-06-22
+title: Changelog entry PR metadata guidance
+intro: >-
+  This release improves changelog entry guidance so agents avoid premature pull request
+  metadata and rely on automatic pull request inference until a number exists.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.9.0
