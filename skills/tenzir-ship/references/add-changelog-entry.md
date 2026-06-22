@@ -60,7 +60,7 @@ prs:
   - 42
 ```
 
-In CI, include `--pr <number>` when PR number is known from `$GITHUB_EVENT_PATH`.
+In CI, explicitly use the PR number from `$GITHUB_EVENT_PATH`.
 
 ### Description
 
