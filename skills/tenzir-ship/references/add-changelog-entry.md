@@ -210,7 +210,6 @@ uvx tenzir-ship add \
   --title "<title>" \
   --type <type> \
   --description-file /tmp/description.md \
-  --pr <number> \
   --co-author <github-username>
 ```
 
@@ -222,9 +221,11 @@ Notes:
   when you are ready to create the first entry.
 - Pass `--root <path/to/changelog>` to `tenzir-ship` when the changelog is
   not in the top-level directory.
+- Add `--pr <number>` only when the PR number is already known, such as in CI.
+  Otherwise rely on auto-inference or update `prs` after filing the PR.
 - Set `--co-author <github-username>` only to a real GitHub username for
   agent-authored entries, e.g., `claude` or `codex`.
 - For OpenAI-assisted work, use the GitHub username `codex`. For
-  Anthropic-assissted work, use `claude`. Do not use product or model names.
+  Anthropic-assisted work, use `claude`. Do not use product or model names.
 
 On success, remove the temporary description file.
