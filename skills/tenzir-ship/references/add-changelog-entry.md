@@ -46,17 +46,21 @@ self-authored PRs, do not specify `--author` explicitly unless you get an error.
 When adding changelog entries for external contributions, add the GitHub
 username of the contributor.
 
-If the changelog's `config.yaml` sets `omit_author: true`, do not record
-authors at all—neither via `--author`/`--co-author` flags nor by writing
-`authors` into the entry frontmatter. Validation rejects entries that carry
-`authors` metadata in such projects.
+If the project config sets `omit_author: true`, do not record authors at
+all—neither via `--author`/`--co-author` flags nor by writing `authors` into
+the entry frontmatter. Validation rejects entries that carry `authors`
+metadata in such projects. Check the changelog's `config.yaml` for this
+option, or the `package.yaml` next to the changelog directory when no
+`config.yaml` exists.
 
 ### PR numbers
 
-If the changelog's `config.yaml` sets `omit_pr: true`, do not record PR
-numbers at all—neither via `--pr` nor by writing `prs` into the entry
-frontmatter. Validation rejects entries that carry `prs` metadata in such
-projects. Skip the rest of this section.
+If the project config sets `omit_pr: true`, do not record PR numbers at
+all—neither via `--pr` nor by writing `prs` into the entry frontmatter.
+Validation rejects entries that carry `prs` metadata in such projects. Check
+the changelog's `config.yaml` for this option, or the `package.yaml` next to
+the changelog directory when no `config.yaml` exists. Skip the rest of this
+section.
 
 Otherwise: if your branch already has an open pull request, the existing PR
 number will be auto-inferred and you don't have to do anything.
