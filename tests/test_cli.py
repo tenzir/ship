@@ -5951,6 +5951,62 @@ def test_validate_accepts_numeric_pr_string_metadata(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
 
+def test_validate_rejects_prs_metadata_when_omit_pr_configured(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", omit_pr=True),
+        project_dir / "config.yaml",
+    )
+    (project_dir / "unreleased" / "sneaky-pr.md").write_text(
+        "---\ntitle: Sneaky PR\ntype: change\nprs:\n  - 184\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "Entry has 'prs' metadata but the config sets 'omit_pr: true'" in result.output
+
+
+def test_validate_rejects_authors_metadata_when_omit_author_configured(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", omit_author=True),
+        project_dir / "config.yaml",
+    )
+    (project_dir / "unreleased" / "sneaky-author.md").write_text(
+        "---\ntitle: Sneaky author\ntype: change\nauthors:\n  - alice\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "Entry has 'authors' metadata but the config sets 'omit_author: true'" in result.output
+
+
+def test_validate_accepts_entries_without_prs_when_omit_pr_configured(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", omit_pr=True),
+        project_dir / "config.yaml",
+    )
+    (project_dir / "unreleased" / "clean-entry.md").write_text(
+        "---\ntitle: Clean entry\ntype: change\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
 def test_validate_rejects_invalid_entry_metadata_shapes(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"

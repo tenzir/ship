@@ -373,6 +373,17 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
             entry.path,
             f"Unknown project '{project}'. Expected '{config.id}'.",
         )
+    if config.omit_pr and metadata.get("prs"):
+        yield ValidationIssue(
+            entry.path,
+            "Entry has 'prs' metadata but the config sets 'omit_pr: true'. Remove the 'prs' field.",
+        )
+    if config.omit_author and metadata.get("authors"):
+        yield ValidationIssue(
+            entry.path,
+            "Entry has 'authors' metadata but the config sets 'omit_author: true'. "
+            "Remove the 'authors' field.",
+        )
     entry_components = entry.components
     if entry_components and config.components:
         unknown = [c for c in entry_components if c not in config.components]
