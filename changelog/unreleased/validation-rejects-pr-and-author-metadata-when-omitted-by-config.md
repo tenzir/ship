@@ -3,6 +3,8 @@ title: Validation rejects PR and author metadata when omitted by config
 type: change
 authors:
   - zedoraps
+prs:
+  - 32
 created: 2026-07-01T20:32:08.07749Z
 ---
 
