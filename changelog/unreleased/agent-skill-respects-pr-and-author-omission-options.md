@@ -3,6 +3,8 @@ title: Agent skill respects PR and author omission options
 type: change
 authors:
   - zedoraps
+prs:
+  - 33
 created: 2026-07-01T20:44:24.83769Z
 ---
 
