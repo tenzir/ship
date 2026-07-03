@@ -1,0 +1,10 @@
+created: 2026-07-03
+title: Improved PR metadata handling
+intro: >-
+  This release improves how changelog projects handle PR metadata. The new require_pr
+  option lets validation remind you when an unreleased entry still lacks its pull
+  request reference, and projects that set omit_pr or omit_author now get validation
+  support to keep stray metadata from slipping in.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.9.1
