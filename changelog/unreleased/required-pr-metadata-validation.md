@@ -3,6 +3,8 @@ title: Required PR metadata validation
 type: feature
 authors:
   - codex
+prs:
+  - 34
 created: 2026-07-03T10:07:28.575613Z
 ---
 
