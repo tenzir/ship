@@ -95,6 +95,26 @@ def test_python_api_show_delegates(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert captured["include_emoji"] is False
 
 
+def test_python_api_validate_delegates_lenient(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    captured: dict[str, object] = {}
+
+    def fake_run_validate(ctx: cli_module.CLIContext, *, lenient: bool = False) -> None:
+        captured["ctx"] = ctx
+        captured["lenient"] = lenient
+
+    monkeypatch.setattr("tenzir_ship.api.run_validate", fake_run_validate)
+
+    client.validate(lenient=True)
+
+    assert captured["ctx"] is client.context
+    assert captured["lenient"] is True
+
+
 def test_python_api_add_handles_missing_authors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
