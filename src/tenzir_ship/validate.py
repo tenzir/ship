@@ -42,6 +42,7 @@ _ENTRY_SCHEMA_PATH = _SCHEMA_DIR / "changelog-entry.schema.json"
 _RELEASE_MANIFEST_SCHEMA_PATH = _SCHEMA_DIR / "release-manifest.schema.json"
 _ENTRY_SCHEMA_VALIDATOR: Draft202012Validator | None = None
 _RELEASE_MANIFEST_SCHEMA_VALIDATOR: Draft202012Validator | None = None
+MISSING_PR_CODE = "missing-pr"
 
 
 @dataclass
@@ -51,6 +52,7 @@ class ValidationIssue:
     path: Path
     message: str
     severity: str = "error"  # can be "error" or "warning"
+    code: str | None = None
 
 
 def _iter_non_hidden_children(directory: Path) -> Iterable[Path]:
@@ -205,6 +207,7 @@ def run_structure_validation_with_modules(
                     path=issue.path,
                     message=f"[{module.config.id}] {issue.message}",
                     severity=issue.severity,
+                    code=issue.code,
                 )
             )
     return issues
@@ -353,6 +356,10 @@ def _validate_release_manifest_schemas(project_root: Path) -> list[ValidationIss
     return issues
 
 
+def _is_unreleased_entry(entry: Entry) -> bool:
+    return entry.path.parent.name == "unreleased"
+
+
 def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
     """Validate a single entry."""
     metadata = entry.metadata
@@ -383,6 +390,21 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
                 entry.path,
                 f"Unknown component(s) {unknown_display}. Allowed components: {allowed}",
             )
+    if (
+        config.require_pr
+        and not config.omit_pr
+        and _is_unreleased_entry(entry)
+        and not metadata.get("prs")
+    ):
+        yield ValidationIssue(
+            entry.path,
+            (
+                "missing PR reference: this project requires 'prs' metadata "
+                "(require_pr: true); after creating the pull request, add its number to "
+                "this entry's frontmatter, e.g. 'prs: [1234]'"
+            ),
+            code=MISSING_PR_CODE,
+        )
 
 
 def validate_release_ids(
@@ -505,6 +527,7 @@ def run_validation_with_modules(
                 path=issue.path,
                 message=f"[{module.config.id}] {issue.message}",
                 severity=issue.severity,
+                code=issue.code,
             )
             issues.append(prefixed_issue)
 

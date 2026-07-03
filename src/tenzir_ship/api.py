@@ -200,10 +200,10 @@ class Changelog:
             assume_yes=assume_yes,
         )
 
-    def validate(self) -> None:
+    def validate(self, *, lenient: bool = False) -> None:
         """Run the validator against the configured project."""
 
-        run_validate(self._ctx)
+        run_validate(self._ctx, lenient=lenient)
 
     def list_modules(self) -> list[dict[str, Any]]:
         """Return discovered modules as a list of dictionaries.

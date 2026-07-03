@@ -19,6 +19,7 @@ from tenzir_ship.cli._core import create_cli_context
 from tenzir_ship.cli._show import _collect_unused_entries_for_release
 from tenzir_ship.config import Config, ReleaseConfig, load_config, save_config
 from tenzir_ship.entries import ENTRY_DIRECTORY_ANCHOR, read_entry, write_entry
+from tenzir_ship.validate import validate_entry
 
 
 def test_cli_version_option(capsys: pytest.CaptureFixture[str]) -> None:
@@ -5951,6 +5952,175 @@ def test_validate_accepts_numeric_pr_string_metadata(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
 
+def test_validate_requires_pr_when_configured(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    write_entry(
+        project_dir,
+        {"title": "Missing PR", "type": "feature"},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 1
+    assert "missing PR reference" in result.output
+    assert "require_pr: true" in result.output
+    assert "prs: [1234]" in result.output
+
+
+def test_validate_accepts_pr_when_required(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    write_entry(
+        project_dir,
+        {"title": "Recorded PR", "type": "feature", "prs": [123]},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_require_pr_ignores_released_history(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_does_not_require_pr_by_default(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    write_entry(
+        project_dir,
+        {"title": "No PR", "type": "feature"},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_lenient_demotes_missing_pr_issues(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    write_entry(
+        project_dir,
+        {"title": "Missing PR", "type": "feature"},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate", "--lenient"])
+    plain_output = click.utils.strip_ansi(result.output)
+
+    assert result.exit_code == 0, result.output
+    assert "warning issue at" in plain_output
+    assert "missing PR reference" in plain_output
+    assert "validation passed with 1 warning(s)" in plain_output
+
+
+def test_validate_lenient_keeps_non_pr_errors_fatal(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    (project_dir / "unreleased" / "bad-type.md").write_text(
+        "---\ntitle: Bad Type\ntype: mystery\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate", "--lenient"])
+    plain_output = click.utils.strip_ansi(result.output)
+
+    assert result.exit_code == 1
+    assert "warning issue at" in plain_output
+    assert "missing PR reference" in plain_output
+    assert "error issue at" in plain_output
+    assert "metadata.type" in plain_output or "Unknown type" in plain_output
+
+
+def test_validate_lenient_noops_without_require_pr(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    write_entry(
+        project_dir,
+        {"title": "No PR", "type": "feature"},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate", "--lenient"])
+
+    assert result.exit_code == 0, result.output
+    assert "all changelog files look good" in result.output
+
+
+def test_validate_entry_skips_missing_pr_when_config_is_contradictory(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    path = write_entry(
+        project_dir,
+        {"title": "No PR", "type": "feature"},
+        body="Body.",
+        default_project="project",
+    )
+    entry = read_entry(path)
+
+    issues = list(
+        validate_entry(
+            entry,
+            Config(id="project", name="Project", require_pr=True, omit_pr=True),
+        )
+    )
+
+    assert all("missing PR reference" not in issue.message for issue in issues)
+
+
 def test_validate_rejects_invalid_entry_metadata_shapes(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -8283,6 +8453,80 @@ def test_add_omit_pr_config_warns_on_explicit_pr(tmp_path: Path) -> None:
     entry = read_entry(entry_files[0])
     assert "pr" not in entry.metadata
     assert "prs" not in entry.metadata
+
+
+def test_add_warns_when_required_pr_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    save_config(
+        Config(id="test", name="Test Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    monkeypatch.setattr(
+        "tenzir_ship.cli._add.detect_github_pr_number", lambda *args, **kwargs: None
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--author",
+            "testuser",
+            "--description",
+            "Entry without PR.",
+        ],
+    )
+
+    assert add_result.exit_code == 0, add_result.output
+    assert "require_pr: true" in add_result.output
+    assert "prs: [<number>]" in add_result.output
+
+
+def test_add_does_not_warn_when_required_pr_is_recorded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    save_config(
+        Config(id="test", name="Test Project", require_pr=True),
+        project_dir / "config.yaml",
+    )
+    monkeypatch.setattr(
+        "tenzir_ship.cli._add.detect_github_pr_number", lambda *args, **kwargs: None
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--author",
+            "testuser",
+            "--pr",
+            "42",
+            "--description",
+            "Entry with PR.",
+        ],
+    )
+
+    assert add_result.exit_code == 0, add_result.output
+    assert "require_pr: true" not in add_result.output
+    assert "prs: [<number>]" not in add_result.output
 
 
 def test_add_omit_author_config(tmp_path: Path) -> None:

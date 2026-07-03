@@ -56,6 +56,7 @@ class Config:
     export_style: ExportStyle = EXPORT_STYLE_STANDARD
     explicit_links: bool = False
     omit_pr: bool = False
+    require_pr: bool = False
     omit_author: bool = False
     components: dict[str, str] = field(default_factory=dict)
     modules: str | None = None  # glob pattern for nested changelog projects
@@ -101,6 +102,15 @@ def load_config(path: Path) -> Config:
         if not isinstance(omit_pr_raw, bool):
             raise ValueError("Config option 'omit_pr' must be a boolean.")
         omit_pr = omit_pr_raw
+
+    require_pr_raw = raw.get("require_pr")
+    require_pr = False
+    if require_pr_raw is not None:
+        if not isinstance(require_pr_raw, bool):
+            raise ValueError("Config option 'require_pr' must be a boolean.")
+        require_pr = require_pr_raw
+    if require_pr and omit_pr:
+        raise ValueError("Config options 'require_pr' and 'omit_pr' are mutually exclusive.")
 
     omit_author_raw = raw.get("omit_author")
     omit_author = False
@@ -167,6 +177,7 @@ def load_config(path: Path) -> Config:
         export_style=export_style,
         explicit_links=explicit_links,
         omit_pr=omit_pr,
+        require_pr=require_pr,
         omit_author=omit_author,
         components=components,
         modules=modules,
@@ -216,6 +227,15 @@ def load_package_config(path: Path) -> Config:
         if not isinstance(omit_pr_raw, bool):
             raise ValueError("Package metadata option 'omit_pr' must be a boolean.")
         omit_pr = omit_pr_raw
+
+    require_pr_raw = raw.get("require_pr")
+    require_pr = False
+    if require_pr_raw is not None:
+        if not isinstance(require_pr_raw, bool):
+            raise ValueError("Package metadata option 'require_pr' must be a boolean.")
+        require_pr = require_pr_raw
+    if require_pr and omit_pr:
+        raise ValueError("Config options 'require_pr' and 'omit_pr' are mutually exclusive.")
 
     omit_author_raw = raw.get("omit_author")
     omit_author = False
@@ -285,6 +305,7 @@ def load_package_config(path: Path) -> Config:
         export_style=export_style,
         explicit_links=explicit_links,
         omit_pr=omit_pr,
+        require_pr=require_pr,
         omit_author=omit_author,
         components=components,
         modules=modules,
@@ -324,6 +345,8 @@ def dump_config(config: Config) -> dict[str, Any]:
         data["explicit_links"] = config.explicit_links
     if config.omit_pr:
         data["omit_pr"] = config.omit_pr
+    if config.require_pr:
+        data["require_pr"] = config.require_pr
     if config.omit_author:
         data["omit_author"] = config.omit_author
     if config.components:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import click
 
-from ..utils import log_error, log_success
-from ..validate import run_validation, run_validation_with_modules
+from ..utils import log_error, log_success, log_warning
+from ..validate import MISSING_PR_CODE, run_validation, run_validation_with_modules
 from ._core import CLIContext
 
 __all__ = [
@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 
-def run_validate(ctx: CLIContext) -> None:
+def run_validate(ctx: CLIContext, *, lenient: bool = False) -> None:
     """Python wrapper for validating changelog files."""
 
     config = ctx.ensure_config()
@@ -27,15 +27,31 @@ def run_validate(ctx: CLIContext) -> None:
         log_success("all changelog files look good")
         return
 
+    error_count = 0
+    warning_count = 0
     for issue in issues:
         severity_label = issue.severity.lower()
-        log_error(f"{severity_label} issue at {issue.path}: {issue.message}")
-    raise SystemExit(1)
+        if lenient and issue.code == MISSING_PR_CODE:
+            severity_label = "warning"
+        if severity_label == "warning":
+            warning_count += 1
+            log_warning(f"{severity_label} issue at {issue.path}: {issue.message}")
+        else:
+            error_count += 1
+            log_error(f"{severity_label} issue at {issue.path}: {issue.message}")
+    if error_count:
+        raise SystemExit(1)
+    log_warning(f"validation passed with {warning_count} warning(s)")
 
 
 @click.command("validate")
+@click.option(
+    "--lenient",
+    is_flag=True,
+    help="Demote missing-PR issues to warnings instead of errors.",
+)
 @click.pass_obj
-def validate_cmd(ctx: CLIContext) -> None:
+def validate_cmd(ctx: CLIContext, lenient: bool) -> None:
     """Validate entries and release manifests."""
 
-    run_validate(ctx)
+    run_validate(ctx, lenient=lenient)
