@@ -11,9 +11,10 @@ Use cases:
 
 ## Documentation
 
-Documentation for `tenzir-ship` lives in the `tenzir/docs` GitHub repository.
-When making user-facing changes, update the docs by creating a local clone in
-`.docs` and file a companion PR alongside the main code PR.
+Documentation for `tenzir-ship` lives in the `tenzir/content` GitHub repository
+under `website/src/content/docs/`. When making user-facing changes, update the
+docs by creating a local clone in `.docs/` and file a companion PR alongside the
+main code PR.
 
 ## Repository Layout
 
