@@ -50,6 +50,81 @@ def test_dump_config_omits_empty_fields() -> None:
     assert payload == {"id": "node", "name": "Node Project"}
 
 
+def test_load_config_supports_require_pr(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(config_path, {"id": "node", "name": "Node Project", "require_pr": True})
+
+    config = load_config(config_path)
+
+    assert config.require_pr is True
+
+
+def test_load_config_defaults_require_pr_to_false(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(config_path, {"id": "node", "name": "Node Project"})
+
+    config = load_config(config_path)
+
+    assert config.require_pr is False
+
+
+def test_load_config_rejects_non_bool_require_pr(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(config_path, {"id": "node", "name": "Node Project", "require_pr": "yes"})
+
+    with pytest.raises(ValueError, match="require_pr"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_require_pr_with_omit_pr(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "id": "node",
+            "name": "Node Project",
+            "omit_pr": True,
+            "require_pr": True,
+        },
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        load_config(config_path)
+
+
+def test_load_package_config_rejects_require_pr_with_omit_pr(tmp_path: Path) -> None:
+    package_path = tmp_path / "package.yaml"
+    write_yaml(
+        package_path,
+        {
+            "id": "pkg",
+            "name": "Package",
+            "omit_pr": True,
+            "require_pr": True,
+        },
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        load_package_config(package_path)
+
+
+def test_load_package_config_supports_require_pr(tmp_path: Path) -> None:
+    package_path = tmp_path / "package.yaml"
+    write_yaml(package_path, {"id": "pkg", "name": "Package", "require_pr": True})
+
+    config = load_package_config(package_path)
+
+    assert config.require_pr is True
+
+
+def test_dump_config_includes_require_pr_only_when_true() -> None:
+    default_payload = dump_config(Config(id="node", name="Node Project"))
+    require_pr_payload = dump_config(Config(id="node", name="Node Project", require_pr=True))
+
+    assert "require_pr" not in default_payload
+    assert require_pr_payload["require_pr"] is True
+
+
 def test_load_project_config_uses_package_metadata(tmp_path: Path) -> None:
     changelog_root = tmp_path / "package" / "changelog"
     changelog_root.mkdir(parents=True)

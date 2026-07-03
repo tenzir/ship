@@ -344,6 +344,39 @@ def test_cli_validate_with_modules(tmp_path: Path) -> None:
     assert "all changelog files look good" in result.output
 
 
+def test_cli_validate_with_modules_demotes_missing_pr_in_lenient_mode(tmp_path: Path) -> None:
+    """validate --lenient demotes module missing-PR issues."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    write_yaml(
+        mod_root / "config.yaml",
+        {"id": "mymod", "name": "My Module", "require_pr": True},
+    )
+    create_entry(mod_root, "Module Feature")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+
+    runner = CliRunner()
+    strict_result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    lenient_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "validate", "--lenient"],
+    )
+
+    assert strict_result.exit_code == 1
+    assert "[mymod] missing PR reference" in strict_result.output
+    assert lenient_result.exit_code == 0, lenient_result.output
+    assert "warning issue at" in lenient_result.output
+    assert "[mymod] missing PR reference" in lenient_result.output
+    assert "validation passed with 1 warning(s)" in lenient_result.output
+
+
 def test_show_warns_on_module_structure_violation(tmp_path: Path) -> None:
     """Non-release commands warn when module changelog layout is invalid."""
     packages = tmp_path / "packages"

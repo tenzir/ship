@@ -21,6 +21,9 @@
       "pattern": "\\S",
       "minLength": 1
     },
+    "require_pr": {
+      "type": "boolean"
+    },
     "components": {
       "oneOf": [
         {

@@ -6,7 +6,7 @@ pre-push:
     ruff-format:
       run: uv run ruff format --check
     changelog-validate:
-      run: uv run tenzir-ship --root changelog validate
+      run: uv run tenzir-ship --root changelog validate --lenient
 
 fix:
   parallel: false

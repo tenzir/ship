@@ -4,6 +4,7 @@ description: >-
   Ship faster with automated release engineering. Manage changelogs, generate
   release notes, publish GitHub releases.
 repository: tenzir/ship
+require_pr: true
 components:
   cli: The command-line interface of `tenzir-ship`.
   python: User-facing Python API.

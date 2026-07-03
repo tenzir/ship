@@ -286,6 +286,11 @@ def create_entry(
             if inferred_pr is not None:
                 log_info(f"detected open pull request #{inferred_pr} for the current branch.")
                 pr_numbers.append(inferred_pr)
+        if config.require_pr and not pr_numbers:
+            log_warning(
+                "no PR recorded but config sets 'require_pr: true'; add 'prs: [<number>]' "
+                "to the entry after creating the pull request"
+            )
 
     metadata: dict[str, Any] = {
         "title": title,
