@@ -2,6 +2,7 @@
 title: Required PR metadata validation
 type: feature
 authors:
+  - zedoraps
   - codex
 prs:
   - 34
