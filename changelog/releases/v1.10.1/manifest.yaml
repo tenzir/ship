@@ -1,0 +1,8 @@
+created: 2026-07-04
+title: Python 3.12 support
+intro: >-
+  Tenzir Ship now supports Python 3.12 again, ensuring uvx resolves the latest release
+  on GitHub runners and other environments that still default to Python 3.12.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.10.0
