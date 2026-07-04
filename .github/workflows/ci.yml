@@ -18,9 +18,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Keep this status check name stable for the branch ruleset while
+          # exercising the supported lower Python bound.
           - label: Quality / Python 3.13
             os: ubuntu-latest
-            python-version: "3.13"
+            python-version: "3.12"
             task: quality
           - label: Tests / Python 3.14
             os: ubuntu-latest
@@ -127,7 +129,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Set up Python
-        run: uv python install 3.13
+        run: uv python install 3.12
 
       - name: Build package
         run: |
@@ -164,7 +166,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Set up Python
-        run: uv python install 3.13
+        run: uv python install 3.12
 
       - name: Smoke test wheel
-        run: uvx --python 3.13 --from dist/*.whl tenzir-ship --help
+        run: uvx --python 3.12 --from dist/*.whl tenzir-ship --help

@@ -56,7 +56,7 @@ jobs:
       title: ${{ inputs.title }}
       git-add-paths: pyproject.toml uv.lock
       pre-create: |
-        uv sync --python 3.13 --dev
+        uv sync --python 3.12 --dev
         uv run ruff check
         uv run ruff format --check
         uv run mypy
