@@ -3,7 +3,7 @@ name = "tenzir-ship"
 version = "1.10.0"
 description = "Reusable changelog management toolkit for Tenzir repositories."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 authors = [{ name = "Tenzir", email = "engineering@tenzir.com" }]
 maintainers = [{ name = "Tenzir Engineering", email = "engineering@tenzir.com" }]
 license = { text = "Apache-2.0" }
@@ -14,6 +14,7 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Version Control",
@@ -70,7 +71,7 @@ exclude = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py312"
 line-length = 100
 src = ["src"]
 
@@ -95,7 +96,7 @@ pythonpath = ["src"]
 
 [tool.mypy]
 files = ["src"]
-python_version = "3.13"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
