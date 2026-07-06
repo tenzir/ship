@@ -644,6 +644,47 @@ created: 2026-01-01T00:00:00Z
     return entry_path
 
 
+def _set_repository(project_dir: Path, repository: str = "tenzir/example") -> None:
+    config_path = project_dir / "config.yaml"
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_data["repository"] = repository
+    config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
+
+
+def _captured_title(command: list[str]) -> str | None:
+    return command[command.index("--title") + 1] if "--title" in command else None
+
+
+def _rewrite_release_manifest_title(project_dir: Path, tag: str, title: str) -> None:
+    manifest_path = project_dir / "releases" / tag / "manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["title"] = title
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+
+
+def _setup_publishable_release(
+    project_dir: Path,
+    runner: CliRunner,
+    *,
+    tag: str = "v1.0.0",
+    title: str | None = None,
+) -> None:
+    _create_project_with_entry(
+        project_dir,
+        "project",
+        "Project",
+        entry_id="feature-one",
+        title="Feature One",
+        created=date(2026, 1, 1),
+    )
+    create_args = ["--root", str(project_dir), "release", "create", tag, "--yes"]
+    if title is not None:
+        create_args[5:5] = ["--title", title]
+    create_result = runner.invoke(cli, create_args)
+    assert create_result.exit_code == 0, create_result.output
+    _set_repository(project_dir)
+
+
 def test_release_create_anchors_unreleased_directory_for_git_merges(tmp_path: Path) -> None:
     runner = CliRunner()
     repo = tmp_path / "repo"
@@ -3992,8 +4033,123 @@ def test_release_publish_uses_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert "v3.0.0" in recorded_args
     assert "--repo" in recorded_args and "tenzir/example" in recorded_args
     assert "--notes-file" in recorded_args
+    assert _captured_title(recorded_args) == "Project v3.0.0"
     # Ensure existence check ran first.
     assert commands[0][:3] == ["/usr/bin/gh", "release", "view"]
+
+
+def test_release_publish_composes_github_title_from_release_title(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner, title="Faster ingest")
+
+    commands: list[list[str]] = []
+
+    def fake_which(command: str) -> str:
+        assert command == "gh"
+        return "/usr/bin/gh"
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        commands.append(args)
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    publish_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "publish", "v1.0.0", "--yes"],
+    )
+
+    assert publish_result.exit_code == 0, publish_result.output
+    assert _captured_title(commands[-1]) == "Project v1.0.0: Faster ingest"
+    manifest = yaml.safe_load(
+        (project_dir / "releases" / "v1.0.0" / "manifest.yaml").read_text(encoding="utf-8")
+    )
+    assert manifest["title"] == "Faster ingest"
+
+
+@pytest.mark.parametrize(
+    "stored_title",
+    ["v1.0.0", "Project v1.0.0", "Project: v1.0.0"],
+)
+def test_release_publish_omits_default_title_component(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stored_title: str
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+    _rewrite_release_manifest_title(project_dir, "v1.0.0", stored_title)
+
+    commands: list[list[str]] = []
+
+    def fake_which(command: str) -> str:
+        assert command == "gh"
+        return "/usr/bin/gh"
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        commands.append(args)
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    publish_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "publish", "v1.0.0", "--yes"],
+    )
+
+    assert publish_result.exit_code == 0, publish_result.output
+    assert _captured_title(commands[-1]) == "Project v1.0.0"
+
+
+def test_release_publish_custom_github_title_format(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner, title="Faster ingest")
+
+    commands: list[list[str]] = []
+
+    def fake_which(command: str) -> str:
+        assert command == "gh"
+        return "/usr/bin/gh"
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        commands.append(args)
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", fake_which)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    publish_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v1.0.0",
+            "--title",
+            "$PROJECT $VERSION - $TITLE",
+            "--yes",
+        ],
+    )
+
+    assert publish_result.exit_code == 0, publish_result.output
+    assert _captured_title(commands[-1]) == "Project v1.0.0 - Faster ingest"
 
 
 def test_release_publish_retry_hint_preserves_bracketed_title(
@@ -4071,7 +4227,7 @@ def test_release_publish_retry_hint_preserves_bracketed_title(
     assert publish_result.exit_code != 0
     plain_output = click.utils.strip_ansi(publish_result.output)
     assert "To retry the failed step, run:" in plain_output
-    assert "--title '[LTS] Stable'" in plain_output
+    assert "--title 'Project v3.1.0: [LTS] Stable'" in plain_output
 
 
 def test_release_publish_updates_existing_release(
@@ -4150,6 +4306,7 @@ def test_release_publish_updates_existing_release(
     assert publish_result.exit_code == 0, publish_result.output
     assert calls[0][:3] == ["/usr/bin/gh", "release", "view"]
     assert calls[1][:3] == ["/usr/bin/gh", "release", "edit"]
+    assert _captured_title(calls[1]) == "Project v4.0.0"
 
 
 def test_release_publish_handles_abort(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from string import Template
 from typing import Literal, NoReturn, Optional, cast
 
 import click
@@ -742,6 +743,40 @@ def _build_module_release_plan(
     return ModuleReleasePlan(entries_by_module, current_versions, previous_release)
 
 
+DEFAULT_GITHUB_RELEASE_TITLE_FORMAT = "$PROJECT $VERSION: $TITLE"
+
+
+def _release_title_component(project_name: str, tag_version: str, manifest_title: str) -> str:
+    """Return the meaningful title segment for a GitHub release title."""
+    title = manifest_title.strip()
+    default_titles = {
+        tag_version,
+        f"{project_name} {tag_version}",
+        f"{project_name}: {tag_version}",
+    }
+    if title in default_titles:
+        return ""
+    return title
+
+
+def _format_github_release_title(
+    project_name: str,
+    tag_version: str,
+    manifest_title: str,
+    github_title_format: str | None,
+) -> str:
+    """Resolve the title passed to ``gh release create/edit --title``."""
+    title = _release_title_component(project_name, tag_version, manifest_title)
+    if github_title_format is None:
+        default_title = f"{project_name} {tag_version}"
+        return f"{default_title}: {title}" if title else default_title
+    return Template(github_title_format).safe_substitute(
+        PROJECT=project_name,
+        VERSION=tag_version,
+        TITLE=title,
+    )
+
+
 def create_release(
     ctx: CLIContext,
     *,
@@ -1205,6 +1240,7 @@ def publish_release(
     create_commit: bool,
     commit_message: str | None,
     assume_yes: bool,
+    github_title_format: str | None = None,
 ) -> None:
     """Python wrapper around the ``release publish`` command."""
 
@@ -1227,6 +1263,12 @@ def publish_release(
 
     release_version = normalize_release_version(manifest.version)
     tag_name = render_release_tag(release_version)
+    github_release_title = _format_github_release_title(
+        config.name,
+        tag_name,
+        manifest.title,
+        github_title_format,
+    )
     release_dir = release_manifest_root(project_root, manifest)
     notes_path = release_dir / NOTES_FILENAME
     if not notes_path.exists():
@@ -1334,8 +1376,8 @@ def publish_release(
             "--notes-file",
             str(notes_path),
         ]
-        if manifest.title:
-            command.extend(["--title", manifest.title])
+        if github_release_title:
+            command.extend(["--title", github_release_title])
         if resolved_prerelease:
             command.append("--prerelease")
         if resolved_no_latest:
@@ -1352,8 +1394,8 @@ def publish_release(
             "--notes-file",
             str(notes_path),
         ]
-        if manifest.title:
-            command.extend(["--title", manifest.title])
+        if github_release_title:
+            command.extend(["--title", github_release_title])
         if draft:
             command.append("--draft")
         if resolved_prerelease:
@@ -1524,6 +1566,14 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
 @release_group.command("publish")
 @click.argument("version", required=False)
 @click.option(
+    "--title",
+    "github_title_format",
+    help=(
+        "Format for the GitHub release title, using $PROJECT, $VERSION, and "
+        f"$TITLE placeholders. Default: {DEFAULT_GITHUB_RELEASE_TITLE_FORMAT!r}."
+    ),
+)
+@click.option(
     "--draft/--no-draft",
     default=False,
     help="Create the GitHub release as a draft.",
@@ -1564,6 +1614,7 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
 def release_publish_cmd(
     ctx: CLIContext,
     version: Optional[str],
+    github_title_format: Optional[str],
     draft: bool,
     prerelease: bool,
     no_latest: bool,
@@ -1596,4 +1647,5 @@ def release_publish_cmd(
         create_commit=create_commit,
         commit_message=commit_message,
         assume_yes=assume_yes,
+        github_title_format=github_title_format,
     )

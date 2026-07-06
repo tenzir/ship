@@ -175,6 +175,7 @@ class Changelog:
         create_commit: bool = False,
         commit_message: str | None = None,
         assume_yes: bool = False,
+        title: str | None = None,
     ) -> None:
         """Publish a release to GitHub using the same workflow as the CLI.
 
@@ -198,6 +199,7 @@ class Changelog:
             create_commit=create_commit,
             commit_message=commit_message,
             assume_yes=assume_yes,
+            github_title_format=title,
         )
 
     def validate(self, *, lenient: bool = False) -> None:
