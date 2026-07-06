@@ -14,12 +14,22 @@ created: 2026-07-06T17:30:00Z
 ---
 
 The `release publish` command now formats GitHub release titles as
-`PROJECT VERSION: TITLE` by default:
+`PROJECT VERSION: TITLE` by default when the release has a title:
 
 ```sh
 tenzir-ship release create v1.2.3 --title "Faster ingest"
 tenzir-ship release publish v1.2.3
 # GitHub release title: "Tenzir Ship v1.2.3: Faster ingest"
+```
+
+When the release has no title, `release create` leaves the manifest `title`
+absent and GitHub receives `PROJECT VERSION` without the trailing `: TITLE`
+segment:
+
+```sh
+tenzir-ship release create v1.2.3
+tenzir-ship release publish v1.2.3
+# GitHub release title: "Tenzir Ship v1.2.3"
 ```
 
 This keeps the release manifest title focused on the release itself while

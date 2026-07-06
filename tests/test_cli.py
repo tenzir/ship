@@ -214,7 +214,7 @@ def test_add_initializes_and_release(tmp_path: Path) -> None:
     assert "description" not in manifest_data
     assert manifest_data["intro"] == "Welcome to the release!\n\n![Image](assets/hero.png)"
     assert "entries" not in manifest_data
-    assert manifest_data.get("title", "").endswith("v1.0.0")
+    assert "title" not in manifest_data
 
     release_entries_dir = release_dir / "entries"
     assert release_entries_dir.is_dir()
@@ -4074,17 +4074,16 @@ def test_release_publish_composes_github_title_from_release_title(
     assert manifest["title"] == "Faster ingest"
 
 
-@pytest.mark.parametrize(
-    "stored_title",
-    ["v1.0.0", "Project v1.0.0", "Project: v1.0.0"],
-)
-def test_release_publish_omits_default_title_component(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stored_title: str
+def test_release_publish_omits_title_component_when_manifest_has_no_title(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     _setup_publishable_release(project_dir, runner)
-    _rewrite_release_manifest_title(project_dir, "v1.0.0", stored_title)
+    manifest = yaml.safe_load(
+        (project_dir / "releases" / "v1.0.0" / "manifest.yaml").read_text(encoding="utf-8")
+    )
+    assert "title" not in manifest
 
     commands: list[list[str]] = []
 

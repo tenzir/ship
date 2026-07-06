@@ -746,17 +746,9 @@ def _build_module_release_plan(
 DEFAULT_GITHUB_RELEASE_TITLE_FORMAT = "$PROJECT $VERSION: $TITLE"
 
 
-def _release_title_component(project_name: str, tag_version: str, manifest_title: str) -> str:
+def _release_title_component(manifest_title: str) -> str:
     """Return the meaningful title segment for a GitHub release title."""
-    title = manifest_title.strip()
-    default_titles = {
-        tag_version,
-        f"{project_name} {tag_version}",
-        f"{project_name}: {tag_version}",
-    }
-    if title in default_titles:
-        return ""
-    return title
+    return manifest_title.strip()
 
 
 def _format_github_release_title(
@@ -766,7 +758,7 @@ def _format_github_release_title(
     github_title_format: str | None,
 ) -> str:
     """Resolve the title passed to ``gh release create/edit --title``."""
-    title = _release_title_component(project_name, tag_version, manifest_title)
+    title = _release_title_component(manifest_title)
     if github_title_format is None:
         default_title = f"{project_name} {tag_version}"
         return f"{default_title}: {title}" if title else default_title
@@ -924,14 +916,9 @@ def create_release(
     if title is not None and not title_explicit:
         # Treat explicitly provided empty strings as intentional overrides.
         title_explicit = True
-    default_release_title = f"{config.name} {tag_version}"
     source_release_title = None
     if metadata_source_manifest is not None:
-        source_tag = render_release_tag(metadata_source_manifest.version)
-        if metadata_source_manifest.title in {source_tag, f"{config.name} {source_tag}"}:
-            source_release_title = default_release_title
-        else:
-            source_release_title = metadata_source_manifest.title
+        source_release_title = metadata_source_manifest.title
     release_title = (
         title
         if title_explicit
@@ -939,7 +926,7 @@ def create_release(
         if source_release_title is not None
         else existing_manifest.title
         if existing_manifest
-        else default_release_title
+        else ""
     )
 
     if intro_text and intro_file:
