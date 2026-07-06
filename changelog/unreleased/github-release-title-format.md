@@ -2,6 +2,8 @@
 title: GitHub release title formatting
 type: feature
 authors:
+  - IyeOnline
+  - mavam
   - codex
 components:
   - cli
@@ -22,6 +24,18 @@ tenzir-ship release publish v1.2.3
 
 This keeps the release manifest title focused on the release itself while
 making GitHub release pages show the project and version more clearly. To
-customize the GitHub title, pass a format string with `$PROJECT`, `$VERSION`,
-and `$TITLE` to `release publish --title` or
-`Changelog.release_publish(title=...)`.
+customize the GitHub title, pass a format string to `release publish --title`
+or `Changelog.release_publish(title=...)`:
+
+```sh
+tenzir-ship release publish v1.2.3 --title '[$PROJECT $VERSION] $TITLE'
+# GitHub release title: "[Tenzir Ship v1.2.3] Faster ingest"
+```
+
+The `$PROJECT`, `$VERSION`, and `$TITLE` variables are optional. A plain string
+without variables overrides the GitHub title literally:
+
+```sh
+tenzir-ship release publish v1.2.3 --title "Faster ingest"
+# GitHub release title: "Faster ingest"
+```
