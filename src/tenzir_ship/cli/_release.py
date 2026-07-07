@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from string import Template
 from typing import Literal, NoReturn, Optional, cast
 
 import click
@@ -742,6 +743,32 @@ def _build_module_release_plan(
     return ModuleReleasePlan(entries_by_module, current_versions, previous_release)
 
 
+DEFAULT_GITHUB_RELEASE_TITLE_FORMAT = "$PROJECT $VERSION: $TITLE"
+
+
+def _release_title_component(manifest_title: str) -> str:
+    """Return the meaningful title segment for a GitHub release title."""
+    return manifest_title.strip()
+
+
+def _format_github_release_title(
+    project_name: str,
+    tag_version: str,
+    manifest_title: str,
+    github_title_format: str | None,
+) -> str:
+    """Resolve the title passed to ``gh release create/edit --title``."""
+    title = _release_title_component(manifest_title)
+    if github_title_format is None:
+        default_title = f"{project_name} {tag_version}"
+        return f"{default_title}: {title}" if title else default_title
+    return Template(github_title_format).safe_substitute(
+        PROJECT=project_name,
+        VERSION=tag_version,
+        TITLE=title,
+    )
+
+
 def create_release(
     ctx: CLIContext,
     *,
@@ -889,14 +916,9 @@ def create_release(
     if title is not None and not title_explicit:
         # Treat explicitly provided empty strings as intentional overrides.
         title_explicit = True
-    default_release_title = f"{config.name} {tag_version}"
     source_release_title = None
     if metadata_source_manifest is not None:
-        source_tag = render_release_tag(metadata_source_manifest.version)
-        if metadata_source_manifest.title in {source_tag, f"{config.name} {source_tag}"}:
-            source_release_title = default_release_title
-        else:
-            source_release_title = metadata_source_manifest.title
+        source_release_title = metadata_source_manifest.title
     release_title = (
         title
         if title_explicit
@@ -904,7 +926,7 @@ def create_release(
         if source_release_title is not None
         else existing_manifest.title
         if existing_manifest
-        else default_release_title
+        else ""
     )
 
     if intro_text and intro_file:
@@ -1205,6 +1227,7 @@ def publish_release(
     create_commit: bool,
     commit_message: str | None,
     assume_yes: bool,
+    github_title_format: str | None = None,
 ) -> None:
     """Python wrapper around the ``release publish`` command."""
 
@@ -1227,6 +1250,12 @@ def publish_release(
 
     release_version = normalize_release_version(manifest.version)
     tag_name = render_release_tag(release_version)
+    github_release_title = _format_github_release_title(
+        config.name,
+        tag_name,
+        manifest.title,
+        github_title_format,
+    )
     release_dir = release_manifest_root(project_root, manifest)
     notes_path = release_dir / NOTES_FILENAME
     if not notes_path.exists():
@@ -1334,8 +1363,8 @@ def publish_release(
             "--notes-file",
             str(notes_path),
         ]
-        if manifest.title:
-            command.extend(["--title", manifest.title])
+        if github_release_title:
+            command.extend(["--title", github_release_title])
         if resolved_prerelease:
             command.append("--prerelease")
         if resolved_no_latest:
@@ -1352,8 +1381,8 @@ def publish_release(
             "--notes-file",
             str(notes_path),
         ]
-        if manifest.title:
-            command.extend(["--title", manifest.title])
+        if github_release_title:
+            command.extend(["--title", github_release_title])
         if draft:
             command.append("--draft")
         if resolved_prerelease:
@@ -1524,6 +1553,14 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
 @release_group.command("publish")
 @click.argument("version", required=False)
 @click.option(
+    "--title",
+    "github_title_format",
+    help=(
+        "Format for the GitHub release title, using $PROJECT, $VERSION, and "
+        f"$TITLE placeholders. Default: {DEFAULT_GITHUB_RELEASE_TITLE_FORMAT!r}."
+    ),
+)
+@click.option(
     "--draft/--no-draft",
     default=False,
     help="Create the GitHub release as a draft.",
@@ -1564,6 +1601,7 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
 def release_publish_cmd(
     ctx: CLIContext,
     version: Optional[str],
+    github_title_format: Optional[str],
     draft: bool,
     prerelease: bool,
     no_latest: bool,
@@ -1596,4 +1634,5 @@ def release_publish_cmd(
         create_commit=create_commit,
         commit_message=commit_message,
         assume_yes=assume_yes,
+        github_title_format=github_title_format,
     )

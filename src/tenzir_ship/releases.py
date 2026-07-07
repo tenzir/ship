@@ -202,9 +202,7 @@ def iter_release_manifests(project_root: Path) -> Iterable[ReleaseManifest]:
 
         version_value = data.get("version") or path.parent.name
 
-        title_value = str(data.get("title", ""))
-        if not title_value:
-            title_value = render_release_tag(str(version_value))
+        title_value = str(data.get("title", "") or "")
 
         entry_values = data.get("entries")
         raw_modules = data.get("modules")
