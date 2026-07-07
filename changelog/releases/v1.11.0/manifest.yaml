@@ -1,0 +1,9 @@
+created: 2026-07-07
+title: GitHub release title formatting
+intro: >-
+  This release improves GitHub release titles by including the project name, version,
+  and release title by default. It keeps untitled releases clean while allowing custom
+  title formats through the CLI and Python API.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.10.1
