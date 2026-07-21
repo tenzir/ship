@@ -220,22 +220,6 @@ When merging into an unreleased entry:
 Never touch already-released changelog entries outside the `unreleased`
 directory.
 
-## Treat entry IDs as release-scoped
-
-An entry ID is the Markdown filename without its extension. It must be unique
-within `unreleased/` and within each individual `releases/<version>/entries/`
-directory, but it does not need to be unique across the project's complete
-release history.
-
-Do not rename a new entry merely because an older release contains the same
-slug. A later change with the same user-facing title may legitimately reuse
-that slug. The `add` command rejects a collision in the current `unreleased/`
-directory, and `validate` checks every release manifest against its own entry
-directory.
-
-When an exact `show <entry-id>` lookup finds the ID in multiple namespaces, it
-returns every occurrence with its release or unreleased context.
-
 ## Create the entry
 
 Begin with writing the description to a temporary file, e.g.,
