@@ -322,6 +322,30 @@ def test_cli_show_includes_modules_by_default(tmp_path: Path) -> None:
     assert "Parent Feature" in result.output
 
 
+def test_cli_show_preserves_reused_entry_ids_in_modules(tmp_path: Path) -> None:
+    """Module history keeps one occurrence per release namespace."""
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    create_released_entry(mod_root, "Compatibility Update", "v1.0.0")
+    create_released_entry(mod_root, "Compatibility Update", "v1.1.0")
+
+    project_dir = tmp_path / "changelog"
+    project_dir.mkdir()
+    write_yaml(
+        project_dir / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (project_dir / "unreleased").mkdir()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--root", str(project_dir), "show"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Compatibility Update") == 2
+    assert "v1.0.0" in result.output
+    assert "v1.1.0" in result.output
+
+
 def test_cli_validate_with_modules(tmp_path: Path) -> None:
     """validate command checks parent and modules."""
     packages = tmp_path / "packages"

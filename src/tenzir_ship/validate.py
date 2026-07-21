@@ -419,17 +419,13 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
 
 
 def validate_release_ids(
-    entries: Iterable[Entry],
     releases: Iterable[ReleaseManifest],
     project_root: Path,
     issues: list[ValidationIssue],
 ) -> None:
     """Ensure release manifests reference existing entry IDs."""
-    entry_ids = {entry.entry_id for entry in entries}
     for manifest in releases:
         for entry_id in manifest.entries:
-            if entry_id in entry_ids:
-                continue
             entry_path = resolve_release_entry_path(project_root, manifest, entry_id)
             if entry_path is None:
                 issues.append(
@@ -467,7 +463,7 @@ def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
     for entry in all_entries:
         issues.extend(validate_entry(entry, config))
 
-    validate_release_ids(all_entries, releases, project_root, issues)
+    validate_release_ids(releases, project_root, issues)
     return issues
 
 

@@ -126,7 +126,7 @@ def _collect_project_stats(project_root: Path) -> dict:
     # including them here would double-count entry totals.
     released_entries = collect_release_entries(project_root, include_prereleases=False)
     released_types: Counter[str] = Counter()
-    for entry in released_entries.values():
+    for entry in released_entries:
         released_types[entry.type] += 1
     shipped_count = len(released_entries)
 

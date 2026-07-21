@@ -319,40 +319,41 @@ def load_release_entry(
     entry_path = resolve_release_entry_path(project_root, manifest, entry_id)
     if entry_path is None:
         return None
-    return read_entry(entry_path)
+    entry = read_entry(entry_path)
+    entry.release = render_release_tag(manifest.version)
+    return entry
 
 
-def collect_release_entries(
-    project_root: Path, *, include_prereleases: bool = True
-) -> dict[str, Entry]:
-    """Return a mapping of entry ids to entries across release manifests.
+def collect_release_entries(project_root: Path, *, include_prereleases: bool = True) -> list[Entry]:
+    """Return every entry occurrence across release manifests.
 
     By default, prerelease manifests are included. Pass
     ``include_prereleases=False`` when only stable releases should contribute to
     shipped entry counts.
     """
-    collected: dict[str, Entry] = {}
+    collected: list[Entry] = []
     for manifest in iter_release_manifests(project_root):
         if not include_prereleases and not is_stable_release(manifest.version):
             continue
         for entry_id in manifest.entries:
-            if entry_id in collected:
-                continue
             entry = load_release_entry(project_root, manifest, entry_id)
             if entry is not None:
-                collected[entry_id] = entry
+                collected.append(entry)
     return collected
 
 
 def build_entry_release_index(
     project_root: Path, *, project: Optional[str] = None
-) -> dict[str, list[str]]:
-    """Return a mapping from entry id to associated release versions."""
-    index: dict[str, list[str]] = {}
+) -> dict[Path, list[str]]:
+    """Return a mapping from entry occurrence paths to release versions."""
+    index: dict[Path, list[str]] = {}
     for manifest in iter_release_manifests(project_root):
         version = render_release_tag(manifest.version)
         for entry_id in manifest.entries:
-            versions = index.setdefault(entry_id, [])
+            entry_path = resolve_release_entry_path(project_root, manifest, entry_id)
+            if entry_path is None:
+                continue
+            versions = index.setdefault(entry_path, [])
             if version not in versions:
                 versions.append(version)
 

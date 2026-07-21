@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 from ..config import Config
@@ -42,6 +43,7 @@ def _entry_to_dict(
 
     data = {
         "id": entry.entry_id,
+        "release": entry.release,
         "title": title,
         "type": entry_type,
         "created": entry.created_at.isoformat() if entry.created_at else None,
@@ -104,7 +106,7 @@ def _render_markdown_release_block(
     manifest: ReleaseManifest | None,
     entries: list[Entry],
     config: Config,
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     *,
     include_emoji: bool = True,
     explicit_links: bool = False,
@@ -188,7 +190,7 @@ def _export_markdown_release(
     manifest: Optional[ReleaseManifest],
     entries: list[Entry],
     config: Config,
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     *,
     include_emoji: bool = True,
     explicit_links: bool = False,
@@ -237,7 +239,7 @@ def _export_markdown_compact(
     manifest: Optional[ReleaseManifest],
     entries: list[Entry],
     config: Config,
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     *,
     include_emoji: bool = True,
     explicit_links: bool = False,

@@ -25,6 +25,7 @@
     },
     "entries": {
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "pattern": "\\S",

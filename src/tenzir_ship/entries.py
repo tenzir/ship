@@ -32,6 +32,7 @@ class Entry:
     metadata: dict[str, Any]
     body: str
     path: Path
+    release: Optional[str] = None
 
     @property
     def title(self) -> str:
@@ -351,14 +352,10 @@ def iter_multi_project_entries(projects: list[tuple[Path, Any]]) -> Iterable[Mul
     for project_root, config in projects:
         project_id = getattr(config, "id", slugify(project_root.name))
         project_name = getattr(config, "name", str(project_root.name))
-        # Collect all entries (unreleased and released), avoiding duplicates
-        entry_map: dict[str, Entry] = {}
-        for entry in iter_entries(project_root):
-            entry_map[entry.entry_id] = entry
-        for entry_id, entry in collect_release_entries(project_root).items():
-            if entry_id not in entry_map:
-                entry_map[entry_id] = entry
-        for entry in entry_map.values():
+        # Entry IDs are unique within one release namespace, not across the
+        # project's complete history. Preserve every occurrence here.
+        entries = [*iter_entries(project_root), *collect_release_entries(project_root)]
+        for entry in entries:
             yield MultiProjectEntry(
                 entry=entry,
                 project_root=project_root,
