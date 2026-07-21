@@ -638,6 +638,18 @@ def _combine_release_entries(
         existing_entries = _load_manifest_entries(project_root, existing_manifest)
         existing_entry_ids = {entry.entry_id for entry in existing_entries}
 
+    colliding_entry_ids = sorted(
+        {entry.entry_id for entry in selected_entries} & existing_entry_ids
+    )
+    if colliding_entry_ids:
+        target = render_release_tag(existing_manifest.version) if existing_manifest else "release"
+        quoted_ids = ", ".join(f"'{entry_id}'" for entry_id in colliding_entry_ids)
+        raise click.ClickException(
+            f"Cannot add entries to {target} because that release already contains "
+            f"the same entry ID(s): {quoted_ids}. Entry IDs must be unique within "
+            "a release. Rename the unreleased entry or choose a different target release."
+        )
+
     new_entries = [entry for entry in selected_entries if entry.entry_id not in existing_entry_ids]
     combined_entries: dict[str, Entry] = {entry.entry_id: entry for entry in existing_entries}
     for entry in new_entries:

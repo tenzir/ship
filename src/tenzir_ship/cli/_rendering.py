@@ -330,7 +330,7 @@ def _build_release_sort_order(project_root: Path) -> dict[str, int]:
 
 def _sort_entries_for_display(
     entries: Iterable[Entry],
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     release_order: dict[str, int],
 ) -> list[Entry]:
     """Sort entries so the newest entry ends up last in the table view."""
@@ -338,7 +338,7 @@ def _sort_entries_for_display(
     unreleased_rank = len(release_order) + 1
 
     def sort_key(entry: Entry) -> tuple[int, datetime, str]:
-        versions = release_index.get(entry.entry_id) or []
+        versions = release_index.get(entry.path) or []
         if versions:
             ranks = [release_order.get(version, unreleased_rank) for version in versions]
             release_rank = min(ranks)
@@ -353,11 +353,11 @@ def _sort_entries_for_display(
 
 def _entry_release_group(
     entry: Entry,
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     release_order: dict[str, int],
 ) -> int:
     """Return a group key for sectioning entries by release."""
-    versions = release_index.get(entry.entry_id, [])
+    versions = release_index.get(entry.path, [])
     if not versions:
         return -1  # unreleased
     return max(release_order.get(v, 0) for v in versions)
@@ -365,13 +365,13 @@ def _entry_release_group(
 
 def _render_entries(
     entries: Iterable[Entry],
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     config: Config,
     show_banner: bool = False,
     release_order: dict[str, int] | None = None,
     *,
     include_emoji: bool = True,
-    release_versions: dict[str, str] | None = None,
+    release_versions: dict[Path, str] | None = None,
 ) -> None:
     if show_banner:
         _render_project_header(config)
@@ -488,7 +488,7 @@ def _render_entries(
         metadata = entry.metadata
         created_display = entry.created_date.isoformat() if entry.created_date else "—"
         type_value = metadata.get("type", "change")
-        versions = release_index.get(entry.entry_id)
+        versions = release_index.get(entry.path)
         version_display = ", ".join(versions) if versions else "—"
         if include_emoji:
             glyph = ENTRY_TYPE_EMOJIS.get(type_value, "•")
@@ -507,7 +507,7 @@ def _render_entries(
         if "version" in visible_columns:
             row.append(version_display)
         if "release" in visible_columns:
-            release_display = release_versions.get(entry.entry_id, "—") if release_versions else "—"
+            release_display = release_versions.get(entry.path, "—") if release_versions else "—"
             row.append(release_display)
         if "prs" in visible_columns:
             pr_numbers = _parse_pr_numbers(metadata)
@@ -532,9 +532,9 @@ def _render_entries(
         end_section = False
         if release_versions is not None and index < len(sorted_entries) - 1:
             # Section dividers based on release_versions mapping
-            current_release = release_versions.get(entry.entry_id)
+            current_release = release_versions.get(entry.path)
             next_entry = sorted_entries[index + 1]
-            next_release = release_versions.get(next_entry.entry_id)
+            next_release = release_versions.get(next_entry.path)
             if current_release != next_release:
                 end_section = True
         elif release_order is not None and index < len(sorted_entries) - 1:
@@ -728,7 +728,7 @@ def _render_entries_multi_project(
     project_order = {config.id: index for index, (_, config) in enumerate(projects)}
 
     # Build release index for each project
-    release_indices: dict[str, dict[str, list[str]]] = {}
+    release_indices: dict[str, dict[Path, list[str]]] = {}
     for project_root, config in projects:
         release_indices[config.id] = build_entry_release_index(project_root, project=config.id)
 
@@ -782,7 +782,7 @@ def _render_entries_multi_project(
         type_value = metadata.get("type", "change")
         # Get version from project-specific release index
         proj_release_index = release_indices.get(project_id, {})
-        versions = proj_release_index.get(entry.entry_id)
+        versions = proj_release_index.get(entry.path)
         version_display = ", ".join(versions) if versions else "—"
         if include_emoji:
             glyph = ENTRY_TYPE_EMOJIS.get(type_value, "•")

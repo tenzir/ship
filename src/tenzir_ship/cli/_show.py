@@ -39,8 +39,6 @@ from ..releases import (
     load_release_entry,
     parse_release_version,
     render_release_tag,
-    unused_entries,
-    used_entry_ids,
 )
 from ..utils import (
     emit_output,
@@ -170,11 +168,27 @@ def _collect_unused_entries_for_release(
     *,
     include_prereleases: bool = False,
 ) -> list[Entry]:
-    """Collect unreleased entries that haven't been included in matching releases."""
-    all_entries = list(iter_entries(project_root))
-    used = used_entry_ids(project_root, include_prereleases=include_prereleases)
-    unused = unused_entries(all_entries, used)
-    filtered = [entry for entry in unused if entry.project is None or entry.project == config.id]
+    """Collect entries from the current unreleased namespace.
+
+    Entry IDs may be reused in later releases, so historical manifests do not
+    affect this selection. When editing an existing stable release, callers can
+    request that entries already owned by a release-candidate lineage remain
+    outside the older target release.
+    """
+    entries = list(iter_entries(project_root))
+    if include_prereleases:
+        # Editing an older stable release must not pull in entries owned by an
+        # active release-candidate cycle. This is the one intentional
+        # cross-manifest relationship: candidates and their eventual stable
+        # release form a single release lineage.
+        prerelease_entry_ids = {
+            entry_id
+            for manifest in iter_release_manifests(project_root)
+            if is_release_candidate(manifest.version)
+            for entry_id in manifest.entries
+        }
+        entries = [entry for entry in entries if entry.entry_id not in prerelease_entry_ids]
+    filtered = [entry for entry in entries if entry.project is None or entry.project == config.id]
     return filtered
 
 
@@ -337,7 +351,7 @@ def _append_release_module_sections(
 def _load_release_entries_for_display(
     project_root: Path,
     release_version: str,
-    entry_map: dict[str, Entry],
+    entry_map: dict[str, list[Entry]],
 ) -> tuple[ReleaseManifest, list[Entry]]:
     """Load entries for a specific release version."""
     normalized_version = render_release_tag(release_version).lower()
@@ -356,7 +370,9 @@ def _load_release_entries_for_display(
         if entry is None:
             missing_entries.append(entry_id)
             continue
-        entry_map[entry_id] = entry
+        occurrences = entry_map.setdefault(entry_id, [])
+        if all(existing.path != entry.path for existing in occurrences):
+            occurrences.append(entry)
         release_entries.append(entry)
     if missing_entries:
         missing_list = ", ".join(sorted(missing_entries))
@@ -372,7 +388,7 @@ def _resolve_identifier(
     project_root: Path,
     config: Config,
     sorted_entries: list[Entry],
-    entry_map: dict[str, Entry],
+    entry_map: dict[str, list[Entry]],
     known_versions: dict[str, str],
     allowed_kinds: Optional[Iterable[IdentifierKind]] = None,
 ) -> IdentifierResolution:
@@ -428,25 +444,24 @@ def _resolve_identifier(
             manifest=manifest,
         )
 
-    exact_match = entry_map.get(token)
-    if exact_match:
-        return IdentifierResolution(kind="entry", entries=[exact_match], identifier=token)
+    exact_matches = entry_map.get(token)
+    if exact_matches:
+        return IdentifierResolution(kind="entry", entries=exact_matches, identifier=token)
 
-    matches = [(entry_id, entry) for entry_id, entry in entry_map.items() if token in entry_id]
-    if not matches:
+    matching_ids = [entry_id for entry_id in entry_map if token in entry_id]
+    if not matching_ids:
         raise click.ClickException(
             f"No entry found matching '{token}'. Use 'tenzir-ship show' to see all entries."
         )
-    if len(matches) > 1:
-        match_ids = [entry_id for entry_id, _ in matches]
+    if len(matching_ids) > 1:
         raise click.ClickException(
             f"Multiple entries match '{token}':\n  "
-            + "\n  ".join(match_ids)
+            + "\n  ".join(matching_ids)
             + "\n\nPlease be more specific or use a row number."
         )
 
-    entry_id, entry = matches[0]
-    return IdentifierResolution(kind="entry", entries=[entry], identifier=entry_id)
+    entry_id = matching_ids[0]
+    return IdentifierResolution(kind="entry", entries=entry_map[entry_id], identifier=entry_id)
 
 
 def _resolve_identifiers_sequence(
@@ -455,7 +470,7 @@ def _resolve_identifiers_sequence(
     project_root: Path,
     config: Config,
     sorted_entries: list[Entry],
-    entry_map: dict[str, Entry],
+    entry_map: dict[str, list[Entry]],
     known_versions: dict[str, str],
     allowed_kinds: Optional[Iterable[IdentifierKind]] = None,
 ) -> list[IdentifierResolution]:
@@ -477,13 +492,15 @@ def _resolve_identifiers_sequence(
 def _gather_entry_context(
     project_root: Path,
     modules: list[Module] | None = None,
-) -> tuple[dict[str, Entry], dict[str, list[str]], dict[str, int], list[Entry]]:
+) -> tuple[dict[str, list[Entry]], dict[Path, list[str]], dict[str, int], list[Entry]]:
     """Gather all entries and build release index for display."""
     entries = list(iter_entries(project_root))
-    entry_map = {entry.entry_id: entry for entry in entries}
+    entry_map: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_map.setdefault(entry.entry_id, []).append(entry)
     released_entries = collect_release_entries(project_root)
-    for entry_id, entry in released_entries.items():
-        entry_map.setdefault(entry_id, entry)
+    for entry in released_entries:
+        entry_map.setdefault(entry.entry_id, []).append(entry)
     release_index_all = build_entry_release_index(project_root, project=None)
     release_order = _build_release_sort_order(project_root)
 
@@ -491,10 +508,10 @@ def _gather_entry_context(
         for module in modules:
             module_entries = list(iter_entries(module.root))
             for entry in module_entries:
-                entry_map.setdefault(entry.entry_id, entry)
+                entry_map.setdefault(entry.entry_id, []).append(entry)
             module_released = collect_release_entries(module.root)
-            for entry_id, entry in module_released.items():
-                entry_map.setdefault(entry_id, entry)
+            for entry in module_released:
+                entry_map.setdefault(entry.entry_id, []).append(entry)
             module_release_index = build_entry_release_index(module.root, project=None)
             for entry_id, versions in module_release_index.items():
                 if entry_id in release_index_all:
@@ -505,15 +522,34 @@ def _gather_entry_context(
             for version, order in module_release_order.items():
                 release_order.setdefault(version, order)
 
-    sorted_entries = _sort_entries_for_display(entry_map.values(), release_index_all, release_order)
+    all_entries = [entry for occurrences in entry_map.values() for entry in occurrences]
+    sorted_entries = _sort_entries_for_display(all_entries, release_index_all, release_order)
     return entry_map, release_index_all, release_order, sorted_entries
+
+
+def _group_entries_by_release_context(
+    project_root: Path,
+    entries: Iterable[Entry],
+) -> list[tuple[ReleaseManifest | None, list[Entry]]]:
+    """Group entry occurrences by their release namespace."""
+    manifests_by_tag = {
+        render_release_tag(manifest.version): manifest
+        for manifest in iter_release_manifests(project_root)
+    }
+    grouped: dict[str | None, list[Entry]] = {}
+    for entry in entries:
+        grouped.setdefault(entry.release, []).append(entry)
+    return [
+        (manifests_by_tag.get(release) if release else None, grouped_entries)
+        for release, grouped_entries in grouped.items()
+    ]
 
 
 def _render_release_card(
     manifest: ReleaseManifest | None,
     entries: list[Entry],
     config: Config,
-    release_index: dict[str, list[str]],
+    release_index: dict[Path, list[str]],
     *,
     include_emoji: bool,
     compact: bool = True,
@@ -618,7 +654,7 @@ def _show_entries_table_all(
     all_entries: list[Entry]
     if release_mode:
         # Build unified table with Release column (oldest release first)
-        release_versions: dict[str, str] = {}
+        release_versions: dict[Path, str] = {}
         all_entries = []
 
         # Add released entries grouped by release (oldest first)
@@ -631,12 +667,12 @@ def _show_entries_table_all(
                         release_entries.append(entry)
                 filtered = _filter_entries_by_component(release_entries, components)
                 for entry in filtered:
-                    release_versions[entry.entry_id] = render_release_tag(manifest.version)
+                    release_versions[entry.path] = render_release_tag(manifest.version)
                     all_entries.append(entry)
 
         # Add unreleased entries last (they are the "newest" release)
         for entry in unreleased_entries:
-            release_versions[entry.entry_id] = UNRELEASED_LABEL
+            release_versions[entry.path] = UNRELEASED_LABEL
             all_entries.append(entry)
 
         # Sort entries by release first, then by date (oldest first)
@@ -681,7 +717,7 @@ def _show_entries_table_release_mode(
     *,
     components: set[str],
     include_emoji: bool,
-    entry_map: dict[str, Entry],
+    entry_map: dict[str, list[Entry]],
     sorted_entries: list[Entry],
     known_versions: dict[str, str],
 ) -> None:
@@ -708,7 +744,7 @@ def _show_entries_table_release_mode(
             release_groups.append((resolution.manifest, filtered))
         else:
             for entry in filtered:
-                versions = release_index.get(entry.entry_id, [])
+                versions = release_index.get(entry.path, [])
                 target_version = _preferred_release_version(versions)
                 if target_version:
                     for release_manifest in iter_release_manifests(project_root):
@@ -739,12 +775,12 @@ def _show_entries_table_release_mode(
         raise click.ClickException("No entries found for the given identifiers.")
 
     # Build release_versions mapping and flat entry list (preserving release group order)
-    release_versions: dict[str, str] = {}
+    release_versions: dict[Path, str] = {}
     all_entries: list[Entry] = []
     for manifest, entries in release_groups:
         version_label = render_release_tag(manifest.version) if manifest else UNRELEASED_LABEL
         for entry in entries:
-            release_versions[entry.entry_id] = version_label
+            release_versions[entry.path] = version_label
             all_entries.append(entry)
 
     if not all_entries:
@@ -817,16 +853,18 @@ def _show_entries_table(
     components = _normalize_component_filters(component_filter, config)
 
     entries = list(iter_entries(project_root))
-    entry_map = {entry.entry_id: entry for entry in entries}
+    entry_map: dict[str, list[Entry]] = {}
+    for entry in entries:
+        entry_map.setdefault(entry.entry_id, []).append(entry)
     released_entries = collect_release_entries(project_root)
-    for entry_id, entry in released_entries.items():
-        if entry_id not in entry_map:
-            entry_map[entry_id] = entry
+    for entry in released_entries:
+        entry_map.setdefault(entry.entry_id, []).append(entry)
 
     release_index = build_entry_release_index(project_root, project=config.id)
     release_order = _build_release_sort_order(project_root)
 
-    sorted_entries = _sort_entries_for_display(entry_map.values(), release_index, release_order)
+    all_entries = [entry for occurrences in entry_map.values() for entry in occurrences]
+    sorted_entries = _sort_entries_for_display(all_entries, release_index, release_order)
 
     # Handle scope-based filtering (no specific identifiers provided)
     if not identifiers:
@@ -971,7 +1009,7 @@ def _show_entries_card(
                 raise click.ClickException("No entries found.")
 
             for entry in all_entries:
-                versions = release_index.get(entry.entry_id, [])
+                versions = release_index.get(entry.path, [])
                 _render_single_entry(entry, versions, include_emoji=include_emoji)
         return
 
@@ -998,7 +1036,7 @@ def _show_entries_card(
                 release_groups.append((resolution.manifest, filtered))
             else:
                 for entry in filtered:
-                    versions = release_index_all.get(entry.entry_id, [])
+                    versions = release_index_all.get(entry.path, [])
                     target_version = _preferred_release_version(versions)
                     if target_version:
                         for release_manifest in iter_release_manifests(project_root):
@@ -1070,8 +1108,6 @@ def _show_entries_card(
 
         sorted_multi = sorted(multi_entries, key=sort_key)
         sorted_entries = [item.entry for item in sorted_multi]
-        for item in sorted_multi:
-            entry_map.setdefault(item.entry.entry_id, item.entry)
 
     resolutions = _resolve_identifiers_sequence(
         identifiers,
@@ -1089,7 +1125,7 @@ def _show_entries_card(
         if not filtered_entries:
             continue
         for entry in filtered_entries:
-            versions = release_index.get(entry.entry_id, [])
+            versions = release_index.get(entry.path, [])
             if resolution.kind == "release" and resolution.manifest:
                 version = render_release_tag(resolution.manifest.version)
                 if version and version not in versions:
@@ -1291,7 +1327,7 @@ def _show_entries_export_release_mode(
     include_emoji: bool,
     explicit_links: bool,
     components: set[str],
-    entry_map: dict[str, Entry],
+    entry_map: dict[str, list[Entry]],
     sorted_entries: list[Entry],
     known_versions: dict[str, str],
 ) -> None:
@@ -1428,7 +1464,7 @@ def _show_entries_export_release_mode(
             release_groups.append((resolution.manifest, filtered))
         else:
             for entry in filtered:
-                versions = release_index.get(entry.entry_id, [])
+                versions = release_index.get(entry.path, [])
                 target_version = _preferred_release_version(versions)
                 if target_version:
                     for manifest in iter_release_manifests(project_root):
@@ -1546,11 +1582,10 @@ def _show_entries_export(
         if len(resolutions) == 1 and resolutions[0].kind == "release":
             manifest_for_export = resolutions[0].manifest
 
-        ordered_entries: dict[str, Entry] = {}
+        ordered_entries: dict[Path, Entry] = {}
         for resolution in resolutions:
             for entry in resolution.entries:
-                if entry.entry_id not in ordered_entries:
-                    ordered_entries[entry.entry_id] = entry
+                ordered_entries.setdefault(entry.path, entry)
         filtered_entries = _filter_entries_by_component(ordered_entries.values(), components)
         export_entries = sort_entries_desc(filtered_entries)
 
@@ -1582,6 +1617,27 @@ def _show_entries_export(
         )
 
     if view == "markdown":
+        if (
+            len(resolutions) == 1
+            and resolutions[0].kind == "entry"
+            and len({entry.release for entry in export_entries}) > 1
+        ):
+            blocks = [
+                _render_markdown_release_block(
+                    manifest,
+                    entries,
+                    config,
+                    release_index_export,
+                    include_emoji=include_emoji,
+                    explicit_links=explicit_links,
+                    compact=compact_flag,
+                )
+                for manifest, entries in _group_entries_by_release_context(
+                    project_root, export_entries
+                )
+            ]
+            emit_output("\n---\n\n".join(blocks), newline=False)
+            return
         if compact_flag:
             content = _export_markdown_compact(
                 manifest_for_export,

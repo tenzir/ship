@@ -8929,3 +8929,185 @@ def test_show_version_case_insensitive(tmp_path: Path) -> None:
     )
     assert markdown_result.exit_code == 0, markdown_result.output
     assert "Case Test Feature" in markdown_result.output
+
+
+def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
+    """Historical ID reuse stays releasable, visible, valid, and countable."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    def add_compatibility_update(description: str) -> None:
+        result = runner.invoke(
+            cli,
+            [
+                "--root",
+                str(project_dir),
+                "add",
+                "--title",
+                "Dependency Compatibility Updates",
+                "--type",
+                "bugfix",
+                "--description",
+                description,
+                "--author",
+                "tester",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+    add_compatibility_update("Original compatibility update.")
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v3.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    # Reusing the generated slug in the current unreleased namespace is valid.
+    add_compatibility_update("A later compatibility update.")
+    validation = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    assert validation.exit_code == 0, validation.output
+
+    # The same ID cannot be appended to the release that already owns it.
+    target_collision = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v3.0.0", "--yes"],
+    )
+    assert target_collision.exit_code != 0
+    assert "already contains the same entry ID" in target_collision.output
+
+    # Auto-bumping must see the reused unreleased entry instead of treating it
+    # as consumed by v3.0.0.
+    second_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert second_release.exit_code == 0, second_release.output
+    assert (
+        project_dir / "releases" / "v3.0.1" / "entries" / "dependency-compatibility-updates.md"
+    ).exists()
+
+    add_compatibility_update("An unreleased compatibility update.")
+
+    show_json = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "dependency-compatibility-updates",
+            "--json",
+        ],
+    )
+    assert show_json.exit_code == 0, show_json.output
+    payload = json.loads(show_json.output)
+    assert [entry["release"] for entry in payload["entries"]] == [
+        None,
+        "v3.0.1",
+        "v3.0.0",
+    ]
+
+    show_markdown = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "dependency-compatibility-updates",
+            "--markdown",
+        ],
+    )
+    assert show_markdown.exit_code == 0, show_markdown.output
+    assert "# Unreleased Changes" in show_markdown.output
+    assert "# v3.0.0" in show_markdown.output
+    assert "# v3.0.1" in show_markdown.output
+
+    show_card = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "show",
+            "dependency-compatibility-updates",
+            "--card",
+        ],
+    )
+    assert show_card.exit_code == 0, show_card.output
+    card_output = click.utils.strip_ansi(show_card.output)
+    assert card_output.count("Entry ID:") == 3
+    assert "Released in v3.0.0" in card_output
+    assert "Released in v3.0.1" in card_output
+    assert "Unreleased" in card_output
+
+    release_candidate = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v3.0.2", "--rc", "--yes"],
+    )
+    assert release_candidate.exit_code == 0, release_candidate.output
+
+    stats = runner.invoke(cli, ["--root", str(project_dir), "stats", "--json"])
+    assert stats.exit_code == 0, stats.output
+    stats_payload = json.loads(stats.output)
+    assert stats_payload["parent"]["entries"]["shipped"] == 2
+    assert stats_payload["parent"]["entries"]["unreleased"] == 1
+    assert stats_payload["parent"]["entries"]["total"] == 3
+
+
+def test_validate_resolves_manifest_entries_within_their_release(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+
+    write_entry(
+        project_dir,
+        {"title": "Shared ID", "type": "bugfix", "created": date(2024, 1, 1)},
+        "Present only in the first release.",
+        entry_id="shared-id",
+        default_project="project",
+    )
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    missing_release_dir = project_dir / "releases" / "v2.0.0"
+    (missing_release_dir / "entries").mkdir(parents=True)
+    (missing_release_dir / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {"created": "2024-02-01", "entries": ["shared-id"]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "Release references missing entry id 'shared-id'" in result.output
+
+
+def test_validate_rejects_duplicate_ids_within_one_manifest(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {"created": "2024-01-01", "entries": ["shared-id", "shared-id"]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (entries_dir / "shared-id.md").write_text(
+        "---\ntitle: Shared ID\ntype: bugfix\ncreated: 2024-01-01T00:00:00Z\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code != 0
+    assert "non-unique elements" in result.output
