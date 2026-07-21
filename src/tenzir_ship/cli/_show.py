@@ -35,10 +35,12 @@ from ..releases import (
     build_entry_release_index,
     collect_release_entries,
     is_release_candidate,
+    is_stable_release,
     iter_release_manifests,
     load_release_entry,
     parse_release_version,
     render_release_tag,
+    stable_release_version,
 )
 from ..utils import (
     emit_output,
@@ -181,10 +183,17 @@ def _collect_unused_entries_for_release(
         # active release-candidate cycle. This is the one intentional
         # cross-manifest relationship: candidates and their eventual stable
         # release form a single release lineage.
+        manifests = list(iter_release_manifests(project_root))
+        stable_versions = {
+            stable_release_version(manifest.version)
+            for manifest in manifests
+            if is_stable_release(manifest.version)
+        }
         prerelease_entry_ids = {
             entry_id
-            for manifest in iter_release_manifests(project_root)
+            for manifest in manifests
             if is_release_candidate(manifest.version)
+            and stable_release_version(manifest.version) not in stable_versions
             for entry_id in manifest.entries
         }
         entries = [entry for entry in entries if entry.entry_id not in prerelease_entry_ids]

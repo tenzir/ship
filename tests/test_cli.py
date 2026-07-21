@@ -8233,6 +8233,99 @@ def test_release_create_edit_existing_stable_ignores_rc_snapshots(tmp_path: Path
     assert "Preview Feature" not in stable_notes
 
 
+def test_release_create_edit_existing_stable_ignores_closed_rc_ids(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    shared_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Shared ID",
+            "--type",
+            "bugfix",
+            "--description",
+            "Ships in the historical release.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert shared_entry.exit_code == 0, shared_entry.output
+
+    historical_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.2.0", "--yes"],
+    )
+    assert historical_release.exit_code == 0, historical_release.output
+
+    historical_entry_path = project_dir / "releases" / "v1.2.0" / "entries" / "shared-id.md"
+    closed_rc_dir = project_dir / "releases" / "v1.2.0-rc.1"
+    (closed_rc_dir / "entries").mkdir(parents=True)
+    (closed_rc_dir / "manifest.yaml").write_text(
+        "version: v1.2.0-rc.1\ncreated: 2025-01-01\nentries:\n  - shared-id\n",
+        encoding="utf-8",
+    )
+    (closed_rc_dir / "entries" / "shared-id.md").write_bytes(historical_entry_path.read_bytes())
+
+    target_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Target Entry",
+            "--type",
+            "feature",
+            "--description",
+            "Creates the release that will be updated.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert target_entry.exit_code == 0, target_entry.output
+
+    target_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.3.0", "--yes"],
+    )
+    assert target_release.exit_code == 0, target_release.output
+
+    reused_entry = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Shared ID",
+            "--type",
+            "bugfix",
+            "--description",
+            "Reuses the ID after the historical RC cycle closed.",
+            "--author",
+            "tester",
+        ],
+    )
+    assert reused_entry.exit_code == 0, reused_entry.output
+
+    edit_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.3.0", "--yes"],
+    )
+    assert edit_release.exit_code == 0, edit_release.output
+
+    release_entries = {
+        path.stem for path in (project_dir / "releases" / "v1.3.0" / "entries").glob("*.md")
+    }
+    assert release_entries == {"shared-id", "target-entry"}
+    assert not (project_dir / "unreleased" / "shared-id.md").exists()
+
+
 def test_release_version_bare_flag(tmp_path: Path) -> None:
     """Test the release version --bare flag strips the v prefix."""
     runner = CliRunner()
