@@ -521,6 +521,15 @@ def _resolve_identifiers_sequence(
     ]
     if scope != "all":
         for resolution in resolutions:
+            if (
+                resolution.kind == "release"
+                and scope == "latest"
+                and resolution.manifest is not None
+                and render_release_tag(resolution.manifest.version) != latest_version
+            ):
+                raise click.ClickException(
+                    f"Release '{resolution.identifier}' is outside the 'latest' scope."
+                )
             resolution.entries = [entry for entry in resolution.entries if in_scope(entry)]
     return resolutions
 

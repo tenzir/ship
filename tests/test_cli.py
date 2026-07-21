@@ -9006,6 +9006,13 @@ def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
     assert second_release.exit_code == 0, second_release.output
     assert (project_dir / "releases" / "v3.0.1" / "entries" / f"{entry_id}.md").exists()
 
+    out_of_scope_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "latest", "v3.0.0"],
+    )
+    assert out_of_scope_release.exit_code != 0
+    assert "Release 'v3.0.0' is outside the 'latest' scope" in out_of_scope_release.output
+
     add_compatibility_update("An unreleased compatibility update.")
 
     show_json = runner.invoke(
