@@ -8956,6 +8956,7 @@ def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    entry_id = "dependency-compatibility-updates"
 
     def add_compatibility_update(description: str) -> None:
         result = runner.invoke(
@@ -9003,9 +9004,7 @@ def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
         ["--root", str(project_dir), "release", "create", "--yes"],
     )
     assert second_release.exit_code == 0, second_release.output
-    assert (
-        project_dir / "releases" / "v3.0.1" / "entries" / "dependency-compatibility-updates.md"
-    ).exists()
+    assert (project_dir / "releases" / "v3.0.1" / "entries" / f"{entry_id}.md").exists()
 
     add_compatibility_update("An unreleased compatibility update.")
 
@@ -9015,7 +9014,7 @@ def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
             "--root",
             str(project_dir),
             "show",
-            "dependency-compatibility-updates",
+            entry_id,
             "--json",
         ],
     )
@@ -9027,13 +9026,21 @@ def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
         "v3.0.0",
     ]
 
+    unreleased_json = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "unreleased", entry_id, "-j"],
+    )
+    assert unreleased_json.exit_code == 0, unreleased_json.output
+    payload = json.loads(unreleased_json.output)
+    assert [entry["release"] for entry in payload["entries"]] == [None]
+
     show_markdown = runner.invoke(
         cli,
         [
             "--root",
             str(project_dir),
             "show",
-            "dependency-compatibility-updates",
+            entry_id,
             "--markdown",
         ],
     )
@@ -9048,7 +9055,7 @@ def test_entry_ids_are_scoped_to_each_release(tmp_path: Path) -> None:
             "--root",
             str(project_dir),
             "show",
-            "dependency-compatibility-updates",
+            entry_id,
             "--card",
         ],
     )

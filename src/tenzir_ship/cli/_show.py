@@ -482,9 +482,32 @@ def _resolve_identifiers_sequence(
     entry_map: dict[str, list[Entry]],
     known_versions: dict[str, str],
     allowed_kinds: Optional[Iterable[IdentifierKind]] = None,
+    scope: Scope = "all",
 ) -> list[IdentifierResolution]:
     """Resolve a list of identifiers into their matching entries."""
-    return [
+    if scope != "all":
+        latest_version = None
+        if scope == "latest":
+            latest = _get_latest_release_manifest(project_root)
+            if latest is None:
+                raise click.ClickException("No stable releases found.")
+            latest_version = render_release_tag(latest.version)
+
+        def in_scope(entry: Entry) -> bool:
+            if scope == "unreleased":
+                return entry.release is None
+            if scope == "released":
+                return entry.release is not None
+            return entry.release == latest_version
+
+        entry_map = {
+            entry_id: matches
+            for entry_id, occurrences in entry_map.items()
+            if (matches := [entry for entry in occurrences if in_scope(entry)])
+        }
+        sorted_entries = [entry for entry in sorted_entries if in_scope(entry)]
+
+    resolutions = [
         _resolve_identifier(
             identifier,
             project_root=project_root,
@@ -496,6 +519,10 @@ def _resolve_identifiers_sequence(
         )
         for identifier in identifiers
     ]
+    if scope != "all":
+        for resolution in resolutions:
+            resolution.entries = [entry for entry in resolution.entries if in_scope(entry)]
+    return resolutions
 
 
 def _gather_entry_context(
@@ -729,6 +756,7 @@ def _show_entries_table_release_mode(
     entry_map: dict[str, list[Entry]],
     sorted_entries: list[Entry],
     known_versions: dict[str, str],
+    scope: Scope,
 ) -> None:
     """Handle --release flag with identifiers: display entries in a unified table with Release column."""
     config = ctx.ensure_config()
@@ -742,6 +770,7 @@ def _show_entries_table_release_mode(
         sorted_entries=sorted_entries,
         entry_map=entry_map,
         known_versions=known_versions,
+        scope=scope,
     )
 
     # Build flat list of entries with their release versions
@@ -896,6 +925,7 @@ def _show_entries_table(
             entry_map=entry_map,
             sorted_entries=sorted_entries,
             known_versions=known_versions,
+            scope=scope,
         )
         return
 
@@ -907,6 +937,7 @@ def _show_entries_table(
             sorted_entries=sorted_entries,
             entry_map=entry_map,
             known_versions=known_versions,
+            scope=scope,
         )
         if len(resolutions) == 1 and resolutions[0].kind == "release" and not components:
             release_resolution = resolutions[0]
@@ -1035,6 +1066,7 @@ def _show_entries_card(
             sorted_entries=sorted_entries,
             entry_map=entry_map,
             known_versions=known_versions,
+            scope=scope,
         )
 
         release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
@@ -1125,6 +1157,7 @@ def _show_entries_card(
         sorted_entries=sorted_entries,
         entry_map=entry_map,
         known_versions=known_versions,
+        scope=scope,
     )
 
     release_index = release_index_all
@@ -1339,6 +1372,7 @@ def _show_entries_export_release_mode(
     entry_map: dict[str, list[Entry]],
     sorted_entries: list[Entry],
     known_versions: dict[str, str],
+    scope: Scope,
 ) -> None:
     """Handle --release flag with explicit identifiers: group entries by release."""
     config = ctx.ensure_config()
@@ -1353,6 +1387,7 @@ def _show_entries_export_release_mode(
             sorted_entries=sorted_entries,
             entry_map=entry_map,
             known_versions=known_versions,
+            scope=scope,
         )
         if len(resolutions) == 1 and resolutions[0].kind == "release":
             if view == "json":
@@ -1463,6 +1498,7 @@ def _show_entries_export_release_mode(
         sorted_entries=sorted_entries,
         entry_map=entry_map,
         known_versions=known_versions,
+        scope=scope,
     )
 
     release_groups: list[tuple[ReleaseManifest | None, list[Entry]]] = []
@@ -1573,6 +1609,7 @@ def _show_entries_export(
             entry_map=entry_map,
             sorted_entries=sorted_entries,
             known_versions=known_versions,
+            scope=scope,
         )
         return
 
@@ -1586,6 +1623,7 @@ def _show_entries_export(
             sorted_entries=sorted_entries,
             entry_map=entry_map,
             known_versions=known_versions,
+            scope=scope,
         )
 
         if len(resolutions) == 1 and resolutions[0].kind == "release":
