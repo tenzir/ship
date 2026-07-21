@@ -1,0 +1,9 @@
+created: 2026-07-21
+title: Release-scoped changelog entry IDs
+intro: >-
+  This release fixes changelog entry identity handling by scoping entry IDs to individual
+  releases. Reused slugs now participate correctly in version bumps, validation, and
+  changelog output.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.11.0
