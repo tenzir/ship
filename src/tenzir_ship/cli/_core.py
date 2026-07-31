@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as metadata_version
@@ -11,6 +12,7 @@ from typing import (
     Callable,
     Iterable,
     Mapping,
+    NamedTuple,
     Optional,
     TypeVar,
 )
@@ -64,6 +66,8 @@ __all__ = [
     "_command_help_text",
     "_format_author",
     "_format_section_title",
+    "PrRef",
+    "_parse_pr_refs",
     "_parse_pr_numbers",
     "_build_prs_structured",
     "_build_authors_structured",
@@ -567,34 +571,66 @@ def _type_emoji(entry_type: str, *, include_emoji: bool = True) -> str:
     return "\u2022"
 
 
-def _parse_pr_numbers(metadata: Mapping[str, Any]) -> list[int]:
-    """Extract PR numbers from metadata, handling various formats."""
+GITHUB_PR_URL_RE = re.compile(
+    r"^https://github\.com/(?P<repo>[^/\s]+/[^/\s]+)/pull/(?P<number>\d+)/?$"
+)
+
+
+class PrRef(NamedTuple):
+    """A pull-request reference.
+
+    A bare number is relative to the project's configured repository, so its
+    URL can only be built when that is known. An explicit URL carries its own
+    repository, which is what lets entries reference pull requests outside the
+    configured one.
+    """
+
+    number: int | None
+    url: str | None
+
+    @property
+    def label(self) -> str:
+        return f"#{self.number}" if self.number is not None else (self.url or "")
+
+
+def _parse_pr_ref(item: Any, repository: str | None) -> PrRef | None:
+    """Parse a single PR reference, or return None if it is not one."""
+    if isinstance(item, bool):
+        return None
+    if isinstance(item, int):
+        number = item
+    else:
+        if not isinstance(item, str):
+            return None
+        text = item.strip()
+        if not text:
+            return None
+        match = GITHUB_PR_URL_RE.match(text)
+        if match:
+            # Keep the URL verbatim: it may point at a different repository
+            # than the configured one, which is the whole point of allowing it.
+            return PrRef(number=int(match.group("number")), url=text)
+        text = text.lstrip("#")
+        if not text.isdigit():
+            return None
+        number = int(text)
+    url = f"https://github.com/{repository}/pull/{number}" if repository else None
+    return PrRef(number=number, url=url)
+
+
+def _parse_pr_refs(metadata: Mapping[str, Any], repository: str | None = None) -> list[PrRef]:
+    """Extract PR references from metadata, handling numbers and full URLs."""
     raw = metadata.get("prs")
     if raw is None:
         return []
-    if isinstance(raw, int):
-        return [raw]
-    if isinstance(raw, str):
-        raw = raw.strip()
-        if not raw:
-            return []
-        if raw.startswith("#"):
-            raw = raw[1:]
-        try:
-            return [int(raw)]
-        except ValueError:
-            return []
-    if isinstance(raw, list):
-        result: list[int] = []
-        for item in raw:
-            if isinstance(item, int):
-                result.append(item)
-            elif isinstance(item, str):
-                item = item.strip().lstrip("#")
-                if item.isdigit():
-                    result.append(int(item))
-        return result
-    return []
+    items = raw if isinstance(raw, list) else [raw]
+    refs = [_parse_pr_ref(item, repository) for item in items]
+    return [ref for ref in refs if ref is not None]
+
+
+def _parse_pr_numbers(metadata: Mapping[str, Any]) -> list[int]:
+    """Extract PR numbers from metadata, handling various formats."""
+    return [ref.number for ref in _parse_pr_refs(metadata) if ref.number is not None]
 
 
 def _build_prs_structured(
@@ -602,10 +638,12 @@ def _build_prs_structured(
 ) -> list[dict[str, str | int]]:
     """Build structured PR metadata for JSON export."""
     prs: list[dict[str, str | int]] = []
-    for num in _parse_pr_numbers(metadata):
-        entry: dict[str, str | int] = {"number": num}
-        if config.repository:
-            entry["url"] = f"https://github.com/{config.repository}/pull/{num}"
+    for ref in _parse_pr_refs(metadata, config.repository):
+        entry: dict[str, str | int] = {}
+        if ref.number is not None:
+            entry["number"] = ref.number
+        if ref.url:
+            entry["url"] = ref.url
         prs.append(entry)
     return prs
 
@@ -699,16 +737,12 @@ def _collect_author_pr_text(
     author_handles = [_format_author(author, explicit_links=explicit_links) for author in authors]
     author_text = _join_with_conjunction(author_handles)
 
-    prs = _parse_pr_numbers(metadata)
-
-    repo = config.repository
     pr_refs: list[str] = []
-    for pr in prs:
-        label = f"#{pr}"
-        if explicit_links and repo:
-            pr_refs.append(f"[{label}](https://github.com/{repo}/pull/{pr})")
+    for ref in _parse_pr_refs(metadata, config.repository):
+        if explicit_links and ref.url:
+            pr_refs.append(f"[{ref.label}]({ref.url})")
         else:
-            pr_refs.append(label)
+            pr_refs.append(ref.label)
     pr_text = _join_with_conjunction(pr_refs)
 
     return author_text, pr_text

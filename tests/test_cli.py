@@ -15,6 +15,7 @@ from click.testing import CliRunner
 
 from tenzir_ship import __version__
 from tenzir_ship.cli import INFO_PREFIX, cli, main
+from tenzir_ship.cli._core import _parse_pr_numbers, _parse_pr_refs
 from tenzir_ship.cli._core import create_cli_context
 from tenzir_ship.cli._show import _collect_unused_entries_for_release
 from tenzir_ship.config import Config, ReleaseConfig, load_config, save_config
@@ -9145,3 +9146,82 @@ def test_validate_rejects_duplicate_ids_within_one_manifest(tmp_path: Path) -> N
 
     assert result.exit_code != 0
     assert "non-unique elements" in result.output
+
+
+def test_parse_pr_refs_accepts_numbers_and_full_urls() -> None:
+    """PR references may be bare numbers or full URLs to any repository."""
+    refs = _parse_pr_refs(
+        {
+            "prs": [
+                6368,
+                "#42",
+                "https://github.com/tenzir/tenzir/pull/6441",
+                "https://github.com/tenzir/mono/pull/35/",
+                "not-a-pr",
+            ]
+        },
+        "tenzir/mono",
+    )
+
+    assert [ref.number for ref in refs] == [6368, 42, 6441, 35]
+    # Bare numbers resolve against the configured repository; explicit URLs
+    # keep whatever repository they name.
+    assert refs[0].url == "https://github.com/tenzir/mono/pull/6368"
+    assert refs[1].url == "https://github.com/tenzir/mono/pull/42"
+    assert refs[2].url == "https://github.com/tenzir/tenzir/pull/6441"
+    assert refs[3].url == "https://github.com/tenzir/mono/pull/35/"
+
+
+def test_parse_pr_refs_without_repository_keeps_explicit_urls() -> None:
+    """A project without a configured repository can still carry URLs."""
+    refs = _parse_pr_refs(
+        {"prs": [7, "https://github.com/tenzir/tenzir/pull/6441"]},
+        None,
+    )
+
+    assert refs[0].url is None
+    assert refs[1].url == "https://github.com/tenzir/tenzir/pull/6441"
+
+
+def test_parse_pr_numbers_still_returns_plain_numbers() -> None:
+    """The display-only helper keeps its list[int] contract."""
+    assert _parse_pr_numbers({"prs": [1, "#2", "https://github.com/tenzir/tenzir/pull/3"]}) == [
+        1,
+        2,
+        3,
+    ]
+
+
+def test_explicit_links_uses_the_entry_url_for_foreign_repositories(
+    tmp_path: Path,
+) -> None:
+    """A full URL must survive rendering instead of being rebuilt from config."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "config.yaml").write_text(
+        "id: test-project\nname: Test Project\nrepository: tenzir/mono\n",
+        encoding="utf-8",
+    )
+    entry_dir = project_dir / "unreleased"
+    entry_dir.mkdir(parents=True)
+    (entry_dir / "foreign-pr.md").write_text(
+        "---\n"
+        "title: Foreign PR reference\n"
+        "type: feature\n"
+        "authors:\n"
+        "  - someone\n"
+        "prs:\n"
+        "  - https://github.com/tenzir/tenzir/pull/6441\n"
+        "---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "show", "-m", "--explicit-links", "unreleased"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "[#6441](https://github.com/tenzir/tenzir/pull/6441)" in result.output
+    assert "tenzir/mono/pull/6441" not in result.output
