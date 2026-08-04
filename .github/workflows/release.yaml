@@ -62,6 +62,14 @@ on:
         required: false
         default: false
         type: boolean
+      create-github-release:
+        description: >-
+          Create the GitHub release. Set to false to commit, tag and push only,
+          leaving the release to be created separately - for example in another
+          repository, or only once downstream builds have proven the tag good.
+        required: false
+        default: true
+        type: boolean
       publish-no-latest-on-non-main:
         description: "Pass --no-latest on non-main branch releases"
         required: false
@@ -387,6 +395,9 @@ jobs:
           if [ "$IS_LATEST" != "true" ] && { [ "$BRANCH" = "main" ] || [ "$NO_LATEST_NON_MAIN" = "true" ]; }; then
             PUBLISH_ARGS+=(--no-latest)
           fi
+          if [ "$CREATE_GITHUB_RELEASE" != "true" ]; then
+            PUBLISH_ARGS+=(--no-github-release)
+          fi
           tenzir-ship --root "$CHANGELOG_ROOT" release publish "$RELEASE_VERSION" "${PUBLISH_ARGS[@]}"
         env:
           BRANCH: ${{ steps.release-type.outputs.branch }}
@@ -395,6 +406,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.create-release.outputs.version }}
           IS_LATEST: ${{ steps.determine-latest.outputs.is_latest }}
           NO_LATEST_NON_MAIN: ${{ inputs.publish-no-latest-on-non-main }}
+          CREATE_GITHUB_RELEASE: ${{ inputs.create-github-release }}
           GH_TOKEN: ${{ steps.auth-token.outputs.token }}
 
       - name: Copy release to main branch (non-main release)

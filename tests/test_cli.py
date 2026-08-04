@@ -12,7 +12,9 @@ import click
 import pytest
 import yaml
 from click.testing import CliRunner
+from rich.panel import Panel
 
+import tenzir_ship.cli._release as release_module
 from tenzir_ship import __version__
 from tenzir_ship.cli import INFO_PREFIX, cli, main
 from tenzir_ship.cli._core import create_cli_context
@@ -9145,3 +9147,241 @@ def test_validate_rejects_duplicate_ids_within_one_manifest(tmp_path: Path) -> N
 
     assert result.exit_code != 0
     assert "non-unique elements" in result.output
+
+
+def test_release_progress_style_matches_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successful progress is green while failed progress remains red."""
+    rendered: list[Panel] = []
+
+    def capture_panel(renderable: object) -> None:
+        assert isinstance(renderable, Panel)
+        rendered.append(renderable)
+
+    monkeypatch.setattr(release_module, "_print_renderable", capture_panel)
+
+    successful = release_module.StepTracker()
+    successful.add("tag", "git tag v1.0.0")
+    successful.complete("tag")
+    release_module._render_release_progress(successful)
+
+    failed = release_module.StepTracker()
+    failed.add("push", "git push origin v1.0.0")
+    failed.fail("push")
+    release_module._render_release_progress(failed)
+
+    assert [panel.border_style for panel in rendered] == ["green", "red"]
+
+
+def test_release_publish_no_github_release_pushes_tag_without_gh(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--no-github-release pushes the tag without invoking or requiring gh."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+
+    subprocess_commands: list[list[str]] = []
+    git_calls: list[str] = []
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        subprocess_commands.append(args)
+
+    def fake_create_tag(*args: object, **kwargs: object) -> bool:
+        git_calls.append("tag")
+        return True
+
+    def fake_push_branch(*args: object, **kwargs: object) -> tuple[str, str, str]:
+        git_calls.append("push_branch")
+        return "origin", "main", "main"
+
+    def fake_push_tag(*args: object, **kwargs: object) -> str:
+        git_calls.append("push_tag")
+        return "origin"
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: None)
+    monkeypatch.setattr(
+        "tenzir_ship.cli._release.get_push_branch_info",
+        lambda *args, **kwargs: ("origin", "main", "main"),
+    )
+    monkeypatch.setattr("tenzir_ship.cli._release.create_annotated_git_tag", fake_create_tag)
+    monkeypatch.setattr("tenzir_ship.cli._release.push_current_branch", fake_push_branch)
+    monkeypatch.setattr("tenzir_ship.cli._release.push_git_tag", fake_push_tag)
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v1.0.0",
+            "--tag",
+            "--no-github-release",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert subprocess_commands == []
+    assert git_calls == ["tag", "push_branch", "push_tag"]
+    assert "skipped creating a GitHub release" in result.output
+
+
+def test_release_publish_no_github_release_requires_tag(tmp_path: Path) -> None:
+    """The skipped-release mode must not succeed without a publish step."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v1.0.0",
+            "--no-github-release",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--no-github-release requires --tag" in result.output
+
+
+def test_release_publish_still_creates_release_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting the flag keeps the previous behaviour."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+
+    commands: list[list[str]] = []
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        commands.append(args)
+        if len(args) >= 3 and args[1:3] == ["release", "view"]:
+            raise subprocess.CalledProcessError(returncode=1, cmd=args)
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: "/usr/bin/gh")
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "publish", "v1.0.0", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert commands[-1][1:3] == ["release", "create"], commands[-1]
+
+
+def test_release_publish_declining_aborts_before_any_git_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Declining must happen before the commit and tag reach the remote."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+
+    calls: list[str] = []
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: "/usr/bin/gh")
+    monkeypatch.setattr(
+        "tenzir_ship.cli._release.get_push_branch_info",
+        lambda *a, **k: ("origin", "main", "main"),
+    )
+    monkeypatch.setattr(
+        "tenzir_ship.cli._release.subprocess.run",
+        lambda args, **kwargs: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(returncode=1, cmd=args)
+        ),
+    )
+    for name in ("create_git_commit", "create_annotated_git_tag", "push_current_branch"):
+        monkeypatch.setattr(
+            f"tenzir_ship.cli._release.{name}",
+            lambda *a, _name=name, **k: calls.append(_name),
+        )
+
+    result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "publish", "v1.0.0", "--tag"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "aborted release publish" in result.output
+    assert calls == [], calls
+
+
+def test_release_publish_no_github_release_still_confirms(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--yes must stay meaningful in tag-only mode."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+
+    calls: list[str] = []
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: None)
+    monkeypatch.setattr(
+        "tenzir_ship.cli._release.get_push_branch_info",
+        lambda *a, **k: ("origin", "main", "main"),
+    )
+    for name in ("create_annotated_git_tag", "push_current_branch"):
+        monkeypatch.setattr(
+            f"tenzir_ship.cli._release.{name}",
+            lambda *a, _name=name, **k: calls.append(_name),
+        )
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "publish",
+            "v1.0.0",
+            "--tag",
+            "--no-github-release",
+        ],
+        input="n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "aborted release publish" in result.output
+    assert calls == [], calls
+
+
+def test_release_publish_prompt_shows_edit_for_existing_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The prompt must name the operation that will actually run."""
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _setup_publishable_release(project_dir, runner)
+
+    def fake_run(
+        args: list[str], *, check: bool, stdout: object = None, stderr: object = None
+    ) -> None:
+        # `release view` succeeding means the release already exists.
+        return None
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: "/usr/bin/gh")
+    monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
+
+    result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "publish", "v1.0.0"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "release edit" in result.output, result.output
+    assert "release create" not in result.output, result.output

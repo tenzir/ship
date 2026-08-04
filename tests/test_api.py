@@ -182,6 +182,32 @@ def test_python_api_release_publish_accepts_github_title_format(
     assert captured["github_title_format"] == "$PROJECT $VERSION - $TITLE"
 
 
+def test_python_api_release_publish_forwards_create_github_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The facade must be able to skip release creation like the CLI can."""
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+    captured: dict[str, object] = {}
+
+    def fake_publish_release(ctx: cli_module.CLIContext, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("tenzir_ship.api.publish_release", fake_publish_release)
+
+    client.release_publish(
+        version="v1.2.3",
+        create_tag=True,
+        create_github_release=False,
+    )
+    assert captured["create_tag"] is True
+    assert captured["create_github_release"] is False
+
+    captured.clear()
+    client.release_publish(version="v1.2.3")
+    assert captured["create_github_release"] is True
+
+
 def test_python_api_release_version_ignores_release_candidates(tmp_path: Path) -> None:
     project_dir = _bootstrap_project(tmp_path)
     client = Changelog(root=project_dir)
