@@ -150,9 +150,10 @@ class StepTracker:
 
 
 def _render_release_progress(tracker: StepTracker) -> None:
-    """Render release progress summary to stderr on failure."""
+    """Render a release progress summary."""
     total = len(tracker.steps)
     done = len([s for s in tracker.steps if s.status == StepStatus.COMPLETED])
+    failed = any(s.status == StepStatus.FAILED for s in tracker.steps)
     progress = f"{done}/{total}"
 
     lines: list[str] = []
@@ -173,7 +174,8 @@ def _render_release_progress(tracker: StepTracker) -> None:
     if lines:
         content = Text.from_markup("\n".join(lines))
         title = f"Release Progress ({progress})"
-        _print_renderable(Panel(content, title=title, border_style="red"))
+        border_style = "red" if failed else "green"
+        _print_renderable(Panel(content, title=title, border_style=border_style))
 
     for step in tracker.steps:
         if step.status == StepStatus.FAILED:
@@ -1282,11 +1284,16 @@ def publish_release(
     github_title_format: str | None = None,
     create_github_release: bool = True,
 ) -> None:
-    """Python wrapper around the ``release publish`` command."""
+    """Execute the release publishing workflow."""
 
     config = ctx.ensure_config()
     _enforce_structure_is_valid(ctx, action="publish a release")
     project_root = ctx.project_root
+
+    if not create_github_release and not create_tag:
+        raise click.ClickException(
+            "--no-github-release requires --tag; set create_tag=True when using the Python API."
+        )
 
     if not config.repository:
         raise click.ClickException(
@@ -1626,8 +1633,8 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
     "create_github_release",
     default=True,
     help=(
-        "Create the GitHub release. Use --no-github-release to commit, tag and "
-        "push only, leaving the release to be created separately."
+        "Create the GitHub release. Use --no-github-release with --tag to push "
+        "the release tag without creating the GitHub release."
     ),
 )
 @click.option(
@@ -1666,7 +1673,7 @@ def release_publish_cmd(
     commit_message: str | None,
     assume_yes: bool,
 ) -> None:
-    """Publish a release to GitHub using the gh CLI.
+    """Publish a release with optional git and GitHub steps.
 
     If no version is provided, defaults to the latest release.
     """

@@ -83,6 +83,7 @@ def test_reusable_release_is_the_only_reusable_release_workflow() -> None:
         "pre-publish",
         "post-publish",
         "skip-publish",
+        "create-github-release",
         "publish-no-latest-on-non-main",
         "copy-release-to-main-on-non-main",
         "update-latest-branch-on-main",
@@ -103,6 +104,23 @@ def test_reusable_release_auth_and_signing_defaults_are_opt_in() -> None:
     assert _as_mapping(inputs["use_push_token"])["default"] is False
     assert _as_mapping(inputs["sign_commits"])["default"] is False
     assert _as_mapping(inputs["sign_tags"])["default"] is False
+
+
+def test_reusable_release_can_defer_github_release_creation() -> None:
+    workflow = _load_workflow("release.yaml")
+    workflow_call = _as_mapping(_as_mapping(workflow["on"])["workflow_call"])
+    inputs = _as_mapping(workflow_call["inputs"])
+    assert _as_mapping(inputs["create-github-release"])["default"] is True
+
+    release_job = _job(workflow, "release")
+    steps = _as_sequence(release_job["steps"])
+    stage_and_publish = _step_by_name(steps, "Stage and publish")
+    env = _as_mapping(stage_and_publish["env"])
+    assert env["CREATE_GITHUB_RELEASE"] == "${{ inputs.create-github-release }}"
+
+    run = cast(str, stage_and_publish["run"])
+    assert 'if [ "$CREATE_GITHUB_RELEASE" != "true" ]; then' in run
+    assert "PUBLISH_ARGS+=(--no-github-release)" in run
 
 
 def test_reusable_release_validates_optional_auth_token_and_signing_inputs() -> None:

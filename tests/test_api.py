@@ -195,7 +195,12 @@ def test_python_api_release_publish_forwards_create_github_release(
 
     monkeypatch.setattr("tenzir_ship.api.publish_release", fake_publish_release)
 
-    client.release_publish(version="v1.2.3", create_github_release=False)
+    client.release_publish(
+        version="v1.2.3",
+        create_tag=True,
+        create_github_release=False,
+    )
+    assert captured["create_tag"] is True
     assert captured["create_github_release"] is False
 
     captured.clear()

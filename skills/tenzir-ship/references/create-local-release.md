@@ -169,9 +169,11 @@ Notes:
   version as prerelease.
 - Add `--no-latest` if the user requested that a stable release must not be
   marked as latest.
-- Add `--no-github-release` to stop after step 3, leaving the GitHub release to
-  be created separately. Use it only when the user asks for it, or when the
-  project's release procedure defers release creation - for example when the
+- Add `--no-github-release` together with `--tag` to stop after step 3, leaving
+  the GitHub release to be created separately. The command rejects
+  `--no-github-release` without `--tag` because no publish step would remain.
+  Use it only when the user asks for it, or when the project's release procedure
+  defers release creation - for example when the
   release belongs in a different repository than the one being pushed to, or
   when it must appear only after downstream builds have proven the tag
   releasable. Never add it on your own initiative: a release the user expected

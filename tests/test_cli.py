@@ -12,7 +12,9 @@ import click
 import pytest
 import yaml
 from click.testing import CliRunner
+from rich.panel import Panel
 
+import tenzir_ship.cli._release as release_module
 from tenzir_ship import __version__
 from tenzir_ship.cli import INFO_PREFIX, cli, main
 from tenzir_ship.cli._core import create_cli_context
@@ -9147,21 +9149,65 @@ def test_validate_rejects_duplicate_ids_within_one_manifest(tmp_path: Path) -> N
     assert "non-unique elements" in result.output
 
 
-def test_release_publish_no_github_release_skips_gh(
+def test_release_progress_style_matches_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successful progress is green while failed progress remains red."""
+    rendered: list[Panel] = []
+
+    def capture_panel(renderable: object) -> None:
+        assert isinstance(renderable, Panel)
+        rendered.append(renderable)
+
+    monkeypatch.setattr(release_module, "_print_renderable", capture_panel)
+
+    successful = release_module.StepTracker()
+    successful.add("tag", "git tag v1.0.0")
+    successful.complete("tag")
+    release_module._render_release_progress(successful)
+
+    failed = release_module.StepTracker()
+    failed.add("push", "git push origin v1.0.0")
+    failed.fail("push")
+    release_module._render_release_progress(failed)
+
+    assert [panel.border_style for panel in rendered] == ["green", "red"]
+
+
+def test_release_publish_no_github_release_pushes_tag_without_gh(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--no-github-release must not invoke gh at all."""
+    """--no-github-release pushes the tag without invoking or requiring gh."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     _setup_publishable_release(project_dir, runner)
 
-    commands: list[list[str]] = []
+    subprocess_commands: list[list[str]] = []
+    git_calls: list[str] = []
 
     def fake_run(
         args: list[str], *, check: bool, stdout: object = None, stderr: object = None
     ) -> None:
-        commands.append(args)
+        subprocess_commands.append(args)
 
+    def fake_create_tag(*args: object, **kwargs: object) -> bool:
+        git_calls.append("tag")
+        return True
+
+    def fake_push_branch(*args: object, **kwargs: object) -> tuple[str, str, str]:
+        git_calls.append("push_branch")
+        return "origin", "main", "main"
+
+    def fake_push_tag(*args: object, **kwargs: object) -> str:
+        git_calls.append("push_tag")
+        return "origin"
+
+    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: None)
+    monkeypatch.setattr(
+        "tenzir_ship.cli._release.get_push_branch_info",
+        lambda *args, **kwargs: ("origin", "main", "main"),
+    )
+    monkeypatch.setattr("tenzir_ship.cli._release.create_annotated_git_tag", fake_create_tag)
+    monkeypatch.setattr("tenzir_ship.cli._release.push_current_branch", fake_push_branch)
+    monkeypatch.setattr("tenzir_ship.cli._release.push_git_tag", fake_push_tag)
     monkeypatch.setattr("tenzir_ship.cli._release.subprocess.run", fake_run)
 
     result = runner.invoke(
@@ -9172,26 +9218,23 @@ def test_release_publish_no_github_release_skips_gh(
             "release",
             "publish",
             "v1.0.0",
+            "--tag",
             "--no-github-release",
             "--yes",
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert not any(arg and arg[0].endswith("gh") for arg in commands), commands
-    assert not any("release" in arg and "create" in arg for arg in commands), commands
+    assert subprocess_commands == []
+    assert git_calls == ["tag", "push_branch", "push_tag"]
     assert "skipped creating a GitHub release" in result.output
 
 
-def test_release_publish_no_github_release_does_not_require_gh(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The gh CLI is only needed by the step that was skipped."""
+def test_release_publish_no_github_release_requires_tag(tmp_path: Path) -> None:
+    """The skipped-release mode must not succeed without a publish step."""
     runner = CliRunner()
     project_dir = tmp_path / "project"
     _setup_publishable_release(project_dir, runner)
-
-    monkeypatch.setattr("tenzir_ship.cli._release.shutil.which", lambda command: None)
 
     result = runner.invoke(
         cli,
@@ -9206,8 +9249,8 @@ def test_release_publish_no_github_release_does_not_require_gh(
         ],
     )
 
-    assert result.exit_code == 0, result.output
-    assert "gh' CLI is required" not in result.output
+    assert result.exit_code != 0
+    assert "--no-github-release requires --tag" in result.output
 
 
 def test_release_publish_still_creates_release_by_default(
