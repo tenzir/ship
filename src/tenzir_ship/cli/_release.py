@@ -192,6 +192,7 @@ __all__ = [
     # Helper functions
     "_find_release_manifest",
     "_github_release_exists",
+    "_build_github_release_command",
     "_latest_semver",
     "_bump_version_value",
     "_validate_semver_label",
@@ -231,6 +232,45 @@ def _github_release_exists(repository: str, tag_name: str, gh_path: str) -> bool
         raise click.ClickException("The 'gh' CLI is required but was not found in PATH.") from exc
     except subprocess.CalledProcessError:
         return False
+
+
+def _build_github_release_command(
+    gh_path: str,
+    *,
+    tag_name: str,
+    repository: str,
+    notes_path: Path,
+    title: str | None,
+    draft: bool,
+    prerelease: bool,
+    no_latest: bool,
+    release_exists: bool,
+) -> list[str]:
+    """Build the `gh release create`/`edit` command for a release.
+
+    Built before the confirmation prompt so the prompt can display the command
+    that will actually run rather than a placeholder.
+    """
+    command = [
+        gh_path,
+        "release",
+        "edit" if release_exists else "create",
+        tag_name,
+        "--repo",
+        repository,
+        "--notes-file",
+        str(notes_path),
+    ]
+    if title:
+        command.extend(["--title", title])
+    if draft and not release_exists:
+        # An existing release is not turned back into a draft.
+        command.append("--draft")
+    if prerelease:
+        command.append("--prerelease")
+    if no_latest:
+        command.append("--latest=false")
+    return command
 
 
 def _latest_semver(project_root: Path, *, stable_only: bool = True) -> Version | None:
@@ -1240,6 +1280,7 @@ def publish_release(
     commit_message: str | None,
     assume_yes: bool,
     github_title_format: str | None = None,
+    create_github_release: bool = True,
 ) -> None:
     """Python wrapper around the ``release publish`` command."""
 
@@ -1252,8 +1293,10 @@ def publish_release(
             "Set the 'repository' field in config.yaml or package.yaml before publishing releases."
         )
 
+    # Only the GitHub release step shells out to `gh`, so a run that skips it
+    # has no reason to require the CLI.
     gh_path = shutil.which("gh")
-    if gh_path is None:
+    if gh_path is None and create_github_release:
         raise click.ClickException("The 'gh' CLI is required but was not found in PATH.")
 
     manifest = _find_release_manifest(project_root, version)
@@ -1318,13 +1361,58 @@ def publish_release(
         tracker.add("tag", f'git tag -a {tag_name} -m "Release {tag_name}"')
         tracker.add("push_branch", f"git push {push_remote} {push_branch}:{push_remote_ref}")
         tracker.add("push_tag", f"git push {push_remote} {tag_name}")
-    tracker.add("publish", f"gh release create {tag_name} --repo {config.repository} ...")
+    if create_github_release:
+        tracker.add("publish", f"gh release create {tag_name} --repo {config.repository} ...")
 
     def _fail_step_and_raise(step_name: str, exc: Exception) -> NoReturn:
         """Mark step as failed, render progress, and re-raise the exception."""
         tracker.fail(step_name)
         _render_release_progress(tracker)
         raise click.ClickException(str(exc)) from exc
+
+    # Reading whether the release already exists is side-effect free, so both it
+    # and the resulting command can be resolved before anything is mutated. That
+    # keeps the prompt below honest: an existing release is edited, not created.
+    command: list[str] = []
+    if create_github_release:
+        release_exists = _github_release_exists(config.repository, tag_name, cast(str, gh_path))
+        command = _build_github_release_command(
+            cast(str, gh_path),
+            tag_name=tag_name,
+            repository=config.repository,
+            notes_path=notes_path,
+            title=github_release_title,
+            draft=draft,
+            prerelease=resolved_prerelease,
+            no_latest=resolved_no_latest,
+            release_exists=release_exists,
+        )
+        tracker.update_command("publish", shlex.join(command))
+
+    # Confirm before the first mutation rather than after the pushes: a commit
+    # and tag that are already on the remote cannot be taken back by declining.
+    if not assume_yes:
+        if create_github_release:
+            target = f"to GitHub repository {config.repository}"
+        else:
+            target = f"to remote {push_remote or 'origin'} without a GitHub release"
+        log_info(f"publish release {release_version} with tag {tag_name} {target}?")
+        planned = [step.command for step in tracker.steps]
+        log_info(f"this will run {format_bold(str(len(planned)))} step(s):")
+        for command_line in planned:
+            log_info(f"  {command_line}")
+        try:
+            confirmed = click.confirm(
+                "",
+                default=True,
+                prompt_suffix="[Y/n]: ",
+                show_default=False,
+            )
+        except (click.exceptions.Abort, KeyboardInterrupt) as exc:
+            abort_on_user_interrupt(exc)
+        if not confirmed:
+            log_info("aborted release publish.")
+            return
 
     # Execute commit step
     if create_commit:
@@ -1363,68 +1451,14 @@ def publish_release(
         tracker.complete("push_tag")
         log_success(f"pushed git tag {tag_name} to remote {remote_name}.")
 
-    release_exists = _github_release_exists(config.repository, tag_name, gh_path)
-    if release_exists:
-        command: list[str] = [
-            gh_path,
-            "release",
-            "edit",
-            tag_name,
-            "--repo",
-            config.repository,
-            "--notes-file",
-            str(notes_path),
-        ]
-        if github_release_title:
-            command.extend(["--title", github_release_title])
-        if resolved_prerelease:
-            command.append("--prerelease")
-        if resolved_no_latest:
-            command.append("--latest=false")
-        confirmation_action = "gh release edit"
-    else:
-        command = [
-            gh_path,
-            "release",
-            "create",
-            tag_name,
-            "--repo",
-            config.repository,
-            "--notes-file",
-            str(notes_path),
-        ]
-        if github_release_title:
-            command.extend(["--title", github_release_title])
-        if draft:
-            command.append("--draft")
-        if resolved_prerelease:
-            command.append("--prerelease")
-        if resolved_no_latest:
-            command.append("--latest=false")
-        confirmation_action = "gh release create"
-
-    tracker.update_command("publish", shlex.join(command))
-
-    if not assume_yes:
-        prompt_question = (
-            f"Publish release {release_version} with tag {tag_name} "
-            f"to GitHub repository {config.repository}?"
-        )
-        log_info(prompt_question.lower())
-        prompt_action = f"This will run {format_bold(confirmation_action)}."
-        log_info(prompt_action.lower())
-        try:
-            confirmed = click.confirm(
-                "",
-                default=True,
-                prompt_suffix="[Y/n]: ",
-                show_default=False,
-            )
-        except (click.exceptions.Abort, KeyboardInterrupt) as exc:
-            abort_on_user_interrupt(exc)
-        if not confirmed:
-            log_info("aborted release publish.")
-            return
+    if not create_github_release:
+        # The commit and tag are pushed; whoever owns the GitHub release creates
+        # it separately. Useful when the release must be created in a different
+        # repository than the one being pushed to, or only after downstream
+        # builds have proven the tag is releasable.
+        _render_release_progress(tracker)
+        log_info(f"skipped creating a GitHub release for {tag_name}.")
+        return
 
     try:
         subprocess.run(command, check=True)
@@ -1588,6 +1622,15 @@ def release_version_cmd(ctx: CLIContext, bare: bool) -> None:
     help="Prevent GitHub from marking this as the latest release.",
 )
 @click.option(
+    "--github-release/--no-github-release",
+    "create_github_release",
+    default=True,
+    help=(
+        "Create the GitHub release. Use --no-github-release to commit, tag and "
+        "push only, leaving the release to be created separately."
+    ),
+)
+@click.option(
     "--tag",
     "create_tag",
     is_flag=True,
@@ -1617,6 +1660,7 @@ def release_publish_cmd(
     draft: bool,
     prerelease: bool,
     no_latest: bool,
+    create_github_release: bool,
     create_tag: bool,
     create_commit: bool,
     commit_message: str | None,
@@ -1647,4 +1691,5 @@ def release_publish_cmd(
         commit_message=commit_message,
         assume_yes=assume_yes,
         github_title_format=github_title_format,
+        create_github_release=create_github_release,
     )
