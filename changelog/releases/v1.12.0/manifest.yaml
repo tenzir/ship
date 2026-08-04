@@ -1,0 +1,10 @@
+created: 2026-08-04
+title: Safer and more flexible release publishing
+intro: >-
+  Release publishing is now safer and more flexible: tenzir-ship confirms every commit,
+  tag, and push before making changes, and it can publish a release tag without creating
+  a GitHub release. Use the new option when another repository owns the release or
+  downstream builds must validate the tag first.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.11.1
