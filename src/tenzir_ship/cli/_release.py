@@ -211,6 +211,10 @@ ReleaseBump = Literal["patch", "minor", "major"]
 ReleaseVersionSource = Literal["explicit", "manual", "auto"]
 
 
+class _MultipleReleaseCandidateSeriesError(click.ClickException):
+    """Raised when more than one RC series awaits promotion."""
+
+
 @dataclass
 class ModuleReleasePlan:
     """Resolved module snapshot and rendered entry selection for a release."""
@@ -346,17 +350,14 @@ def _infer_release_bump(unreleased_entries: list[Entry]) -> ReleaseBump | None:
 def _infer_next_release_version(
     project_root: Path,
     unreleased_entries: list[Entry],
-    *,
-    include_prerelease_fallback: bool = True,
 ) -> str | None:
     bump = _infer_release_bump(unreleased_entries)
     if bump is None:
         return None
-    return _next_version_for_bump(
-        project_root,
-        bump,
-        include_prerelease_fallback=include_prerelease_fallback,
-    )
+    base_version = _latest_semver(project_root) or Version("0.0.0")
+    if bump == "major" and base_version.major == 0:
+        bump = "minor"
+    return str(_bump_version_value(base_version, bump))
 
 
 def _validate_semver_label(version: str) -> None:
@@ -406,11 +407,7 @@ def _resolve_release_version(
             "manual",
         )
 
-    inferred = _infer_next_release_version(
-        project_root,
-        unreleased_entries,
-        include_prerelease_fallback=include_prerelease_fallback,
-    )
+    inferred = _next_automatic_release_version(project_root, unreleased_entries)
     if inferred is None:
         raise click.ClickException(
             "Cannot auto-bump release version because no unreleased changelog entries were "
@@ -513,10 +510,6 @@ def _resolve_requested_release_version(
                     "current RC series, or omit the version and bump flags to promote "
                     "the latest candidate."
                 )
-        if explicit is None and bump is None:
-            active_series = _get_active_release_candidate_series(project_root)
-            if active_series:
-                return stable_release_version(active_series[-1].version), "auto"
         return _resolve_release_version(
             project_root,
             explicit,
@@ -611,11 +604,22 @@ def _get_active_release_candidate_series(project_root: Path) -> list[ReleaseMani
     if not outstanding:
         return []
     if len(outstanding) > 1:
-        raise click.ClickException(
+        raise _MultipleReleaseCandidateSeriesError(
             "Multiple release candidate series exist in releases/. Remove stale RC "
             "directories so only one RC cycle remains before continuing."
         )
     return next(iter(outstanding.values()))
+
+
+def _next_automatic_release_version(
+    project_root: Path,
+    unreleased_entries: list[Entry],
+) -> str | None:
+    """Return the next release selected without an explicit version or bump."""
+    active_series = _get_active_release_candidate_series(project_root)
+    if active_series:
+        return stable_release_version(active_series[-1].version)
+    return _infer_next_release_version(project_root, unreleased_entries)
 
 
 def _resolve_release_baseline(

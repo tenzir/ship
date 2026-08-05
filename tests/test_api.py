@@ -162,6 +162,29 @@ def test_python_api_release_version_defaults_to_tag(tmp_path: Path) -> None:
     assert client.release_version(bare=True) == "1.2.3"
 
 
+def test_python_api_release_create_treats_major_bump_as_explicit(tmp_path: Path) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    client.add(
+        title="Initial release",
+        entry_type="feature",
+        authors=["codex"],
+        description="Seeds the unstable release.",
+    )
+    client.release_create(version="v0.4.2", assume_yes=True)
+
+    client.add(
+        title="Stable API",
+        entry_type="breaking",
+        authors=["codex"],
+        description="Declares the first stable API.",
+    )
+    client.release_create(version_bump="major", assume_yes=True)
+
+    assert client.release_version() == "v1.0.0"
+
+
 def test_python_api_release_publish_accepts_github_title_format(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
