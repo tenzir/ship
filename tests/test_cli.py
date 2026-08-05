@@ -2211,6 +2211,137 @@ def test_release_create_implicit_auto_bump_uses_entry_types(tmp_path: Path) -> N
     assert major_release.stdout.strip() == "v2.0.0"
 
 
+def test_release_create_implicit_breaking_bump_starts_at_zero_minor(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial breaking change",
+            "--type",
+            "breaking",
+            "--description",
+            "Defines the initial unstable API.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+    assert release_result.stdout.strip() == "v0.1.0"
+
+
+def test_release_create_implicit_breaking_bump_stays_below_one(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project" / "changelog"
+    project_dir.mkdir(parents=True)
+    pyproject_path = project_dir.parent / "pyproject.toml"
+    pyproject_path.write_text(
+        '[project]\nname = "demo"\nversion = "0.4.2"\n',
+        encoding="utf-8",
+    )
+
+    add_initial = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial feature",
+            "--type",
+            "feature",
+            "--description",
+            "Seeds the initial release.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_initial.exit_code == 0, add_initial.output
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v0.4.2", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    add_breaking = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Breaking API change",
+            "--type",
+            "breaking",
+            "--description",
+            "Changes the unstable API.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_breaking.exit_code == 0, add_breaking.output
+
+    stats_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "stats", "--json"],
+    )
+    assert stats_result.exit_code == 0, stats_result.output
+    stats = json.loads(stats_result.output)
+    assert stats["parent"]["releases"]["next"] == "v0.5.0"
+
+    preview_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create"],
+    )
+    assert preview_result.exit_code != 0
+    assert "changes for release v0.5.0" in click.utils.strip_ansi(preview_result.output)
+    assert not (project_dir / "releases" / "v0.5.0").exists()
+
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert release_result.exit_code == 0, release_result.output
+    assert release_result.stdout.strip() == "v0.5.0"
+    assert 'version = "0.5.0"' in pyproject_path.read_text(encoding="utf-8")
+
+    add_explicit_major = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable API",
+            "--type",
+            "breaking",
+            "--description",
+            "Declares the first stable API.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_explicit_major.exit_code == 0, add_explicit_major.output
+    major_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--major", "--yes"],
+    )
+    assert major_release.exit_code == 0, major_release.output
+    assert major_release.stdout.strip() == "v1.0.0"
+
+
 def test_release_create_implicit_auto_bump_uses_highest_severity(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -5921,7 +6052,7 @@ def test_stats_json_prefers_latest_stable_over_newer_release_candidate(
     assert payload["parent"]["entries"]["feature"] == 2
 
 
-def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exists(
+def test_stats_json_next_version_uses_active_release_candidate_target(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -5948,7 +6079,7 @@ def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exis
 
     rc_result = runner.invoke(
         cli,
-        ["--root", str(project_dir), "release", "create", "v1.2.3", "--rc", "--yes"],
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--rc", "--yes"],
     )
     assert rc_result.exit_code == 0, rc_result.output
 
@@ -5959,11 +6090,11 @@ def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exis
             str(project_dir),
             "add",
             "--title",
-            "Follow-up Feature",
+            "RC breaking change",
             "--type",
-            "feature",
+            "breaking",
             "--description",
-            "Plans the next release.",
+            "Updates the release candidate API.",
             "--author",
             "codex",
         ],
@@ -5976,8 +6107,16 @@ def test_stats_json_next_version_uses_release_candidate_base_when_no_stable_exis
     )
     assert stats_json.exit_code == 0, stats_json.output
     payload = json.loads(stats_json.output)
-    assert payload["parent"]["releases"]["latest"] == "v1.2.3-rc.1"
-    assert payload["parent"]["releases"]["next"] == "v1.3.0"
+    assert payload["parent"]["releases"]["latest"] == "v1.0.0-rc.1"
+    assert payload["parent"]["releases"]["next"] == "v1.0.0"
+
+    promote_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+    assert promote_result.stdout.strip() == "v1.0.0"
+    assert not (project_dir / "releases" / "v2.0.0").exists()
 
 
 def test_stats_json_next_version_is_null_without_unreleased_entries(tmp_path: Path) -> None:

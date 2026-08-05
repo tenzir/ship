@@ -19,7 +19,7 @@ from ..releases import (
 )
 from ..utils import console
 from ._manifests import _get_latest_release_manifest
-from ._release import _infer_next_release_version
+from ._release import _next_automatic_release_version
 
 
 def _format_age(days: int) -> str:
@@ -136,7 +136,7 @@ def _collect_project_stats(project_root: Path) -> dict:
     for entry in unreleased_entries:
         unreleased_types[entry.type] += 1
     unreleased_count = len(unreleased_entries)
-    next_version = _infer_next_release_version(project_root, unreleased_entries)
+    next_version = _next_automatic_release_version(project_root, unreleased_entries)
     if next_version is not None:
         next_version = render_release_tag(next_version)
 
