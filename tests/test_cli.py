@@ -2342,6 +2342,60 @@ def test_release_create_implicit_breaking_bump_stays_below_one(tmp_path: Path) -
     assert major_release.stdout.strip() == "v1.0.0"
 
 
+def test_release_create_explicit_version_transitions_zero_major_to_one(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_initial = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Initial feature",
+            "--type",
+            "feature",
+            "--description",
+            "Seeds the unstable release.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_initial.exit_code == 0, add_initial.output
+    first_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v0.4.2", "--yes"],
+    )
+    assert first_release.exit_code == 0, first_release.output
+
+    add_breaking = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Stable API",
+            "--type",
+            "breaking",
+            "--description",
+            "Declares the first stable API.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_breaking.exit_code == 0, add_breaking.output
+
+    stable_release = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert stable_release.exit_code == 0, stable_release.output
+    assert stable_release.stdout.strip() == "v1.0.0"
+
+
 def test_release_create_implicit_auto_bump_uses_highest_severity(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -6117,6 +6171,55 @@ def test_stats_json_next_version_uses_active_release_candidate_target(
     assert promote_result.exit_code == 0, promote_result.output
     assert promote_result.stdout.strip() == "v1.0.0"
     assert not (project_dir / "releases" / "v2.0.0").exists()
+
+
+def test_stats_json_reports_no_next_version_with_multiple_rc_series(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Breaking change",
+            "--type",
+            "breaking",
+            "--description",
+            "Changes the unstable API.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    for version in ("v1.0.0-rc.1", "v2.0.0-rc.1"):
+        release_dir = project_dir / "releases" / version
+        release_dir.mkdir(parents=True)
+        (release_dir / "manifest.yaml").write_text(
+            "created: 2026-01-01\n",
+            encoding="utf-8",
+        )
+
+    stats_json = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "stats", "--json"],
+    )
+    assert stats_json.exit_code == 0, stats_json.output
+    payload = json.loads(stats_json.stdout)
+    assert payload["parent"]["releases"]["next"] is None
+    assert "Multiple release candidate series exist" in stats_json.stderr
+    assert "The next release version is unavailable" in stats_json.stderr
+
+    release_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "--yes"],
+    )
+    assert release_result.exit_code != 0
+    assert "Multiple release candidate series exist" in release_result.output
 
 
 def test_stats_json_next_version_is_null_without_unreleased_entries(tmp_path: Path) -> None:

@@ -211,6 +211,10 @@ ReleaseBump = Literal["patch", "minor", "major"]
 ReleaseVersionSource = Literal["explicit", "manual", "auto"]
 
 
+class _MultipleReleaseCandidateSeriesError(click.ClickException):
+    """Raised when more than one RC series awaits promotion."""
+
+
 @dataclass
 class ModuleReleasePlan:
     """Resolved module snapshot and rendered entry selection for a release."""
@@ -600,7 +604,7 @@ def _get_active_release_candidate_series(project_root: Path) -> list[ReleaseMani
     if not outstanding:
         return []
     if len(outstanding) > 1:
-        raise click.ClickException(
+        raise _MultipleReleaseCandidateSeriesError(
             "Multiple release candidate series exist in releases/. Remove stale RC "
             "directories so only one RC cycle remains before continuing."
         )

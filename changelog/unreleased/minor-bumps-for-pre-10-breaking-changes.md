@@ -17,4 +17,4 @@ To declare the first stable release, request it explicitly:
 tenzir-ship release create --major --yes
 ```
 
-You can also pass `1.0.0` as the release version. Breaking entries continue to trigger major bumps after a project reaches `v1.0.0`. Active release candidates remain on their explicitly selected target during continuation and promotion.
+You can also pass `1.0.0` as the release version. Breaking entries continue to trigger major bumps after a project reaches `v1.0.0`. Active release candidates remain on their explicitly selected target during continuation and promotion. If multiple outstanding release-candidate series make that target ambiguous, `stats` warns and reports no next version instead of failing.
