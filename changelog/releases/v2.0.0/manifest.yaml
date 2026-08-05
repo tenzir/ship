@@ -1,0 +1,10 @@
+created: 2026-08-05
+title: Safe pre-1.0 breaking-change version bumps
+intro: >-
+  Tenzir Ship now keeps projects on major version zero when unreleased entries include
+  breaking changes, automatically selecting the next minor release instead of jumping
+  to 1.0.0. Projects can still explicitly request 1.0.0 when declaring their first
+  stable release.
+source:
+  mode: sync-stable-queue
+  previous_stable: v1.12.0
