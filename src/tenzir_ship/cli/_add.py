@@ -331,12 +331,12 @@ def create_entry(
     multiple=True,
     help="Component associated with the change (repeat for multiple).",
 )
-@click.option("--author", "authors", multiple=True, help="GitHub username of an author.")
+@click.option("--author", "authors", multiple=True, help="GitHub username of a human author.")
 @click.option(
     "--co-author",
     "co_authors",
     multiple=True,
-    help="Additional author (combined with inferred/explicit author).",
+    help="Additional human author (combined with inferred/explicit author).",
 )
 @click.option(
     "--pr",

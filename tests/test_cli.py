@@ -5157,7 +5157,7 @@ def test_add_co_author_with_explicit_author(tmp_path: Path) -> None:
             "--author",
             "mavam",
             "--co-author",
-            "claude",
+            "alice",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5168,7 +5168,7 @@ def test_add_co_author_with_explicit_author(tmp_path: Path) -> None:
     # Both authors should be present
     assert "authors:" in entry_text
     assert "mavam" in entry_text
-    assert "claude" in entry_text
+    assert "alice" in entry_text
 
 
 def test_add_multiple_co_authors(tmp_path: Path) -> None:
@@ -5192,9 +5192,9 @@ def test_add_multiple_co_authors(tmp_path: Path) -> None:
             "--author",
             "mavam",
             "--co-author",
-            "claude",
+            "alice",
             "--co-author",
-            "copilot",
+            "bob",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5202,7 +5202,7 @@ def test_add_multiple_co_authors(tmp_path: Path) -> None:
     entry_files = list((project_dir / "unreleased").glob("*.md"))
     assert len(entry_files) == 1
     entry = read_entry(entry_files[0])
-    assert entry.metadata.get("authors") == ["mavam", "claude", "copilot"]
+    assert entry.metadata.get("authors") == ["mavam", "alice", "bob"]
 
 
 def test_add_co_author_deduplication(tmp_path: Path) -> None:
@@ -5228,7 +5228,7 @@ def test_add_co_author_deduplication(tmp_path: Path) -> None:
             "--co-author",
             "mavam",
             "--co-author",
-            "claude",
+            "alice",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5237,7 +5237,7 @@ def test_add_co_author_deduplication(tmp_path: Path) -> None:
     assert len(entry_files) == 1
     entry = read_entry(entry_files[0])
     # mavam should appear only once, order preserved
-    assert entry.metadata.get("authors") == ["mavam", "claude"]
+    assert entry.metadata.get("authors") == ["mavam", "alice"]
 
 
 def test_add_co_author_without_explicit_author(
@@ -5264,7 +5264,7 @@ def test_add_co_author_without_explicit_author(
             "--description",
             "A feature using inference plus co-author.",
             "--co-author",
-            "claude",
+            "alice",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5273,7 +5273,7 @@ def test_add_co_author_without_explicit_author(
     assert len(entry_files) == 1
     entry = read_entry(entry_files[0])
     # Should have inferred user first, then co-author
-    assert entry.metadata.get("authors") == ["inferred-user", "claude"]
+    assert entry.metadata.get("authors") == ["inferred-user", "alice"]
 
 
 def test_explicit_links_flag_in_show_command(tmp_path: Path) -> None:
