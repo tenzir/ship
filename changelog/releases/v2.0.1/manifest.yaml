@@ -1,0 +1,8 @@
+created: 2026-08-10
+title: GitHub App token compatibility
+intro: >-
+  This release removes GitHub App token deprecation warnings from reusable release
+  workflows while preserving existing App ID configurations.
+source:
+  mode: sync-stable-queue
+  previous_stable: v2.0.0
