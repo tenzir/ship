@@ -27,7 +27,8 @@ def test_python_api_add_entry_creates_file(tmp_path: Path) -> None:
         title="API entry",
         entry_type="feature",
         components=["core"],
-        authors=["codex"],
+        authors=["mavam"],
+        agents=["codex"],
         prs=["42"],
         description="Body",
     )
@@ -37,6 +38,9 @@ def test_python_api_add_entry_creates_file(tmp_path: Path) -> None:
     contents = path.read_text(encoding="utf-8")
     assert "API entry" in contents
     assert "feature" in contents
+    entry = read_entry(path)
+    assert entry.metadata["authors"] == ["mavam"]
+    assert entry.metadata["agents"] == ["codex"]
 
 
 def test_python_api_show_delegates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -50,6 +50,7 @@ def _entry_to_dict(
         "project": entry.project or config.id,
         "prs": _build_prs_structured(metadata, config),
         "authors": _build_authors_structured(metadata),
+        "agents": entry.agents,
         "body": entry.body,
     }
     if entry.components:

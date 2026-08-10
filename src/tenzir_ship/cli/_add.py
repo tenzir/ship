@@ -10,7 +10,7 @@ from typing import Any, Optional, Sequence
 import click
 from rich.text import Text
 
-from ..entries import ENTRY_TYPES, write_entry
+from ..entries import AGENT_IDENTIFIER_PATTERN, ENTRY_TYPES, write_entry
 from ..utils import (
     abort_on_user_interrupt,
     console,
@@ -186,6 +186,7 @@ def create_entry(
     components: Sequence[str] | None = None,
     authors: Sequence[str] | None = None,
     co_authors: Sequence[str] | None = None,
+    agents: Sequence[str] | None = None,
     prs: Sequence[str] | None = None,
     description: Optional[str] = None,
     allow_interactive: bool = True,
@@ -262,6 +263,19 @@ def create_entry(
         # Deduplicate while preserving order
         authors_list = list(dict.fromkeys(authors_list))
 
+    agents_list: list[str] = []
+    for raw_agent in tuple(agents or ()):
+        agent = raw_agent.strip()
+        if not agent:
+            continue
+        if not AGENT_IDENTIFIER_PATTERN.fullmatch(agent):
+            raise click.ClickException(
+                f"Agent identifier '{agent}' must be a lowercase slug "
+                "containing letters, numbers, and single hyphens."
+            )
+        agents_list.append(agent)
+    agents_list = list(dict.fromkeys(agents_list))
+
     if description is not None:
         body = description
     else:
@@ -299,6 +313,8 @@ def create_entry(
     }
     if authors_list:
         metadata["authors"] = authors_list
+    if agents_list:
+        metadata["agents"] = agents_list
     if component_values:
         metadata["components"] = component_values
     if pr_numbers:
@@ -339,6 +355,12 @@ def create_entry(
     help="Additional author (combined with inferred/explicit author).",
 )
 @click.option(
+    "--agent",
+    "agents",
+    multiple=True,
+    help="Agent tool used for the change (repeat for multiple).",
+)
+@click.option(
     "--pr",
     "prs",
     multiple=True,
@@ -363,6 +385,7 @@ def add(
     components: tuple[str, ...],
     authors: tuple[str, ...],
     co_authors: tuple[str, ...],
+    agents: tuple[str, ...],
     prs: tuple[str, ...],
     description: Optional[str],
     description_file: Optional[Path],
@@ -377,6 +400,7 @@ def add(
         components=components,
         authors=authors,
         co_authors=co_authors,
+        agents=agents,
         prs=prs,
         description=resolved_description,
     )

@@ -53,6 +53,19 @@ metadata in such projects. Check the changelog's `config.yaml` for this
 option, or the `package.yaml` next to the changelog directory when no
 `config.yaml` exists.
 
+### Agents
+
+Record coding agents separately from human authors with `--agent`. Use the
+stable tool identifier, not the provider or model name:
+
+- `codex` for OpenAI Codex
+- `claude-code` for Claude Code
+- `copilot` for GitHub Copilot
+
+Agent identifiers must be lowercase slugs containing letters, numbers, and
+single hyphens. Repeat `--agent` when multiple tools contributed. The
+`omit_author` option does not suppress agent provenance.
+
 ### PR numbers
 
 If the project config sets `omit_pr: true`, do not record PR numbers at
@@ -214,7 +227,7 @@ When merging into an unreleased entry:
 
 - Reconcile the title, type, and description so they describe the combined
   user-facing outcome.
-- Merge list-valued frontmatter such as `authors`, `prs`, and `components`,
+- Merge list-valued frontmatter such as `authors`, `agents`, `prs`, and `components`,
   preserving existing values and appending new distinct values.
 
 Never touch already-released changelog entries outside the `unreleased`
@@ -232,7 +245,7 @@ uvx tenzir-ship add \
   --title "<title>" \
   --type <type> \
   --description-file /tmp/description.md \
-  --co-author <github-username>
+  --agent <tool-identifier>
 ```
 
 Notes:
@@ -246,10 +259,9 @@ Notes:
 - Add `--pr <number>` only when the PR number is already known, such as in CI.
   Otherwise rely on auto-inference or update `prs` after filing the PR. Skip
   PR numbers entirely when the config sets `omit_pr: true`.
-- Set `--co-author <github-username>` only to a real GitHub username for
-  agent-authored entries, e.g., `claude` or `codex`.
-- For OpenAI-assisted work, use the GitHub username `codex`. For
-  Anthropic-assisted work, use `claude`. Do not use product or model names.
+- Use `--co-author <github-username>` only for an additional human author.
+- Use `--agent codex`, `--agent claude-code`, or `--agent copilot` to record
+  the coding tool. Do not use a provider or model name.
 
 On success, remove the temporary description file.
 
