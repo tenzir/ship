@@ -216,7 +216,7 @@ jobs:
         if: ${{ inputs.github_app_id != '' }}
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ inputs.github_app_id }}
+          client-id: ${{ inputs.github_app_id }}
           private-key: ${{ secrets.github_app_private_key }}
 
       - name: Resolve auth token
