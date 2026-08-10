@@ -29,7 +29,6 @@ if TYPE_CHECKING:
 _ALLOWED_CHANGELOG_ROOT_ITEMS = {"config.yaml", "unreleased", "releases"}
 _ALLOWED_RELEASE_ITEMS = {"manifest.yaml", "notes.md", "entries"}
 _ALLOWED_ENTRY_METADATA_KEYS = {
-    "agents",
     "authors",
     "components",
     "created",

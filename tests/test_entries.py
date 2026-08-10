@@ -39,15 +39,13 @@ def test_sort_entries_desc_orders_by_created_datetime(tmp_path: Path) -> None:
 def test_read_entry_normalizes_list_metadata(tmp_path: Path) -> None:
     entry_file = tmp_path / "test.md"
     entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\nauthors: mavam\nagents: codex\nprs: 42\ncomponents: cli\n---\nBody text.\n",
+        "---\ntitle: Test Entry\ntype: feature\nauthors: mavam\nprs: 42\ncomponents: cli\n---\nBody text.\n",
         encoding="utf-8",
     )
 
     entry = read_entry(entry_file)
 
     assert entry.metadata["authors"] == ["mavam"]
-    assert entry.metadata["agents"] == ["codex"]
-    assert entry.agents == ["codex"]
     assert entry.metadata["prs"] == [42]
     assert entry.metadata["components"] == ["cli"]
     assert entry.components == ["cli"]
@@ -56,18 +54,16 @@ def test_read_entry_normalizes_list_metadata(tmp_path: Path) -> None:
 def test_read_entry_normalizes_singular_legacy_metadata(tmp_path: Path) -> None:
     entry_file = tmp_path / "test.md"
     entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\nauthor: mavam\nagent: codex\npr: 42\ncomponent: cli\n---\nBody text.\n",
+        "---\ntitle: Test Entry\ntype: feature\nauthor: codex\npr: 42\ncomponent: cli\n---\nBody text.\n",
         encoding="utf-8",
     )
 
     entry = read_entry(entry_file)
 
     assert "author" not in entry.metadata
-    assert "agent" not in entry.metadata
     assert "pr" not in entry.metadata
     assert "component" not in entry.metadata
-    assert entry.metadata["authors"] == ["mavam"]
-    assert entry.metadata["agents"] == ["codex"]
+    assert entry.metadata["authors"] == ["codex"]
     assert entry.metadata["prs"] == [42]
     assert entry.metadata["components"] == ["cli"]
     assert entry.component == "cli"
@@ -81,17 +77,6 @@ def test_read_entry_rejects_mixed_singular_and_plural_metadata(tmp_path: Path) -
     )
 
     with pytest.raises(ValueError, match="both 'author' and 'authors'"):
-        read_entry(entry_file)
-
-
-def test_read_entry_rejects_mixed_agent_metadata(tmp_path: Path) -> None:
-    entry_file = tmp_path / "test.md"
-    entry_file.write_text(
-        "---\ntitle: Test Entry\ntype: feature\nagent: codex\nagents:\n  - claude-code\n---\nBody text.\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="both 'agent' and 'agents'"):
         read_entry(entry_file)
 
 

@@ -46,25 +46,17 @@ self-authored PRs, do not specify `--author` explicitly unless you get an error.
 When adding changelog entries for external contributions, add the GitHub
 username of the contributor.
 
+Authors are people. Never record a coding agent, bot, tool, provider, or model
+through `--author`, `--co-author`, or entry frontmatter. For agent-assisted
+work, let author inference record the human contributor without adding the
+agent identity.
+
 If the project config sets `omit_author: true`, do not record authors at
 all—neither via `--author`/`--co-author` flags nor by writing `authors` into
 the entry frontmatter. Validation rejects entries that carry `authors`
 metadata in such projects. Check the changelog's `config.yaml` for this
 option, or the `package.yaml` next to the changelog directory when no
 `config.yaml` exists.
-
-### Agents
-
-Record coding agents separately from human authors with `--agent`. Use the
-stable tool identifier, not the provider or model name:
-
-- `codex` for OpenAI Codex
-- `claude-code` for Claude Code
-- `copilot` for GitHub Copilot
-
-Agent identifiers must be lowercase slugs containing letters, numbers, and
-single hyphens. Repeat `--agent` when multiple tools contributed. The
-`omit_author` option does not suppress agent provenance.
 
 ### PR numbers
 
@@ -227,7 +219,7 @@ When merging into an unreleased entry:
 
 - Reconcile the title, type, and description so they describe the combined
   user-facing outcome.
-- Merge list-valued frontmatter such as `authors`, `agents`, `prs`, and `components`,
+- Merge list-valued frontmatter such as `authors`, `prs`, and `components`,
   preserving existing values and appending new distinct values.
 
 Never touch already-released changelog entries outside the `unreleased`
@@ -244,8 +236,7 @@ Then invoke `tenzir-ship` to add the entry:
 uvx tenzir-ship add \
   --title "<title>" \
   --type <type> \
-  --description-file /tmp/description.md \
-  --agent <tool-identifier>
+  --description-file /tmp/description.md
 ```
 
 Notes:
@@ -259,9 +250,8 @@ Notes:
 - Add `--pr <number>` only when the PR number is already known, such as in CI.
   Otherwise rely on auto-inference or update `prs` after filing the PR. Skip
   PR numbers entirely when the config sets `omit_pr: true`.
-- Use `--co-author <github-username>` only for an additional human author.
-- Use `--agent codex`, `--agent claude-code`, or `--agent copilot` to record
-  the coding tool. Do not use a provider or model name.
+- Use `--co-author <github-username>` only for an additional human
+  contributor. Never use it to identify a coding agent or other tool.
 
 On success, remove the temporary description file.
 

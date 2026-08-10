@@ -1793,8 +1793,6 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
             "--description",
             "Ships the alpha feature.",
             "--author",
-            "mavam",
-            "--agent",
             "codex",
         ],
     )
@@ -1813,7 +1811,7 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
             "--description",
             "Fixes beta bug.",
             "--author",
-            "alice",
+            "codex",
         ],
     )
     assert add_beta.exit_code == 0, add_beta.output
@@ -1834,9 +1832,6 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
     release_entries_dir = project_dir / "releases" / "v0.3.0" / "entries"
     initial_entries = {path.stem for path in release_entries_dir.glob("*.md")}
     assert len(initial_entries) == 2
-    archived_alpha = read_entry(release_entries_dir / "alpha-feature.md")
-    assert archived_alpha.metadata["authors"] == ["mavam"]
-    assert archived_alpha.metadata["agents"] == ["codex"]
     unreleased_dir = project_dir / "unreleased"
     assert not any(unreleased_dir.glob("*.md"))
     assert (unreleased_dir / ENTRY_DIRECTORY_ANCHOR).exists()
@@ -1854,7 +1849,7 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
             "--description",
             "Introduces gamma tweak.",
             "--author",
-            "bob",
+            "codex",
         ],
     )
     assert add_gamma.exit_code == 0, add_gamma.output
@@ -1896,7 +1891,6 @@ def test_release_create_appends_entries(tmp_path: Path) -> None:
     assert "entries" not in manifest_data
     notes_text = (project_dir / "releases" / "v0.3.0" / "notes.md").read_text(encoding="utf-8")
     assert "Gamma Change" in notes_text
-    assert "codex" not in notes_text
 
 
 def test_release_notes_collapse_soft_breaks(tmp_path: Path) -> None:
@@ -5163,7 +5157,7 @@ def test_add_co_author_with_explicit_author(tmp_path: Path) -> None:
             "--author",
             "mavam",
             "--co-author",
-            "claude",
+            "alice",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5174,7 +5168,7 @@ def test_add_co_author_with_explicit_author(tmp_path: Path) -> None:
     # Both authors should be present
     assert "authors:" in entry_text
     assert "mavam" in entry_text
-    assert "claude" in entry_text
+    assert "alice" in entry_text
 
 
 def test_add_multiple_co_authors(tmp_path: Path) -> None:
@@ -5198,9 +5192,9 @@ def test_add_multiple_co_authors(tmp_path: Path) -> None:
             "--author",
             "mavam",
             "--co-author",
-            "claude",
+            "alice",
             "--co-author",
-            "copilot",
+            "bob",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5208,7 +5202,7 @@ def test_add_multiple_co_authors(tmp_path: Path) -> None:
     entry_files = list((project_dir / "unreleased").glob("*.md"))
     assert len(entry_files) == 1
     entry = read_entry(entry_files[0])
-    assert entry.metadata.get("authors") == ["mavam", "claude", "copilot"]
+    assert entry.metadata.get("authors") == ["mavam", "alice", "bob"]
 
 
 def test_add_co_author_deduplication(tmp_path: Path) -> None:
@@ -5234,7 +5228,7 @@ def test_add_co_author_deduplication(tmp_path: Path) -> None:
             "--co-author",
             "mavam",
             "--co-author",
-            "claude",
+            "alice",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5243,7 +5237,7 @@ def test_add_co_author_deduplication(tmp_path: Path) -> None:
     assert len(entry_files) == 1
     entry = read_entry(entry_files[0])
     # mavam should appear only once, order preserved
-    assert entry.metadata.get("authors") == ["mavam", "claude"]
+    assert entry.metadata.get("authors") == ["mavam", "alice"]
 
 
 def test_add_co_author_without_explicit_author(
@@ -5270,7 +5264,7 @@ def test_add_co_author_without_explicit_author(
             "--description",
             "A feature using inference plus co-author.",
             "--co-author",
-            "claude",
+            "alice",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -5279,95 +5273,7 @@ def test_add_co_author_without_explicit_author(
     assert len(entry_files) == 1
     entry = read_entry(entry_files[0])
     # Should have inferred user first, then co-author
-    assert entry.metadata.get("authors") == ["inferred-user", "claude"]
-
-
-def test_add_agents_separately_from_human_authors(tmp_path: Path) -> None:
-    runner = CliRunner()
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-
-    result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "add",
-            "--title",
-            "Agent provenance",
-            "--type",
-            "feature",
-            "--description",
-            "Tracks agent tools separately from human authors.",
-            "--author",
-            "mavam",
-            "--co-author",
-            "alice",
-            "--agent",
-            "codex",
-            "--agent",
-            "claude-code",
-            "--agent",
-            "codex",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-
-    entry = read_entry(project_dir / "unreleased" / "agent-provenance.md")
-    assert entry.metadata["authors"] == ["mavam", "alice"]
-    assert entry.metadata["agents"] == ["codex", "claude-code"]
-
-    json_result = runner.invoke(
-        cli,
-        ["--root", str(project_dir), "show", "--json", "agent-provenance"],
-    )
-    assert json_result.exit_code == 0, json_result.output
-    exported_entry = json.loads(json_result.output)["entries"][0]
-    assert exported_entry["agents"] == ["codex", "claude-code"]
-
-    markdown_result = runner.invoke(
-        cli,
-        ["--root", str(project_dir), "show", "--markdown", "agent-provenance"],
-    )
-    assert markdown_result.exit_code == 0, markdown_result.output
-    assert "By @mavam and @alice" in markdown_result.output
-    assert "codex" not in markdown_result.output
-    assert "claude-code" not in markdown_result.output
-
-    card_result = runner.invoke(
-        cli,
-        ["--root", str(project_dir), "show", "--card", "agent-provenance"],
-    )
-    assert card_result.exit_code == 0, card_result.output
-    assert "Agents:" not in click.utils.strip_ansi(card_result.output)
-    assert "codex" not in click.utils.strip_ansi(card_result.output)
-
-
-@pytest.mark.parametrize("agent", ["Claude Code", "claude_code", "claude--code", "Claude"])
-def test_add_rejects_invalid_agent_identifier(tmp_path: Path, agent: str) -> None:
-    runner = CliRunner()
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-
-    result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "add",
-            "--title",
-            "Invalid agent",
-            "--type",
-            "change",
-            "--description",
-            "Body.",
-            "--agent",
-            agent,
-        ],
-    )
-
-    assert result.exit_code != 0
-    assert "must be a lowercase slug" in result.output
+    assert entry.metadata.get("authors") == ["inferred-user", "alice"]
 
 
 def test_explicit_links_flag_in_show_command(tmp_path: Path) -> None:
@@ -6684,8 +6590,6 @@ def test_validate_rejects_invalid_entry_metadata_shapes(tmp_path: Path) -> None:
         "authors:\n"
         "  - codex\n"
         "  - 7\n"
-        "agents:\n"
-        "  - Claude Code\n"
         "components:\n"
         "  - cli\n"
         "  - false\n"
@@ -6702,7 +6606,6 @@ def test_validate_rejects_invalid_entry_metadata_shapes(tmp_path: Path) -> None:
     assert "metadata.title: ['Bad title'] is not of type 'string'" in result.output
     assert "metadata.type: ['change'] is not of type 'string'" in result.output
     assert "metadata.authors[1]: 7 is not of type 'string'" in result.output
-    assert "metadata.agents[0]: 'Claude Code' does not match" in result.output
     assert "metadata.components[1]: False is not of type 'string'" in result.output
     assert "metadata.project: ['project'] is not of type 'string'" in result.output
 
@@ -9216,38 +9119,6 @@ def test_add_omit_author_config_warns_on_co_author(tmp_path: Path) -> None:
     entry = read_entry(entry_files[0])
     assert "author" not in entry.metadata
     assert "authors" not in entry.metadata
-
-
-def test_add_omit_author_keeps_agent_provenance(tmp_path: Path) -> None:
-    runner = CliRunner()
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    save_config(
-        Config(id="test", name="Test Project", omit_author=True),
-        project_dir / "config.yaml",
-    )
-
-    result = runner.invoke(
-        cli,
-        [
-            "--root",
-            str(project_dir),
-            "add",
-            "--title",
-            "Agent without author",
-            "--type",
-            "feature",
-            "--agent",
-            "codex",
-            "--description",
-            "Entry with agent provenance.",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-
-    entry = read_entry(project_dir / "unreleased" / "agent-without-author.md")
-    assert "authors" not in entry.metadata
-    assert entry.metadata["agents"] == ["codex"]
 
 
 def test_show_version_case_insensitive(tmp_path: Path) -> None:

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-import re
 from typing import Any, Iterable, Optional
 
 import yaml
@@ -23,7 +22,6 @@ ENTRY_DIRECTORY_ANCHOR_TEXT = (
     "# rename and moving entries from long-lived branches into a release.\n"
 )
 ENTRY_TYPES = ("breaking", "feature", "bugfix", "change")
-AGENT_IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 @dataclass
@@ -48,16 +46,6 @@ class Entry:
     def components(self) -> list[str]:
         """Return the list of components for the entry."""
         value = self.metadata.get("components")
-        if value is None:
-            return []
-        if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
-        return [str(value).strip()] if str(value).strip() else []
-
-    @property
-    def agents(self) -> list[str]:
-        """Return the agent tool identifiers recorded for the entry."""
-        value = self.metadata.get("agents")
         if value is None:
             return []
         if isinstance(value, list):
@@ -123,7 +111,6 @@ def read_entry(path: Path) -> Entry:
     _normalize_created_metadata(metadata)
     _normalize_legacy_list_metadata(metadata, "pr", "prs")
     _normalize_legacy_list_metadata(metadata, "author", "authors")
-    _normalize_legacy_list_metadata(metadata, "agent", "agents")
     _normalize_legacy_list_metadata(metadata, "component", "components")
     entry_id = path.stem
     return Entry(
@@ -317,7 +304,6 @@ def write_entry(
         metadata.pop("project", None)
     _normalize_legacy_list_metadata(metadata, "pr", "prs")
     _normalize_legacy_list_metadata(metadata, "author", "authors")
-    _normalize_legacy_list_metadata(metadata, "agent", "agents")
     _normalize_legacy_list_metadata(metadata, "component", "components")
 
     if entry_id is None:
