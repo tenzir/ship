@@ -1,0 +1,9 @@
+created: 2026-08-10
+title: Human-only changelog authorship guidance
+intro: >-
+  This patch release ensures changelog authorship metadata represents verified people
+  rather than bots, apps, or tools. The bundled agent skill now validates inferred
+  GitHub identities and keeps tool provenance in commit metadata.
+source:
+  mode: sync-stable-queue
+  previous_stable: v2.0.1
