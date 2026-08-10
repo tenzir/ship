@@ -86,7 +86,7 @@ on:
         default: false
         type: boolean
       github_app_id:
-        description: "Optional GitHub App ID used to mint a repository-scoped token"
+        description: "Optional GitHub App ID or Client ID used to mint a repository-scoped token"
         required: false
         default: ""
         type: string

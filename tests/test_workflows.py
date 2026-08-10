@@ -160,6 +160,11 @@ def test_reusable_release_uses_resolved_auth_token_for_stateful_steps() -> None:
     assert 'echo "use_gpg_signing=true" >> "$GITHUB_OUTPUT"' in resolve_optional_credentials_run
     assert 'echo "use_gpg_signing=false" >> "$GITHUB_OUTPUT"' in resolve_optional_credentials_run
 
+    generate_app_token = _step_by_name(steps, "Generate app token")
+    generate_app_token_with = _as_mapping(generate_app_token["with"])
+    assert generate_app_token_with["client-id"] == "${{ inputs.github_app_id }}"
+    assert "app-id" not in generate_app_token_with
+
     resolve_auth = _step_by_name(steps, "Resolve auth token")
     resolve_auth_env = _as_mapping(resolve_auth["env"])
     assert resolve_auth_env["APP_TOKEN"] == "${{ steps.app-token.outputs.token }}"
