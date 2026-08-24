@@ -5,6 +5,34 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "name"],
+  "allOf": [
+    {
+      "not": {
+        "required": ["omit_pr", "require_pr"],
+        "properties": {
+          "omit_pr": {
+            "const": true
+          },
+          "require_pr": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "not": {
+        "required": ["omit_author", "require_author"],
+        "properties": {
+          "omit_author": {
+            "const": true
+          },
+          "require_author": {
+            "const": true
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -16,12 +44,31 @@
       "pattern": "\\S",
       "minLength": 1
     },
+    "description": {
+      "type": "string"
+    },
     "repository": {
       "type": "string",
       "pattern": "\\S",
       "minLength": 1
     },
+    "export_style": {
+      "type": "string",
+      "enum": ["standard", "compact"]
+    },
+    "explicit_links": {
+      "type": "boolean"
+    },
+    "omit_pr": {
+      "type": "boolean"
+    },
     "require_pr": {
+      "type": "boolean"
+    },
+    "omit_author": {
+      "type": "boolean"
+    },
+    "require_author": {
       "type": "boolean"
     },
     "components": {
@@ -46,7 +93,9 @@
       ]
     },
     "modules": {
-      "type": "object"
+      "type": "string",
+      "pattern": "\\S",
+      "minLength": 1
     },
     "release": {
       "type": "object"

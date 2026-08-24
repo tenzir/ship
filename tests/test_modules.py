@@ -202,6 +202,49 @@ def test_run_validation_with_modules_prefixes_issues(tmp_path: Path) -> None:
     assert "Missing type" in module_issues[0].message
 
 
+def test_run_validation_with_modules_applies_all_entries_to_released_module_entries(
+    tmp_path: Path,
+) -> None:
+    packages = tmp_path / "packages"
+    mod_root = create_module(packages, "mymod", "My Module")
+    write_yaml(
+        mod_root / "config.yaml",
+        {"id": "mymod", "name": "My Module", "require_author": True},
+    )
+    release_dir = mod_root / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    write_yaml(
+        release_dir / "manifest.yaml",
+        {"created": "2025-01-01", "entries": ["old-entry"]},
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    parent_root = tmp_path / "changelog"
+    parent_root.mkdir()
+    write_yaml(
+        parent_root / "config.yaml",
+        {"id": "parent", "name": "Parent", "modules": "../packages/*/changelog"},
+    )
+    (parent_root / "unreleased").mkdir()
+    config = Config(id="parent", name="Parent", modules="../packages/*/changelog")
+    modules = discover_modules_from_config(parent_root, config)
+
+    default_issues = run_validation_with_modules(parent_root, config, modules)
+    all_entry_issues = run_validation_with_modules(
+        parent_root,
+        config,
+        modules,
+        all_entries=True,
+    )
+
+    assert all("missing author" not in issue.message for issue in default_issues)
+    assert any("[mymod] missing author" in issue.message for issue in all_entry_issues)
+
+
 # --- CLI Tests ---
 
 

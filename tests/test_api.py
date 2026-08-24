@@ -103,16 +103,23 @@ def test_python_api_validate_delegates_lenient(
 
     captured: dict[str, object] = {}
 
-    def fake_run_validate(ctx: cli_module.CLIContext, *, lenient: bool = False) -> None:
+    def fake_run_validate(
+        ctx: cli_module.CLIContext,
+        *,
+        lenient: bool = False,
+        all_entries: bool = False,
+    ) -> None:
         captured["ctx"] = ctx
         captured["lenient"] = lenient
+        captured["all_entries"] = all_entries
 
     monkeypatch.setattr("tenzir_ship.api.run_validate", fake_run_validate)
 
-    client.validate(lenient=True)
+    client.validate(lenient=True, all_entries=True)
 
     assert captured["ctx"] is client.context
     assert captured["lenient"] is True
+    assert captured["all_entries"] is True
 
 
 def test_python_api_add_handles_missing_authors(

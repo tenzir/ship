@@ -262,6 +262,12 @@ def create_entry(
         # Deduplicate while preserving order
         authors_list = list(dict.fromkeys(authors_list))
 
+    if config.require_author and not config.omit_author and not authors_list:
+        log_warning(
+            "no author recorded but config sets 'require_author: true'; pass "
+            "'--author <github-username>' or add 'authors: [<github-username>]' to the entry"
+        )
+
     if description is not None:
         body = description
     else:

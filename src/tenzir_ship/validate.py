@@ -43,6 +43,7 @@ _RELEASE_MANIFEST_SCHEMA_PATH = _SCHEMA_DIR / "release-manifest.schema.json"
 _ENTRY_SCHEMA_VALIDATOR: Draft202012Validator | None = None
 _RELEASE_MANIFEST_SCHEMA_VALIDATOR: Draft202012Validator | None = None
 MISSING_PR_CODE = "missing-pr"
+MISSING_AUTHOR_CODE = "missing-author"
 
 
 @dataclass
@@ -360,9 +361,15 @@ def _is_unreleased_entry(entry: Entry) -> bool:
     return entry.path.parent.name == "unreleased"
 
 
-def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
+def validate_entry(
+    entry: Entry,
+    config: Config,
+    *,
+    all_entries: bool = False,
+) -> Iterable[ValidationIssue]:
     """Validate a single entry."""
     metadata = entry.metadata
+    apply_metadata_policies = all_entries or _is_unreleased_entry(entry)
     yield from _validate_entry_metadata_schema(entry)
     entry_type = metadata.get("type")
     if isinstance(entry_type, str) and entry_type not in ENTRY_TYPES:
@@ -380,12 +387,12 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
             entry.path,
             f"Unknown project '{project}'. Expected '{config.id}'.",
         )
-    if config.omit_pr and metadata.get("prs"):
+    if apply_metadata_policies and config.omit_pr and metadata.get("prs"):
         yield ValidationIssue(
             entry.path,
             "Entry has 'prs' metadata but the config sets 'omit_pr: true'. Remove the 'prs' field.",
         )
-    if config.omit_author and metadata.get("authors"):
+    if apply_metadata_policies and config.omit_author and metadata.get("authors"):
         yield ValidationIssue(
             entry.path,
             "Entry has 'authors' metadata but the config sets 'omit_author: true'. "
@@ -402,9 +409,9 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
                 f"Unknown component(s) {unknown_display}. Allowed components: {allowed}",
             )
     if (
-        config.require_pr
+        apply_metadata_policies
+        and config.require_pr
         and not config.omit_pr
-        and _is_unreleased_entry(entry)
         and not metadata.get("prs")
     ):
         yield ValidationIssue(
@@ -415,6 +422,21 @@ def validate_entry(entry: Entry, config: Config) -> Iterable[ValidationIssue]:
                 "this entry's frontmatter, e.g. 'prs: [1234]'"
             ),
             code=MISSING_PR_CODE,
+        )
+    if (
+        apply_metadata_policies
+        and config.require_author
+        and not config.omit_author
+        and not metadata.get("authors")
+    ):
+        yield ValidationIssue(
+            entry.path,
+            (
+                "missing author: this project requires 'authors' metadata "
+                "(require_author: true); add at least one author to this entry's "
+                "frontmatter, e.g. 'authors: [alice]'"
+            ),
+            code=MISSING_AUTHOR_CODE,
         )
 
 
@@ -436,7 +458,12 @@ def validate_release_ids(
                 )
 
 
-def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
+def run_validation(
+    project_root: Path,
+    config: Config,
+    *,
+    all_entries: bool = False,
+) -> list[ValidationIssue]:
     """Validate entries and releases, returning a list of issues."""
     issues: list[ValidationIssue] = run_structure_validation(project_root)
     issues.extend(_validate_release_manifest_schemas(project_root))
@@ -459,9 +486,9 @@ def run_validation(project_root: Path, config: Config) -> list[ValidationIssue]:
                 continue
             release_entries.append(entry)
 
-    all_entries = entries + release_entries
-    for entry in all_entries:
-        issues.extend(validate_entry(entry, config))
+    entries_to_validate = entries + release_entries
+    for entry in entries_to_validate:
+        issues.extend(validate_entry(entry, config, all_entries=all_entries))
 
     validate_release_ids(releases, project_root, issues)
     return issues
@@ -511,6 +538,8 @@ def run_validation_with_modules(
     project_root: Path,
     config: Config,
     modules: list["Module"],
+    *,
+    all_entries: bool = False,
 ) -> list[ValidationIssue]:
     """Validate parent and all modules, returning combined issues.
 
@@ -522,12 +551,16 @@ def run_validation_with_modules(
     issues.extend(validate_modules(project_root, config, modules))
 
     # Validate parent project
-    parent_issues = run_validation(project_root, config)
+    parent_issues = run_validation(project_root, config, all_entries=all_entries)
     issues.extend(parent_issues)
 
     # Validate each module
     for module in modules:
-        module_issues = run_validation(module.root, module.config)
+        module_issues = run_validation(
+            module.root,
+            module.config,
+            all_entries=all_entries,
+        )
         # Prefix issues with module ID for clarity
         for issue in module_issues:
             prefixed_issue = ValidationIssue(

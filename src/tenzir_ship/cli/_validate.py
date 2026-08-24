@@ -14,15 +14,25 @@ __all__ = [
 ]
 
 
-def run_validate(ctx: CLIContext, *, lenient: bool = False) -> None:
+def run_validate(
+    ctx: CLIContext,
+    *,
+    lenient: bool = False,
+    all_entries: bool = False,
+) -> None:
     """Python wrapper for validating changelog files."""
 
     config = ctx.ensure_config()
     modules = ctx.get_modules()
     if modules:
-        issues = run_validation_with_modules(ctx.project_root, config, modules)
+        issues = run_validation_with_modules(
+            ctx.project_root,
+            config,
+            modules,
+            all_entries=all_entries,
+        )
     else:
-        issues = run_validation(ctx.project_root, config)
+        issues = run_validation(ctx.project_root, config, all_entries=all_entries)
     if not issues:
         log_success("all changelog files look good")
         return
@@ -50,8 +60,13 @@ def run_validate(ctx: CLIContext, *, lenient: bool = False) -> None:
     is_flag=True,
     help="Demote missing-PR issues to warnings instead of errors.",
 )
+@click.option(
+    "--all-entries",
+    is_flag=True,
+    help="Apply entry metadata policies to released entries too.",
+)
 @click.pass_obj
-def validate_cmd(ctx: CLIContext, lenient: bool) -> None:
+def validate_cmd(ctx: CLIContext, lenient: bool, all_entries: bool) -> None:
     """Validate entries and release manifests."""
 
-    run_validate(ctx, lenient=lenient)
+    run_validate(ctx, lenient=lenient, all_entries=all_entries)

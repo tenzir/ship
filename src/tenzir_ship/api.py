@@ -206,10 +206,15 @@ class Changelog:
             create_github_release=create_github_release,
         )
 
-    def validate(self, *, lenient: bool = False) -> None:
-        """Run the validator against the configured project."""
+    def validate(self, *, lenient: bool = False, all_entries: bool = False) -> None:
+        """Run the validator against the configured project.
 
-        run_validate(self._ctx, lenient=lenient)
+        Args:
+            lenient: Demote missing PR metadata issues to warnings.
+            all_entries: Apply entry metadata policies to released entries too.
+        """
+
+        run_validate(self._ctx, lenient=lenient, all_entries=all_entries)
 
     def list_modules(self) -> list[dict[str, Any]]:
         """Return discovered modules as a list of dictionaries.

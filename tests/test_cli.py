@@ -6390,6 +6390,72 @@ def test_validate_rejects_authors_metadata_when_omit_author_configured(tmp_path:
     assert "Entry has 'authors' metadata but the config sets 'omit_author: true'" in result.output
 
 
+def test_validate_omit_pr_ignores_released_history_unless_all_entries_requested(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", omit_pr=True),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\nprs: [42]\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    default_result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    all_entries_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "validate", "--all-entries"],
+    )
+
+    assert default_result.exit_code == 0, default_result.output
+    assert all_entries_result.exit_code == 1
+    assert "omit_pr: true" in all_entries_result.output
+
+
+def test_validate_omit_author_ignores_released_history_unless_all_entries_requested(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", omit_author=True),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\nauthors: [alice]\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    default_result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    all_entries_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "validate", "--all-entries"],
+    )
+
+    assert default_result.exit_code == 0, default_result.output
+    assert all_entries_result.exit_code == 1
+    assert "omit_author: true" in all_entries_result.output
+
+
 def test_validate_accepts_entries_without_prs_when_omit_pr_configured(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -6451,7 +6517,52 @@ def test_validate_accepts_pr_when_required(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
 
-def test_validate_require_pr_ignores_released_history(tmp_path: Path) -> None:
+def test_validate_requires_author_when_configured(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_author=True),
+        project_dir / "config.yaml",
+    )
+    write_entry(
+        project_dir,
+        {"title": "Missing author", "type": "feature"},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 1
+    assert "missing author" in result.output
+    assert "require_author: true" in result.output
+    assert "authors: [alice]" in result.output
+
+
+def test_validate_accepts_author_when_required(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_author=True),
+        project_dir / "config.yaml",
+    )
+    write_entry(
+        project_dir,
+        {"title": "Recorded author", "type": "feature", "authors": ["alice"]},
+        body="Body.",
+        default_project="project",
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_require_pr_ignores_released_history_unless_all_entries_requested(
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
     _bootstrap_changelog_project(project_dir)
@@ -6471,9 +6582,48 @@ def test_validate_require_pr_ignores_released_history(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    default_result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    all_entries_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "validate", "--all-entries"],
+    )
 
-    assert result.exit_code == 0, result.output
+    assert default_result.exit_code == 0, default_result.output
+    assert all_entries_result.exit_code == 1
+    assert "missing PR reference" in all_entries_result.output
+
+
+def test_validate_require_author_ignores_released_history_unless_all_entries_requested(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", require_author=True),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    default_result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    all_entries_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "validate", "--all-entries"],
+    )
+
+    assert default_result.exit_code == 0, default_result.output
+    assert all_entries_result.exit_code == 1
+    assert "missing author" in all_entries_result.output
 
 
 def test_validate_does_not_require_pr_by_default(tmp_path: Path) -> None:
@@ -6514,6 +6664,50 @@ def test_validate_lenient_demotes_missing_pr_issues(tmp_path: Path) -> None:
     assert "warning issue at" in plain_output
     assert "missing PR reference" in plain_output
     assert "validation passed with 1 warning(s)" in plain_output
+
+
+def test_validate_all_entries_lenient_only_demotes_missing_pr(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            require_pr=True,
+            require_author=True,
+        ),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "validate",
+            "--all-entries",
+            "--lenient",
+        ],
+    )
+    plain_output = click.utils.strip_ansi(result.output)
+
+    assert result.exit_code == 1
+    assert "warning issue at" in plain_output
+    assert "missing PR reference" in plain_output
+    assert "error issue at" in plain_output
+    assert "missing author" in plain_output
 
 
 def test_validate_lenient_keeps_non_pr_errors_fatal(tmp_path: Path) -> None:
@@ -9003,6 +9197,39 @@ def test_add_does_not_warn_when_required_pr_is_recorded(
     assert add_result.exit_code == 0, add_result.output
     assert "require_pr: true" not in add_result.output
     assert "prs: [<number>]" not in add_result.output
+
+
+def test_add_warns_when_required_author_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    save_config(
+        Config(id="test", name="Test Project", require_author=True),
+        project_dir / "config.yaml",
+    )
+    monkeypatch.setattr("tenzir_ship.cli._add.detect_github_login", lambda **kwargs: None)
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "Test Entry",
+            "--type",
+            "feature",
+            "--description",
+            "Entry without an author.",
+        ],
+        input="\n",
+    )
+
+    assert add_result.exit_code == 0, add_result.output
+    assert "require_author: true" in add_result.output
+    assert "authors: [<github-username>]" in add_result.output
 
 
 def test_add_omit_author_config(tmp_path: Path) -> None:
