@@ -58,6 +58,7 @@ class Config:
     omit_pr: bool = False
     require_pr: bool = False
     omit_author: bool = False
+    require_author: bool = False
     components: dict[str, str] = field(default_factory=dict)
     modules: str | None = None  # glob pattern for nested changelog projects
     release: ReleaseConfig = field(default_factory=ReleaseConfig)
@@ -119,6 +120,17 @@ def load_config(path: Path) -> Config:
             raise ValueError("Config option 'omit_author' must be a boolean.")
         omit_author = omit_author_raw
 
+    require_author_raw = raw.get("require_author")
+    require_author = False
+    if require_author_raw is not None:
+        if not isinstance(require_author_raw, bool):
+            raise ValueError("Config option 'require_author' must be a boolean.")
+        require_author = require_author_raw
+    if require_author and omit_author:
+        raise ValueError(
+            "Config options 'require_author' and 'omit_author' are mutually exclusive."
+        )
+
     components = parse_components(raw.get("components"))
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
@@ -179,6 +191,7 @@ def load_config(path: Path) -> Config:
         omit_pr=omit_pr,
         require_pr=require_pr,
         omit_author=omit_author,
+        require_author=require_author,
         components=components,
         modules=modules,
         release=release_config,
@@ -244,6 +257,17 @@ def load_package_config(path: Path) -> Config:
             raise ValueError("Package metadata option 'omit_author' must be a boolean.")
         omit_author = omit_author_raw
 
+    require_author_raw = raw.get("require_author")
+    require_author = False
+    if require_author_raw is not None:
+        if not isinstance(require_author_raw, bool):
+            raise ValueError("Package metadata option 'require_author' must be a boolean.")
+        require_author = require_author_raw
+    if require_author and omit_author:
+        raise ValueError(
+            "Config options 'require_author' and 'omit_author' are mutually exclusive."
+        )
+
     components = parse_components(raw.get("components"))
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
@@ -307,6 +331,7 @@ def load_package_config(path: Path) -> Config:
         omit_pr=omit_pr,
         require_pr=require_pr,
         omit_author=omit_author,
+        require_author=require_author,
         components=components,
         modules=modules,
         release=release_config,
@@ -349,6 +374,8 @@ def dump_config(config: Config) -> dict[str, Any]:
         data["require_pr"] = config.require_pr
     if config.omit_author:
         data["omit_author"] = config.omit_author
+    if config.require_author:
+        data["require_author"] = config.require_author
     if config.components:
         data["components"] = dict(config.components)
     if config.modules:

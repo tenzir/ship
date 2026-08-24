@@ -21,7 +21,16 @@
       "pattern": "\\S",
       "minLength": 1
     },
+    "omit_pr": {
+      "type": "boolean"
+    },
     "require_pr": {
+      "type": "boolean"
+    },
+    "omit_author": {
+      "type": "boolean"
+    },
+    "require_author": {
       "type": "boolean"
     },
     "components": {

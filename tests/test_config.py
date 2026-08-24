@@ -76,6 +76,48 @@ def test_load_config_rejects_non_bool_require_pr(tmp_path: Path) -> None:
         load_config(config_path)
 
 
+def test_load_config_supports_require_author(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(config_path, {"id": "node", "name": "Node Project", "require_author": True})
+
+    config = load_config(config_path)
+
+    assert config.require_author is True
+
+
+def test_load_config_defaults_require_author_to_false(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(config_path, {"id": "node", "name": "Node Project"})
+
+    config = load_config(config_path)
+
+    assert config.require_author is False
+
+
+def test_load_config_rejects_non_bool_require_author(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(config_path, {"id": "node", "name": "Node Project", "require_author": "yes"})
+
+    with pytest.raises(ValueError, match="require_author"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_require_author_with_omit_author(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "id": "node",
+            "name": "Node Project",
+            "omit_author": True,
+            "require_author": True,
+        },
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        load_config(config_path)
+
+
 def test_load_config_rejects_require_pr_with_omit_pr(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     write_yaml(
@@ -108,6 +150,31 @@ def test_load_package_config_rejects_require_pr_with_omit_pr(tmp_path: Path) -> 
         load_package_config(package_path)
 
 
+def test_load_package_config_supports_require_author(tmp_path: Path) -> None:
+    package_path = tmp_path / "package.yaml"
+    write_yaml(package_path, {"id": "pkg", "name": "Package", "require_author": True})
+
+    config = load_package_config(package_path)
+
+    assert config.require_author is True
+
+
+def test_load_package_config_rejects_require_author_with_omit_author(tmp_path: Path) -> None:
+    package_path = tmp_path / "package.yaml"
+    write_yaml(
+        package_path,
+        {
+            "id": "pkg",
+            "name": "Package",
+            "omit_author": True,
+            "require_author": True,
+        },
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        load_package_config(package_path)
+
+
 def test_load_package_config_supports_require_pr(tmp_path: Path) -> None:
     package_path = tmp_path / "package.yaml"
     write_yaml(package_path, {"id": "pkg", "name": "Package", "require_pr": True})
@@ -123,6 +190,16 @@ def test_dump_config_includes_require_pr_only_when_true() -> None:
 
     assert "require_pr" not in default_payload
     assert require_pr_payload["require_pr"] is True
+
+
+def test_dump_config_includes_require_author_only_when_true() -> None:
+    default_payload = dump_config(Config(id="node", name="Node Project"))
+    require_author_payload = dump_config(
+        Config(id="node", name="Node Project", require_author=True)
+    )
+
+    assert "require_author" not in default_payload
+    assert require_author_payload["require_author"] is True
 
 
 def test_load_project_config_uses_package_metadata(tmp_path: Path) -> None:
