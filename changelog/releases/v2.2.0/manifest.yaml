@@ -1,0 +1,10 @@
+created: 2026-08-24
+title: Forward-looking changelog metadata policies
+intro: >-
+  tenzir-ship now lets changelog projects require authors and reject pull request
+  metadata in unreleased entries without invalidating published releases. Validation
+  applies these policies to unreleased entries by default, while an explicit full-history
+  check remains available for audits.
+source:
+  mode: sync-stable-queue
+  previous_stable: v2.1.0
