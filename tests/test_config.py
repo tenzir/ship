@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
 import pytest
 import yaml
 
@@ -20,6 +22,54 @@ from tenzir_ship.config import (
 
 def write_yaml(path: Path, content: dict[str, object]) -> None:
     path.write_text(yaml.safe_dump(content, sort_keys=False), encoding="utf-8")
+
+
+def config_schema_validator() -> Draft202012Validator:
+    schema_path = Path(__file__).parents[1] / "schemas" / "config.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    return Draft202012Validator(schema)
+
+
+def test_config_schema_accepts_supported_top_level_options() -> None:
+    config = {
+        "id": "node",
+        "name": "Node Project",
+        "description": "Node changelog",
+        "repository": "tenzir/node",
+        "export_style": "compact",
+        "explicit_links": True,
+        "omit_pr": True,
+        "require_author": True,
+        "components": {"cli": "Command-line interface"},
+        "modules": "../packages/*/changelog",
+        "release": {"version_bump_mode": "off"},
+    }
+
+    assert list(config_schema_validator().iter_errors(config)) == []
+
+
+@pytest.mark.parametrize(
+    ("omit_key", "require_key"),
+    [
+        ("omit_pr", "require_pr"),
+        ("omit_author", "require_author"),
+    ],
+)
+def test_config_schema_rejects_mutually_exclusive_policy_pairs(
+    omit_key: str,
+    require_key: str,
+) -> None:
+    config = {
+        "id": "node",
+        "name": "Node Project",
+        omit_key: True,
+        require_key: True,
+    }
+
+    errors = list(config_schema_validator().iter_errors(config))
+
+    assert len(errors) == 1
+    assert errors[0].validator == "not"
 
 
 def test_load_config_supports_flat_id_field(tmp_path: Path) -> None:

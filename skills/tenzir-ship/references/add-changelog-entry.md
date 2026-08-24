@@ -283,3 +283,5 @@ Pass the same `--root <path/to/changelog>` you used for `add`. Fix any
 reported issues before committing the entry. Metadata policies such as
 `omit_pr` and `require_author` apply to unreleased entries by default. Pass
 `--all-entries` to audit released entries against the current policies too.
+When combined with `--all-entries`, `--lenient` also demotes missing PRs in
+released entries. It never demotes missing authors or forbidden metadata.

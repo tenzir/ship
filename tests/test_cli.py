@@ -6423,6 +6423,39 @@ def test_validate_omit_pr_ignores_released_history_unless_all_entries_requested(
     assert "omit_pr: true" in all_entries_result.output
 
 
+def test_validate_omit_author_ignores_released_history_unless_all_entries_requested(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(id="project", name="Project", omit_author=True),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\nauthors: [alice]\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    default_result = runner.invoke(cli, ["--root", str(project_dir), "validate"])
+    all_entries_result = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "validate", "--all-entries"],
+    )
+
+    assert default_result.exit_code == 0, default_result.output
+    assert all_entries_result.exit_code == 1
+    assert "omit_author: true" in all_entries_result.output
+
+
 def test_validate_accepts_entries_without_prs_when_omit_pr_configured(tmp_path: Path) -> None:
     runner = CliRunner()
     project_dir = tmp_path / "project"
@@ -6631,6 +6664,50 @@ def test_validate_lenient_demotes_missing_pr_issues(tmp_path: Path) -> None:
     assert "warning issue at" in plain_output
     assert "missing PR reference" in plain_output
     assert "validation passed with 1 warning(s)" in plain_output
+
+
+def test_validate_all_entries_lenient_only_demotes_missing_pr(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _bootstrap_changelog_project(project_dir)
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            require_pr=True,
+            require_author=True,
+        ),
+        project_dir / "config.yaml",
+    )
+    release_dir = project_dir / "releases" / "v1.0.0"
+    entries_dir = release_dir / "entries"
+    entries_dir.mkdir(parents=True)
+    (release_dir / "manifest.yaml").write_text(
+        "created: 2025-01-01\nentries:\n  - old-entry\n",
+        encoding="utf-8",
+    )
+    (entries_dir / "old-entry.md").write_text(
+        "---\ntitle: Old Entry\ntype: change\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "validate",
+            "--all-entries",
+            "--lenient",
+        ],
+    )
+    plain_output = click.utils.strip_ansi(result.output)
+
+    assert result.exit_code == 1
+    assert "warning issue at" in plain_output
+    assert "missing PR reference" in plain_output
+    assert "error issue at" in plain_output
+    assert "missing author" in plain_output
 
 
 def test_validate_lenient_keeps_non_pr_errors_fatal(tmp_path: Path) -> None:

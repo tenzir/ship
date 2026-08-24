@@ -207,7 +207,12 @@ class Changelog:
         )
 
     def validate(self, *, lenient: bool = False, all_entries: bool = False) -> None:
-        """Run the validator against the configured project."""
+        """Run the validator against the configured project.
+
+        Args:
+            lenient: Demote missing PR metadata issues to warnings.
+            all_entries: Apply entry metadata policies to released entries too.
+        """
 
         run_validate(self._ctx, lenient=lenient, all_entries=all_entries)
 
