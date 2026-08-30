@@ -20,14 +20,14 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
+          app-id: ${{ vars.TENZIR_GITHUB_APP_ID }}
           private-key: ${{ secrets.TENZIR_GITHUB_APP_PRIVATE_KEY }}
           owner: tenzir
           repositories: |
-            skills
+            dev-skills
 
       - name: Trigger sync workflow
-        uses: tenzir/skills/.github/actions/sync@main
+        uses: tenzir/dev-skills/.github/actions/sync@main
         with:
           token: ${{ steps.app-token.outputs.token }}
           source_path: skills/tenzir-ship
