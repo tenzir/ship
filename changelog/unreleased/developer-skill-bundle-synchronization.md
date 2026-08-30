@@ -3,6 +3,8 @@ title: Developer skill bundle synchronization
 type: change
 authors:
   - mavam
+prs:
+  - 46
 created: 2026-08-30T10:47:38.035382Z
 ---
 
