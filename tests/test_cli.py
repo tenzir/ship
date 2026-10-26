@@ -7222,7 +7222,7 @@ def test_release_create_without_version_continues_outstanding_rc_series(tmp_path
     assert result.stdout.strip() == "v2.0.0-rc.2"
 
 
-def test_release_create_rejects_promoting_release_candidate_when_unreleased_entry_diverged(
+def test_release_create_promotion_uses_edited_unreleased_entry(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -7274,12 +7274,17 @@ def test_release_create_rejects_promoting_release_candidate_when_unreleased_entr
             "--yes",
         ],
     )
-    assert promote_result.exit_code != 0
-    assert "changed after the release candidate snapshot was created" in promote_result.output
-    assert "create another release candidate before promoting to stable" in promote_result.output
-    assert entry_path.exists()
-    assert "Edited after snapshot." in entry_path.read_text(encoding="utf-8")
-    assert not (project_dir / "releases" / "v1.2.3").exists()
+    assert promote_result.exit_code == 0, promote_result.output
+    assert promote_result.stdout.strip() == "v1.2.3"
+
+    stable_dir = project_dir / "releases" / "v1.2.3"
+    stable_notes = (stable_dir / "notes.md").read_text(encoding="utf-8")
+    assert "Edited after snapshot." in stable_notes
+    assert "Snapshot me." not in stable_notes
+    stable_entry = (stable_dir / "entries" / "rc-feature.md").read_text(encoding="utf-8")
+    assert "Edited after snapshot." in stable_entry
+    assert not entry_path.exists()
+    assert not (project_dir / "releases" / "v1.2.3-rc.1").exists()
 
 
 def test_release_create_promotes_release_candidate_to_stable(tmp_path: Path) -> None:
