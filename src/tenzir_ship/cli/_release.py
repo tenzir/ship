@@ -714,30 +714,14 @@ def _plan_promoted_unreleased_cleanup(
 
     Covers both entries snapshotted in the candidate manifest and entries
     added to unreleased/ afterwards, since promotion folds in the latter.
+    Snapshotted entries edited after the candidate was created are consumed
+    as well, since promotion releases their current unreleased content.
     """
     current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
     unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
     promoted_entries_by_id = {
         entry.entry_id: entry for entry in _load_manifest_entries(project_root, source_manifest)
     }
-
-    diverged_entry_ids: list[str] = []
-    for entry_id, promoted_entry in sorted(promoted_entries_by_id.items()):
-        current_entry = unreleased_entries_by_id.get(entry_id)
-        if current_entry is None:
-            continue
-        if current_entry.path.read_bytes() != promoted_entry.path.read_bytes():
-            diverged_entry_ids.append(entry_id)
-    if diverged_entry_ids:
-        quoted_ids = ", ".join(f"'{entry_id}'" for entry_id in diverged_entry_ids)
-        source_tag = render_release_tag(source_manifest.version)
-        raise click.ClickException(
-            "Cannot promote "
-            f"{source_tag} because unreleased entries changed after the release "
-            f"candidate snapshot was created: {quoted_ids}. Move the follow-up changes "
-            "into new unreleased entries and create another release candidate before "
-            "promoting to stable."
-        )
 
     cleanup_paths: list[Path] = []
     missing_entry_ids: list[str] = []
