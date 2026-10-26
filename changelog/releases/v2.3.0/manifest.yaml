@@ -1,0 +1,7 @@
+created: 2026-10-26
+intro: >-
+  This release makes promoting release candidates more forgiving. Promoting a candidate
+  to a stable release now works even after you edit entries from the candidate snapshot.
+source:
+  mode: sync-stable-queue
+  previous_stable: v2.2.0
