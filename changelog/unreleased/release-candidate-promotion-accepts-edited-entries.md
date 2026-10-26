@@ -3,6 +3,8 @@ title: Release candidate promotion accepts edited entries
 type: change
 authors:
   - IyeOnline
+prs:
+  - 48
 created: 2026-10-26T16:07:42.835188Z
 ---
 
