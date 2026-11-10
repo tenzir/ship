@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -13,6 +15,9 @@ from click import ClickException
 from .utils import coerce_datetime, slugify
 
 UNRELEASED_DIR = Path("unreleased")
+# Entry IDs are filename stems. Downstream tooling, such as the tenzir/news
+# sync, accepts only lowercase kebab-case.
+ENTRY_ID_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 ENTRY_DIRECTORY_ANCHOR = ".gitkeep"
 ENTRY_DIRECTORY_ANCHOR_TEXT = (
     "# Keep this directory tracked.\n"
@@ -156,10 +161,18 @@ def sort_entries_desc(entries: Iterable[Entry]) -> list[Entry]:
 
 def generate_entry_id(title: str) -> str:
     """Generate an entry id from the title slug."""
-    slug = slugify(title)
-    if not slug:
-        raise ValueError("Cannot generate entry ID: title produces an empty slug.")
-    return slug[:80]
+    # Decompose accented letters so that "é" keeps its base "e", then drop
+    # whatever is still outside ASCII. Truncation can expose a separator that
+    # slugify already stripped.
+    ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+    entry_id = slugify(ascii_title, fallback="")[:80].rstrip("-")
+    if not ENTRY_ID_PATTERN.fullmatch(entry_id):
+        raise ValueError(
+            f"Cannot generate an entry ID from the title '{title}': it contains no "
+            "ASCII letters or digits. Add some, such as the name of the affected "
+            "feature."
+        )
+    return entry_id
 
 
 def _coerce_project(value: Any, *, source: str) -> Optional[str]:

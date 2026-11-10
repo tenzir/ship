@@ -266,6 +266,9 @@ Notes:
   PR numbers entirely when the config sets `omit_pr: true`.
 - Use `--co-author <github-username>` only for an additional human
   contributor. Never use it to identify a coding agent or other tool.
+- Keep the filename that `add` generates. If you rename an entry, use a
+  lowercase kebab-case stem without a leading or trailing dash, such as
+  `fix-authentication-timeout.md`; `validate` rejects anything else.
 
 On success, remove the temporary description file.
 

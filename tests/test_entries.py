@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from tenzir_ship.entries import iter_entries, read_entry, sort_entries_desc, write_entry
+from tenzir_ship.entries import (
+    generate_entry_id,
+    iter_entries,
+    read_entry,
+    sort_entries_desc,
+    write_entry,
+)
+from tenzir_ship.validate import run_structure_validation
 
 
 def test_sort_entries_desc_orders_by_created_datetime(tmp_path: Path) -> None:
@@ -114,3 +121,30 @@ def test_read_entry_preserves_plural_components(tmp_path: Path) -> None:
 
     assert entry.metadata["components"] == ["cli", "api"]
     assert entry.components == ["cli", "api"]
+
+
+def test_generate_entry_id_strips_separator_exposed_by_truncation() -> None:
+    title = (
+        "Native KQL semantics for operators after from_microsoft_defender "
+        "and from_azure_log_analytics"
+    )
+    entry_id = generate_entry_id(title)
+    assert entry_id == (
+        "native-kql-semantics-for-operators-after-from-microsoft-defender-and-from-azure"
+    )
+
+
+def test_generate_entry_id_transliterates_non_ascii_letters() -> None:
+    assert generate_entry_id("Café support für Ölfelder") == "cafe-support-fur-olfelder"
+
+
+def test_structure_validation_rejects_non_kebab_case_entry_filenames(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "config.yaml").write_text("id: test\nname: Test\n", encoding="utf-8")
+    unreleased = tmp_path / "unreleased"
+    unreleased.mkdir()
+    for name in ("valid-entry.md", "trailing-dash-.md", "Upper-Case.md", ".hidden.md"):
+        (unreleased / name).write_text("---\ntitle: T\ntype: bugfix\n---\n", encoding="utf-8")
+    flagged = {issue.path.name for issue in run_structure_validation(tmp_path)}
+    assert flagged == {"trailing-dash-.md", "Upper-Case.md", ".hidden.md"}

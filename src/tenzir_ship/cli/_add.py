@@ -310,7 +310,10 @@ def create_entry(
     if pr_numbers:
         metadata["prs"] = pr_numbers
 
-    path = write_entry(project_root, metadata, body, default_project=config.id)
+    try:
+        path = write_entry(project_root, metadata, body, default_project=config.id)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     try:
         display_path = path.relative_to(Path.cwd())
     except ValueError:
