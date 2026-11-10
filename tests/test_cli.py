@@ -9859,3 +9859,31 @@ def test_release_publish_prompt_shows_edit_for_existing_release(
     assert result.exit_code == 0, result.output
     assert "release edit" in result.output, result.output
     assert "release create" not in result.output, result.output
+
+
+def test_add_rejects_title_without_ascii_letters_or_digits(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "add",
+            "--title",
+            "修复认证超时",
+            "--type",
+            "bugfix",
+            "--description",
+            "Fixes the authentication timeout.",
+            "--author",
+            "octocat",
+            "--pr",
+            "42",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "contains no ASCII letters or digits" in result.output
+    assert not list((project_dir / "unreleased").glob("*.md"))

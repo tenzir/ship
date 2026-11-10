@@ -14,7 +14,7 @@ from jsonschema.exceptions import ValidationError
 import yaml
 
 from .config import Config
-from .entries import ENTRY_TYPES, Entry, iter_entries
+from .entries import ENTRY_ID_PATTERN, ENTRY_TYPES, Entry, iter_entries
 from .releases import (
     ReleaseManifest,
     iter_release_manifests,
@@ -105,6 +105,18 @@ def _validate_changelog_structure(project_root: Path) -> list[ValidationIssue]:
                         ),
                     )
                 )
+            # Check the files that entry readers load, hidden ones included.
+            for entry_path in sorted(unreleased_dir.glob("*.md")):
+                if not ENTRY_ID_PATTERN.fullmatch(entry_path.stem):
+                    issues.append(
+                        ValidationIssue(
+                            entry_path,
+                            (
+                                f"Invalid entry filename '{entry_path.name}'. "
+                                "The name before '.md' must be lowercase kebab-case."
+                            ),
+                        )
+                    )
 
     releases_dir = project_root / "releases"
     if releases_dir.exists():

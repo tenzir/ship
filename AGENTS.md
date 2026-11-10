@@ -32,6 +32,15 @@ main code PR.
 - `changelog/` — this repo’s own dogfooded changelog project
 - `.github/workflows/` — CI, validation, build, and release workflows
 
+## Entry IDs
+
+An entry's ID is its filename stem: `add` derives it once from the title, and
+every other command reads it back from the filename. The `tenzir/news` sync,
+which feeds the changelog on tenzir.com, rejects any unreleased entry whose stem
+is not lowercase kebab-case (`[a-z0-9]+(-[a-z0-9]+)*`). Both
+`generate_entry_id` and the `validate` structure check enforce
+`ENTRY_ID_PATTERN` from `entries.py`; change the rule only there.
+
 ## Dev Commands
 
 - Install dev dependencies:

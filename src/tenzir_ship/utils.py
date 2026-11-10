@@ -199,7 +199,7 @@ def guess_git_remote(project_root: Path) -> Optional[str]:
     return url
 
 
-def slugify(value: str) -> str:
+def slugify(value: str, fallback: str = "project") -> str:
     """Generate a safe slug for filesystem or identifier usage."""
     safe_chars = []
     for char in value.lower():
@@ -210,7 +210,7 @@ def slugify(value: str) -> str:
     slug = "".join(safe_chars)
     while "--" in slug:
         slug = slug.replace("--", "-")
-    return slug.strip("-") or "project"
+    return slug.strip("-") or fallback
 
 
 _GH_LOGIN_ENV_KEYS = (
