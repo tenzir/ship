@@ -1,4 +1,5 @@
 created: 2026-11-11
+title: Long entry titles no longer produce filenames ending in a dash
 intro: >-
   This release keeps changelog entry IDs valid for downstream tooling. Long or accented
   titles now always produce lowercase kebab-case filenames, and validation rejects
