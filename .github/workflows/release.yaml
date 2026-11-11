@@ -23,9 +23,8 @@ on:
         required: true
         type: string
       title:
-        description: "User-facing release title (empty = auto-generated)"
-        required: false
-        default: ""
+        description: "User-facing release title: a short headline for the release's main theme, not the version number"
+        required: true
         type: string
       changelog-root:
         description: "Project root for --root flag"
@@ -141,6 +140,7 @@ jobs:
     steps:
       - name: Validate workflow inputs
         env:
+          RELEASE_TITLE: ${{ inputs.title }}
           RELEASE_BUMP: ${{ inputs.bump }}
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_RC: ${{ inputs.rc }}
@@ -154,6 +154,13 @@ jobs:
           SIGN_COMMITS: ${{ inputs.sign_commits }}
           SIGN_TAGS: ${{ inputs.sign_tags }}
         run: |
+          # Release manifests need a title: downstream changelogs, such as the
+          # one on tenzir.com, reject releases without one.
+          if [ -z "$(printf '%s' "$RELEASE_TITLE" | tr -d '[:space:]')" ]; then
+            echo "::error::Release runs must provide a user-facing title. Do not use the version number as the title."
+            exit 1
+          fi
+
           case "$RELEASE_BUMP" in
             ""|auto|major|minor|patch) ;;
             *)
@@ -309,10 +316,6 @@ jobs:
       - name: Create release
         id: create-release
         run: |
-          TITLE_ARGS=()
-          if [ -n "$RELEASE_TITLE" ]; then
-            TITLE_ARGS=(--title "$RELEASE_TITLE")
-          fi
           BUMP_ARGS=()
           case "$RELEASE_BUMP" in
             major|minor|patch)
@@ -336,7 +339,7 @@ jobs:
             "${BUMP_ARGS[@]}" \
             "${RC_ARGS[@]}" \
             --intro "$RELEASE_INTRO" \
-            "${TITLE_ARGS[@]}" \
+            --title "$RELEASE_TITLE" \
             --yes)
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
         env:

@@ -101,6 +101,7 @@ jobs:
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with the caller GITHUB_TOKEN.
+      title: Reusable release workflow smoke test
       skip-publish: true
 
   smoke-reusable-release-push-token:
@@ -112,6 +113,7 @@ jobs:
     with:
       bump: patch
       intro: Smoke test the reusable release workflow with an explicit push token.
+      title: Reusable release workflow smoke test
       use_push_token: true
       skip-publish: true
     secrets:
