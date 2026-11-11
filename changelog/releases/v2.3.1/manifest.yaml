@@ -1,0 +1,8 @@
+created: 2026-11-11
+intro: >-
+  This release keeps changelog entry IDs valid for downstream tooling. Long or accented
+  titles now always produce lowercase kebab-case filenames, and validation rejects
+  unreleased entries whose filenames break that rule.
+source:
+  mode: sync-stable-queue
+  previous_stable: v2.3.0
