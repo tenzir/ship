@@ -3738,6 +3738,233 @@ def test_release_create_fails_for_unsupported_configured_version_file(tmp_path: 
     assert not (changelog_dir / "releases" / "v1.0.0").exists()
 
 
+_PACKAGE_YAML_WITHOUT_VERSION = """\
+# Package metadata for the demo package.
+id: demo
+name: Demo
+author: Tenzir
+description: |
+  A demo package with a long description.
+
+  version: this line is part of the block scalar.
+categories: [testing]  # flow sequence
+
+dependencies:
+  - id: other
+    version: 1.2
+"""
+
+
+def _add_entry_and_release(
+    runner: CliRunner, changelog_dir: Path, *release_args: str, title: str = "Feature"
+) -> None:
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            title,
+            "--type",
+            "feature",
+            "--description",
+            "Exercises package.yaml version bumping.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+    create_result = runner.invoke(
+        cli,
+        ["--root", str(changelog_dir), "release", "create", *release_args, "--yes"],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+
+def test_release_create_inserts_missing_package_yaml_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "demo"
+    changelog_dir = package_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    package_yaml = package_dir / "package.yaml"
+    package_yaml.write_text(_PACKAGE_YAML_WITHOUT_VERSION, encoding="utf-8")
+
+    _add_entry_and_release(runner, changelog_dir, "v0.1.0", title="First")
+    expected = _PACKAGE_YAML_WITHOUT_VERSION.replace(
+        "name: Demo\n", 'name: Demo\nversion: "0.1.0"\n'
+    )
+    assert package_yaml.read_text(encoding="utf-8") == expected
+
+    _add_entry_and_release(runner, changelog_dir, "v0.2.0", title="Second")
+    expected = expected.replace('version: "0.1.0"', 'version: "0.2.0"')
+    assert package_yaml.read_text(encoding="utf-8") == expected
+
+    # Editing an older release must not downgrade the package version.
+    edit_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "release",
+            "create",
+            "v0.1.0",
+            "--title",
+            "Edited v0.1.0 title",
+            "--yes",
+        ],
+    )
+    assert edit_result.exit_code == 0, edit_result.output
+    assert package_yaml.read_text(encoding="utf-8") == expected
+
+
+@pytest.mark.parametrize(
+    "version_line",
+    [
+        "version: 0.1.0",
+        "version: 1.2",
+        "version: '0.1.0'",
+        'version: "0.1.0"',
+        'version: "0.1.0"  # managed by tenzir-ship',
+    ],
+)
+def test_release_create_updates_existing_package_yaml_version(
+    tmp_path: Path, version_line: str
+) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "demo"
+    changelog_dir = package_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    package_yaml = package_dir / "package.yaml"
+    original = _PACKAGE_YAML_WITHOUT_VERSION.replace(
+        "name: Demo\n", f"name: Demo\n{version_line}\n"
+    )
+    package_yaml.write_text(original, encoding="utf-8")
+
+    _add_entry_and_release(runner, changelog_dir, "v2.0.0")
+
+    old_value = version_line.removeprefix("version: ").split("  #")[0]
+    expected = original.replace(f"version: {old_value}", 'version: "2.0.0"', 1)
+    assert package_yaml.read_text(encoding="utf-8") == expected
+    assert yaml.safe_load(expected)["dependencies"][0]["version"] == 1.2
+
+
+def test_release_create_updates_configured_package_yaml_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "demo"
+    changelog_dir = package_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    package_yaml = package_dir / "package.yaml"
+    original = "id: demo\nname: Demo\nrelease:\n  version_files:\n    - ../package.yaml\n"
+    package_yaml.write_text(original, encoding="utf-8")
+
+    _add_entry_and_release(runner, changelog_dir, "v1.0.0")
+
+    assert package_yaml.read_text(encoding="utf-8") == original.replace(
+        "name: Demo\n", 'name: Demo\nversion: "1.0.0"\n'
+    )
+
+
+def test_release_create_fails_for_configured_package_yaml_without_version(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    workspace_dir = tmp_path / "workspace"
+    changelog_dir = workspace_dir / "changelog"
+    deploy_dir = workspace_dir / "deploy"
+    changelog_dir.mkdir(parents=True)
+    deploy_dir.mkdir()
+    (deploy_dir / "package.yaml").write_text("id: other\nname: Other\n", encoding="utf-8")
+    save_config(
+        Config(
+            id="project",
+            name="Project",
+            release=ReleaseConfig(version_files=["../deploy/package.yaml"]),
+        ),
+        changelog_dir / "config.yaml",
+    )
+
+    add_result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(changelog_dir),
+            "add",
+            "--title",
+            "Missing version",
+            "--type",
+            "feature",
+            "--description",
+            "Only the package-mode manifest gains a version.",
+            "--author",
+            "codex",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    create_result = runner.invoke(
+        cli, ["--root", str(changelog_dir), "release", "create", "v1.0.0", "--yes"]
+    )
+    assert create_result.exit_code != 0
+    assert "missing a top-level 'version' field" in create_result.output
+    assert not (changelog_dir / "releases" / "v1.0.0").exists()
+
+
+def test_release_create_skips_unversioned_package_yaml_with_standalone_config(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    changelog_dir = project_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    save_config(Config(id="project", name="Project"), changelog_dir / "config.yaml")
+    package_yaml = project_dir / "package.yaml"
+    original = "id: unrelated\nname: Unrelated\n"
+    package_yaml.write_text(original, encoding="utf-8")
+
+    _add_entry_and_release(runner, changelog_dir, "v1.0.0")
+
+    assert package_yaml.read_text(encoding="utf-8") == original
+
+    package_yaml.write_text(original + 'version: "1.0.0"\n', encoding="utf-8")
+    _add_entry_and_release(runner, changelog_dir, "v1.1.0", title="Second")
+
+    assert package_yaml.read_text(encoding="utf-8") == original + 'version: "1.1.0"\n'
+
+
+def test_release_create_version_bump_mode_off_skips_package_yaml(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "demo"
+    changelog_dir = package_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    package_yaml = package_dir / "package.yaml"
+    original = 'id: demo\nname: Demo\nrelease:\n  version_bump_mode: "off"\n'
+    package_yaml.write_text(original, encoding="utf-8")
+
+    _add_entry_and_release(runner, changelog_dir, "v1.0.0")
+
+    assert package_yaml.read_text(encoding="utf-8") == original
+
+
+def test_release_create_release_candidate_skips_package_yaml(tmp_path: Path) -> None:
+    runner = CliRunner()
+    package_dir = tmp_path / "demo"
+    changelog_dir = package_dir / "changelog"
+    changelog_dir.mkdir(parents=True)
+    package_yaml = package_dir / "package.yaml"
+    original = 'id: demo\nname: Demo\nversion: "0.1.0"\n'
+    package_yaml.write_text(original, encoding="utf-8")
+
+    _add_entry_and_release(runner, changelog_dir, "v1.0.0", "--rc")
+    assert package_yaml.read_text(encoding="utf-8") == original
+
+    promote_result = runner.invoke(
+        cli, ["--root", str(changelog_dir), "release", "create", "--yes"]
+    )
+    assert promote_result.exit_code == 0, promote_result.output
+    assert package_yaml.read_text(encoding="utf-8") == original.replace("0.1.0", "1.0.0")
+
+
 def test_release_create_bump_from_implicit_zero(tmp_path: Path) -> None:
     """Test that bump flags work with implicit 0.0.0 base when no releases exist."""
     runner = CliRunner()

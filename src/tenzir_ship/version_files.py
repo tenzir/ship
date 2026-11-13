@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Literal, Sequence, cast
 
 import click
+import yaml
 
+from .config import default_config_path, package_metadata_path
 from .releases import normalize_release_version
 
 SUPPORTED_AUTO_VERSION_FILES: tuple[str, ...] = (
@@ -19,7 +21,10 @@ SUPPORTED_AUTO_VERSION_FILES: tuple[str, ...] = (
     "pyproject.toml",
     "project.toml",
     "Cargo.toml",
+    "package.yaml",
 )
+
+_YAML_NULL_TAG = "tag:yaml.org,2002:null"
 
 _TABLE_PATTERN = re.compile(
     r"^\s*(?:\[(?P<table>[^\]]+)\]|\[\[(?P<array_table>[^\]]+)\]\])\s*(?:#.*)?$"
@@ -426,11 +431,132 @@ def _update_cargo_toml(
     raise click.ClickException(f"{path} is missing a [package] table.")
 
 
-def _version_file_kind(path: Path) -> Literal["package_json", "pyproject", "cargo"]:
+def _find_top_level_yaml_value(root: yaml.MappingNode | None, key: str) -> yaml.Node | None:
+    if root is None:
+        return None
+    pairs: list[tuple[yaml.Node, yaml.Node]] = root.value
+    for key_node, value_node in pairs:
+        if isinstance(key_node, yaml.ScalarNode) and key_node.value == key:
+            return value_node
+    return None
+
+
+def _compose_yaml_mapping(path: Path, content: str) -> yaml.MappingNode | None:
+    try:
+        root = yaml.compose(content, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as exc:
+        raise click.ClickException(f"Cannot parse YAML in {path}: {exc}") from exc
+    if root is None:
+        return None
+    if not isinstance(root, yaml.MappingNode):
+        raise click.ClickException(f"Expected a YAML mapping in {path}.")
+    return root
+
+
+def _insert_top_level_yaml_version(
+    path: Path, content: str, root: yaml.MappingNode | None, rendered_version: str
+) -> str:
+    """Insert a top-level version key after `name`, else after `id`, else first."""
+
+    if root is not None and root.flow_style:
+        raise click.ClickException(
+            f"Cannot insert a 'version' field into the flow-style YAML mapping in {path}."
+        )
+    newline = "\r\n" if "\r\n" in content else "\n"
+    pairs = root.value if root is not None else []
+    indent = " " * pairs[0][0].start_mark.column if pairs else ""
+    line = f"{indent}version: {rendered_version}{newline}"
+
+    anchor = _find_top_level_yaml_value(root, "name")
+    if anchor is None:
+        anchor = _find_top_level_yaml_value(root, "id")
+    if anchor is not None:
+        end_mark = anchor.end_mark
+        if end_mark.column == 0 and end_mark.line > anchor.start_mark.line:
+            # Block scalars end at the start of the following line.
+            offset = end_mark.index
+        else:
+            newline_index = content.find("\n", end_mark.index)
+            offset = len(content) if newline_index < 0 else newline_index + 1
+    elif pairs:
+        first_key_index = pairs[0][0].start_mark.index
+        offset = content.rfind("\n", 0, first_key_index) + 1
+    else:
+        offset = len(content)
+
+    prefix = newline if offset == len(content) and content and not content.endswith("\n") else ""
+    return f"{content[:offset]}{prefix}{line}{content[offset:]}"
+
+
+def _verify_package_yaml_update(path: Path, content: str, updated: str, new_version: str) -> None:
+    """Ensure a surgical edit changed nothing but the top-level version value."""
+
+    try:
+        original = yaml.safe_load(content) or {}
+        result = yaml.safe_load(updated)
+    except yaml.YAMLError as exc:
+        raise click.ClickException(f"Cannot update the 'version' field in {path}: {exc}") from exc
+    expected = dict(original)
+    expected["version"] = new_version
+    if result != expected:
+        raise click.ClickException(f"Cannot update the 'version' field in {path} safely.")
+
+
+def _update_package_yaml(
+    path: Path,
+    content: str,
+    new_version: str,
+    *,
+    skip_if_missing_static_version: bool,
+    insert_if_missing: bool,
+) -> tuple[str, str | None]:
+    """Update the top-level `version` of a YAML package manifest in place.
+
+    The edit replaces only the source span of the top-level `version` value, so
+    comments, key order, block scalars, and nested `version` keys stay intact.
+    The new value is always a double-quoted string because YAML reads unquoted
+    values like `1.2` as numbers.
+    """
+
+    root = _compose_yaml_mapping(path, content)
+    rendered_version = f'"{new_version}"'
+    value_node = _find_top_level_yaml_value(root, "version")
+
+    if value_node is None:
+        if not insert_if_missing:
+            if skip_if_missing_static_version:
+                return content, None
+            raise click.ClickException(f"{path} is missing a top-level 'version' field.")
+        updated = _insert_top_level_yaml_version(path, content, root, rendered_version)
+        _verify_package_yaml_update(path, content, updated, new_version)
+        return updated, None
+
+    if not isinstance(value_node, yaml.ScalarNode):
+        raise click.ClickException(f"Expected 'version' in {path} to be a scalar value.")
+
+    old_version = None if value_node.tag == _YAML_NULL_TAG else value_node.value
+    start = value_node.start_mark.index
+    end = value_node.end_mark.index
+    if content[start:end] == rendered_version:
+        return content, old_version
+
+    replacement = rendered_version
+    if start == end and content[start - 1 : start] == ":":
+        replacement = f" {replacement}"
+    updated = f"{content[:start]}{replacement}{content[end:]}"
+    _verify_package_yaml_update(path, content, updated, new_version)
+    return updated, old_version
+
+
+def _version_file_kind(
+    path: Path,
+) -> Literal["package_json", "pyproject", "cargo", "package_yaml"]:
     name = path.name
     lowered = name.lower()
     if lowered == "package.json":
         return "package_json"
+    if lowered == "package.yaml":
+        return "package_yaml"
     if lowered in {"pyproject.toml", "project.toml"}:
         return "pyproject"
     if name == "Cargo.toml":
@@ -461,6 +587,7 @@ def _plan_single_version_file_update(
     release_version: str,
     *,
     strict: bool,
+    insert_if_missing: bool = False,
 ) -> VersionFileUpdate | None:
     content = path.read_text(encoding="utf-8")
     new_version = _strip_release_prefix(release_version)
@@ -479,6 +606,14 @@ def _plan_single_version_file_update(
             content,
             new_version,
             skip_if_missing_static_version=not strict,
+        )
+    elif kind == "package_yaml":
+        updated_content, old_version = _update_package_yaml(
+            path,
+            content,
+            new_version,
+            skip_if_missing_static_version=not strict,
+            insert_if_missing=insert_if_missing,
         )
     else:
         updated_content, old_version = _update_cargo_toml(
@@ -555,6 +690,21 @@ def _plan_package_json_version_file_updates(
     return updates
 
 
+def _package_metadata_file(project_root: Path) -> Path | None:
+    """Return the package manifest of a package-mode project, if any.
+
+    In package mode, the project reads its metadata from `package.yaml` next to
+    `changelog/` because no `config.yaml` exists. That manifest belongs to the
+    project, so releases add a missing `version` instead of skipping it.
+    """
+
+    resolved_root = project_root.resolve()
+    if default_config_path(resolved_root).exists():
+        return None
+    path = package_metadata_path(resolved_root)
+    return path.resolve() if path.is_file() else None
+
+
 def plan_version_file_updates(
     project_root: Path,
     release_version: str,
@@ -573,6 +723,7 @@ def plan_version_file_updates(
         )
 
     targets = _resolve_version_file_targets(project_root, explicit_paths)
+    package_metadata = _package_metadata_file(project_root)
     updates: list[VersionFileUpdate] = []
     for target in targets:
         if _version_file_kind(target.path) == "package_json":
@@ -589,6 +740,7 @@ def plan_version_file_updates(
             target.path,
             release_version,
             strict=target.explicit,
+            insert_if_missing=target.path == package_metadata,
         )
         if update is not None:
             updates.append(update)
