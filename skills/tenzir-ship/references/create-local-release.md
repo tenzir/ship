@@ -139,6 +139,18 @@ Reject an explicit stable version that matches the active RC base.
 Replace `--intro` with `--intro-file` if the introduction contains escape-worthy
 characters.
 
+### Version files
+
+A stable `release create` also updates the version in supported version files
+(`package.json`, `pyproject.toml`, `project.toml`, `Cargo.toml`, and
+`package.yaml`) next to the changelog. Release candidates leave them untouched.
+Do not edit these versions by hand after cutting a release.
+
+In package mode, `release create` writes the version into `package.yaml` as a
+quoted string without the `v` prefix, such as `version: "0.2.0"`, and adds the
+key after `name` if it is missing. Stage the updated version files together
+with the release artifacts.
+
 ## Publish the release
 
 Publishing a release via `tenzir-ship` performs the following steps:
