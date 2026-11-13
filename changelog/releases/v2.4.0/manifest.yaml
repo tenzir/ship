@@ -1,0 +1,8 @@
+created: 2026-11-13
+title: Automatic version updates for Tenzir package manifests
+intro: >-
+  Releases now bump the version in a Tenzir package's package.yaml automatically,
+  so you no longer need to edit the manifest by hand after cutting a release.
+source:
+  mode: sync-stable-queue
+  previous_stable: v2.3.1
