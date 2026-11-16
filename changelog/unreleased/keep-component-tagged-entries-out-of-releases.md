@@ -6,6 +6,8 @@ authors:
 components:
   - cli
   - python
+prs:
+  - 54
 created: 2026-11-16T13:44:12.932542Z
 ---
 
