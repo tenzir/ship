@@ -10,7 +10,7 @@ from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 from string import Template
-from typing import Literal, NoReturn, Optional, cast
+from typing import Literal, NoReturn, Optional, Sequence, cast
 
 import click
 from click.core import ParameterSource
@@ -72,6 +72,9 @@ from ._core import (
     CLIContext,
     ENTRY_TYPE_EMOJIS,
     _enforce_structure_is_valid,
+    _exclude_entries_by_component,
+    _has_excluded_component,
+    _resolve_excluded_components,
     _warn_on_structure_issues,
     compact_option,
     explicit_links_option,
@@ -660,6 +663,7 @@ def _build_cumulative_release_candidate_entries(
     project_root: Path,
     config: Config,
     active_series: list[ReleaseManifest],
+    excluded_components: set[str],
 ) -> list[Entry]:
     latest_candidate = active_series[-1] if active_series else None
     selected_entries: dict[str, Entry] = {}
@@ -668,7 +672,8 @@ def _build_cumulative_release_candidate_entries(
             selected_entries[entry.entry_id] = entry
     for entry in _collect_current_unreleased_entries(project_root, config):
         selected_entries[entry.entry_id] = entry
-    entries = list(selected_entries.values())
+    # Also drops candidate entries that gained an excluded component since.
+    entries = _exclude_entries_by_component(selected_entries.values(), excluded_components)
     entries.sort(key=_release_entry_sort_key)
     return entries
 
@@ -709,6 +714,7 @@ def _plan_promoted_unreleased_cleanup(
     project_root: Path,
     config: Config,
     source_manifest: ReleaseManifest,
+    excluded_components: set[str],
 ) -> tuple[list[Path], list[str]]:
     """Plan which unreleased entry files the promotion consumes.
 
@@ -716,6 +722,7 @@ def _plan_promoted_unreleased_cleanup(
     added to unreleased/ afterwards, since promotion folds in the latter.
     Snapshotted entries edited after the candidate was created are consumed
     as well, since promotion releases their current unreleased content.
+    Entries with an excluded component stay in unreleased/.
     """
     current_unreleased_entries = _collect_current_unreleased_entries(project_root, config)
     unreleased_entries_by_id = {entry.entry_id: entry for entry in current_unreleased_entries}
@@ -729,6 +736,8 @@ def _plan_promoted_unreleased_cleanup(
         current_entry = unreleased_entries_by_id.get(entry_id)
         if current_entry is None:
             missing_entry_ids.append(entry_id)
+            continue
+        if _has_excluded_component(current_entry, excluded_components):
             continue
         cleanup_paths.append(current_entry.path)
     return cleanup_paths, missing_entry_ids
@@ -826,12 +835,14 @@ def create_release(
     release_candidate: bool,
     title_explicit: bool,
     compact_explicit: bool,
+    exclude_components: Sequence[str] | None = None,
 ) -> None:
     """Python wrapper for release creation that mirrors CLI behavior."""
 
     config = ctx.ensure_config()
     _enforce_structure_is_valid(ctx, action="create a release")
     project_root = ctx.project_root
+    excluded_components = _resolve_excluded_components(config, exclude_components)
     requested_version = version
     normalized_bump = _coerce_release_bump(version_bump)
     active_rc_series = _get_active_release_candidate_series(project_root)
@@ -840,6 +851,7 @@ def create_release(
         project_root,
         config,
         include_prereleases=False,
+        excluded_components=excluded_components,
     )
     version, version_source = _resolve_requested_release_version(
         project_root,
@@ -915,20 +927,33 @@ def create_release(
 
     if release_candidate:
         selected_entries = _build_cumulative_release_candidate_entries(
-            project_root, config, active_rc_series
+            project_root, config, active_rc_series, excluded_components
         )
     elif source_manifest is not None:
         # Promotion is cumulative: fold in entries added to unreleased/ after
         # the candidate snapshot, mirroring how a follow-up RC would.
         selected_entries = _build_cumulative_release_candidate_entries(
-            project_root, config, active_rc_series
+            project_root, config, active_rc_series, excluded_components
         )
     else:
         selected_entries = _collect_unused_entries_for_release(
             project_root,
             config,
             include_prereleases=existing_manifest is not None,
+            excluded_components=excluded_components,
         )
+    if excluded_components:
+        held_back_count = sum(
+            _has_excluded_component(entry, excluded_components)
+            for entry in _collect_current_unreleased_entries(project_root, config)
+        )
+        if held_back_count:
+            labels = ", ".join(sorted(excluded_components))
+            log_info(
+                f"keeping {held_back_count} unreleased entr"
+                f"{'ies' if held_back_count != 1 else 'y'} tagged {labels} out of "
+                f"{tag_version}."
+            )
 
     _, new_entries, entries_sorted = _combine_release_entries(
         existing_manifest, selected_entries, project_root
@@ -948,6 +973,7 @@ def create_release(
             project_root,
             config,
             source_manifest,
+            excluded_components,
         )
     if cleanup_missing_entry_ids:
         log_warning(
@@ -1526,6 +1552,15 @@ def release_group(ctx: CLIContext) -> None:
     is_flag=True,
     help="Create or continue a release candidate for the resolved stable version.",
 )
+@click.option(
+    "--exclude-component",
+    "exclude_components",
+    multiple=True,
+    help=(
+        "Keep entries with this component in unreleased/ (repeatable). "
+        "Replaces release.exclude_components from the config."
+    ),
+)
 @click.pass_obj
 def release_create_cmd(
     ctx: CLIContext,
@@ -1541,6 +1576,7 @@ def release_create_cmd(
     minor: bool,
     major: bool,
     release_candidate: bool,
+    exclude_components: tuple[str, ...],
 ) -> None:
     """Create or update a release manifest from changelog entries and intro text."""
 
@@ -1565,6 +1601,7 @@ def release_create_cmd(
         release_candidate=release_candidate,
         title_explicit=title_explicit,
         compact_explicit=compact_explicit,
+        exclude_components=exclude_components,
     )
 
 

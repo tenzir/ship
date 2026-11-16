@@ -43,6 +43,87 @@ class ReleaseConfig:
     commit_message: str = DEFAULT_RELEASE_COMMIT_MESSAGE
     version_bump_mode: ReleaseVersionBumpMode = "auto"
     version_files: list[str] = field(default_factory=list)
+    # Entries tagged with any of these components stay in unreleased/.
+    exclude_components: list[str] = field(default_factory=list)
+
+
+def _parse_string_list(value: object, option: str, *, item_label: str) -> list[str]:
+    """Parse a list of non-empty strings from a release option."""
+    if not isinstance(value, list):
+        raise ValueError(f"{option} must be a list of {item_label}s.")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(f"{option} must contain only strings.")
+        stripped = item.strip()
+        if not stripped:
+            raise ValueError(f"{option} must not contain empty {item_label}s.")
+        result.append(stripped)
+    return result
+
+
+def _parse_release_config(release_raw: object, source: str) -> ReleaseConfig:
+    """Parse the ``release`` section of a config or package manifest.
+
+    ``source`` prefixes error messages, for example ``"Config option"``.
+    """
+    release_config = ReleaseConfig()
+    if release_raw is None:
+        return release_config
+    if not isinstance(release_raw, MutableMapping):
+        raise ValueError(f"{source} 'release' must be a mapping.")
+    commit_message = release_raw.get("commit_message")
+    version_bump_mode_raw = release_raw.get("version_bump_mode")
+    version_bump_mode: ReleaseVersionBumpMode = "auto"
+    if version_bump_mode_raw is not None:
+        if not isinstance(version_bump_mode_raw, str):
+            raise ValueError(f"{source} 'release.version_bump_mode' must be a string.")
+        normalized_mode = version_bump_mode_raw.strip().lower()
+        if normalized_mode not in {"auto", "off"}:
+            raise ValueError(f"{source} 'release.version_bump_mode' must be one of: auto, off.")
+        version_bump_mode = cast(ReleaseVersionBumpMode, normalized_mode)
+
+    version_files_raw = release_raw.get("version_files")
+    version_files: list[str] = []
+    if version_files_raw is not None:
+        version_files = _parse_string_list(
+            version_files_raw, f"{source} 'release.version_files'", item_label="path"
+        )
+
+    exclude_components_raw = release_raw.get("exclude_components")
+    exclude_components: list[str] = []
+    if exclude_components_raw is not None:
+        exclude_components = _parse_string_list(
+            exclude_components_raw,
+            f"{source} 'release.exclude_components'",
+            item_label="label",
+        )
+
+    return ReleaseConfig(
+        commit_message=(
+            str(commit_message) if commit_message is not None else release_config.commit_message
+        ),
+        version_bump_mode=version_bump_mode,
+        version_files=version_files,
+        exclude_components=exclude_components,
+    )
+
+
+def _check_excluded_components(
+    release_config: ReleaseConfig, components: dict[str, str], source: str
+) -> None:
+    """Reject excluded components that the config does not declare."""
+    if not components:
+        return
+    declared = {component.lower() for component in components}
+    unknown = [c for c in release_config.exclude_components if c.lower() not in declared]
+    if unknown:
+        allowed = ", ".join(components)
+        unknown_display = ", ".join(f"'{c}'" for c in unknown)
+        raise ValueError(
+            f"{source} 'release.exclude_components' names unknown component(s) "
+            f"{unknown_display}. Allowed components: {allowed}"
+        )
 
 
 @dataclass
@@ -135,51 +216,8 @@ def load_config(path: Path) -> Config:
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
 
-    # Parse release config
-    release_config = ReleaseConfig()
-    release_raw = raw.get("release")
-    if release_raw is not None:
-        if not isinstance(release_raw, MutableMapping):
-            raise ValueError("Config option 'release' must be a mapping.")
-        commit_message = release_raw.get("commit_message")
-        version_bump_mode_raw = release_raw.get("version_bump_mode")
-        version_bump_mode: ReleaseVersionBumpMode = "auto"
-        if version_bump_mode_raw is not None:
-            if not isinstance(version_bump_mode_raw, str):
-                raise ValueError("Config option 'release.version_bump_mode' must be a string.")
-            normalized_mode = version_bump_mode_raw.strip().lower()
-            if normalized_mode not in {"auto", "off"}:
-                raise ValueError(
-                    "Config option 'release.version_bump_mode' must be one of: auto, off."
-                )
-            version_bump_mode = cast(ReleaseVersionBumpMode, normalized_mode)
-
-        version_files_raw = release_raw.get("version_files")
-        version_files: list[str] = []
-        if version_files_raw is not None:
-            if not isinstance(version_files_raw, list):
-                raise ValueError("Config option 'release.version_files' must be a list of paths.")
-            normalized_files: list[str] = []
-            for item in version_files_raw:
-                if not isinstance(item, str):
-                    raise ValueError(
-                        "Config option 'release.version_files' must contain only strings."
-                    )
-                value = item.strip()
-                if not value:
-                    raise ValueError(
-                        "Config option 'release.version_files' must not contain empty paths."
-                    )
-                normalized_files.append(value)
-            version_files = normalized_files
-
-        release_config = ReleaseConfig(
-            commit_message=(
-                str(commit_message) if commit_message is not None else release_config.commit_message
-            ),
-            version_bump_mode=version_bump_mode,
-            version_files=version_files,
-        )
+    release_config = _parse_release_config(raw.get("release"), "Config option")
+    _check_excluded_components(release_config, components, "Config option")
 
     return Config(
         id=project_value,
@@ -272,54 +310,8 @@ def load_package_config(path: Path) -> Config:
     modules_raw = raw.get("modules")
     modules = str(modules_raw).strip() if modules_raw else None
 
-    release_config = ReleaseConfig()
-    release_raw = raw.get("release")
-    if release_raw is not None:
-        if not isinstance(release_raw, MutableMapping):
-            raise ValueError("Package metadata option 'release' must be a mapping.")
-        commit_message = release_raw.get("commit_message")
-        version_bump_mode_raw = release_raw.get("version_bump_mode")
-        version_bump_mode: ReleaseVersionBumpMode = "auto"
-        if version_bump_mode_raw is not None:
-            if not isinstance(version_bump_mode_raw, str):
-                raise ValueError(
-                    "Package metadata option 'release.version_bump_mode' must be a string."
-                )
-            normalized_mode = version_bump_mode_raw.strip().lower()
-            if normalized_mode not in {"auto", "off"}:
-                raise ValueError(
-                    "Package metadata option 'release.version_bump_mode' must be one of: auto, off."
-                )
-            version_bump_mode = cast(ReleaseVersionBumpMode, normalized_mode)
-
-        version_files_raw = release_raw.get("version_files")
-        version_files: list[str] = []
-        if version_files_raw is not None:
-            if not isinstance(version_files_raw, list):
-                raise ValueError(
-                    "Package metadata option 'release.version_files' must be a list of paths."
-                )
-            normalized_files: list[str] = []
-            for item in version_files_raw:
-                if not isinstance(item, str):
-                    raise ValueError(
-                        "Package metadata option 'release.version_files' must contain only strings."
-                    )
-                value = item.strip()
-                if not value:
-                    raise ValueError(
-                        "Package metadata option 'release.version_files' must not contain empty paths."
-                    )
-                normalized_files.append(value)
-            version_files = normalized_files
-
-        release_config = ReleaseConfig(
-            commit_message=(
-                str(commit_message) if commit_message is not None else release_config.commit_message
-            ),
-            version_bump_mode=version_bump_mode,
-            version_files=version_files,
-        )
+    release_config = _parse_release_config(raw.get("release"), "Package metadata option")
+    _check_excluded_components(release_config, components, "Package metadata option")
 
     return Config(
         id=package_id,
@@ -387,6 +379,8 @@ def dump_config(config: Config) -> dict[str, Any]:
         release_data["version_bump_mode"] = config.release.version_bump_mode
     if config.release.version_files:
         release_data["version_files"] = list(config.release.version_files)
+    if config.release.exclude_components:
+        release_data["exclude_components"] = list(config.release.exclude_components)
     if release_data:
         data["release"] = release_data
     return data

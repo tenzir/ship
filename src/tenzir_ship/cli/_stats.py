@@ -8,7 +8,8 @@ from pathlib import Path
 
 import click
 
-from ._core import CLIContext, _warn_on_structure_issues
+from ..config import Config
+from ._core import CLIContext, _exclude_entries_by_component, _warn_on_structure_issues
 from ._rendering import create_table
 from ..entries import iter_entries
 from ..releases import (
@@ -49,7 +50,7 @@ def _format_age(days: int) -> str:
     return f"{years} years"
 
 
-def _collect_project_stats(project_root: Path) -> dict:
+def _collect_project_stats(project_root: Path, config: Config) -> dict:
     """Collect statistics for a single project/module."""
     releases = list(iter_release_manifests(project_root))
     stable_releases = [release for release in releases if not is_release_candidate(release.version)]
@@ -139,8 +140,12 @@ def _collect_project_stats(project_root: Path) -> dict:
     for entry in unreleased_entries:
         unreleased_types[entry.type] += 1
     unreleased_count = len(unreleased_entries)
+    releasable_entries = _exclude_entries_by_component(
+        unreleased_entries,
+        {component.lower() for component in config.release.exclude_components},
+    )
     try:
-        next_version = _next_automatic_release_version(project_root, unreleased_entries)
+        next_version = _next_automatic_release_version(project_root, releasable_entries)
     except _MultipleReleaseCandidateSeriesError as error:
         log_warning(f"{error} The next release version is unavailable.")
         next_version = None
@@ -182,14 +187,14 @@ def _show_stats_table(ctx: CLIContext) -> None:
     console.print()
 
     # Collect all project stats first (for computing max widths)
-    projects: list[tuple[str, Path, str]] = [(config.id, ctx.project_root, ".")]
+    projects: list[tuple[Config, Path, str]] = [(config, ctx.project_root, ".")]
     if config.modules:
         for module in ctx.get_modules():
-            projects.append((module.config.id, module.root, module.relative_path))
+            projects.append((module.config, module.root, module.relative_path))
 
     all_stats = []
-    for pid, root, rel in projects:
-        all_stats.append((pid, rel, _collect_project_stats(root)))
+    for project_config, root, rel in projects:
+        all_stats.append((project_config.id, rel, _collect_project_stats(root, project_config)))
 
     def format_type_cell(count: int) -> str:
         """Format type count, showing dash for zero."""
@@ -249,7 +254,7 @@ def _show_stats_table(ctx: CLIContext) -> None:
 def _show_stats_vertical(ctx: CLIContext) -> None:
     """Display project statistics in a vertical card layout for single projects."""
     config = ctx.ensure_config()
-    stats = _collect_project_stats(ctx.project_root)
+    stats = _collect_project_stats(ctx.project_root, config)
 
     # Build table with sections
     table = create_table(show_header=False)
@@ -318,13 +323,11 @@ def _show_stats_json(ctx: CLIContext) -> None:
 
     config = ctx.ensure_config()
 
-    def build_project_json(
-        project_id: str, project_name: str, project_root: Path, relative_path: str
-    ) -> dict:
-        s = _collect_project_stats(project_root)
+    def build_project_json(project_config: Config, project_root: Path, relative_path: str) -> dict:
+        s = _collect_project_stats(project_root, project_config)
         return {
-            "id": project_id,
-            "name": project_name,
+            "id": project_config.id,
+            "name": project_config.name,
             "path": relative_path,
             "releases": {
                 "count": s["release_count"],
@@ -343,21 +346,14 @@ def _show_stats_json(ctx: CLIContext) -> None:
 
     result = {
         "project_root": str(ctx.project_root.resolve()),
-        "parent": build_project_json(config.id, config.name, ctx.project_root, "."),
+        "parent": build_project_json(config, ctx.project_root, "."),
     }
 
     # Add modules if configured
     if config.modules:
         modules = []
         for module in ctx.get_modules():
-            modules.append(
-                build_project_json(
-                    module.config.id,
-                    module.config.name,
-                    module.root,
-                    module.relative_path,
-                )
-            )
+            modules.append(build_project_json(module.config, module.root, module.relative_path))
         result["modules"] = modules
 
     emit_output(json.dumps(result, indent=2))

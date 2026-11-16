@@ -10114,3 +10114,203 @@ def test_add_rejects_title_without_ascii_letters_or_digits(tmp_path: Path) -> No
     assert result.exit_code != 0
     assert "contains no ASCII letters or digits" in result.output
     assert not list((project_dir / "unreleased").glob("*.md"))
+
+
+def _write_component_project(project_dir: Path, *, exclude: list[str] | None = None) -> None:
+    lines = [
+        "id: sample",
+        "name: Sample Project",
+        "components:",
+        "  node: Only the v6 line",
+        "  deployment: Only the v7 line",
+    ]
+    if exclude is not None:
+        lines += ["release:", "  exclude_components:"] + [f"    - {c}" for c in exclude]
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "config.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _add_component_entry(
+    runner: CliRunner,
+    project_dir: Path,
+    title: str,
+    *,
+    entry_type: str = "feature",
+    component: str | None = None,
+) -> None:
+    args = [
+        "--root",
+        str(project_dir),
+        "add",
+        "--title",
+        title,
+        "--type",
+        entry_type,
+        "--description",
+        f"{title} body.",
+        "--author",
+        "tester",
+    ]
+    if component is not None:
+        args += ["--component", component]
+    result = runner.invoke(cli, args)
+    assert result.exit_code == 0, result.output
+
+
+def _unreleased_ids(project_dir: Path) -> set[str]:
+    return {path.stem for path in (project_dir / "unreleased").glob("*.md")}
+
+
+def _release_entry_ids(project_dir: Path, tag: str) -> set[str]:
+    return {path.stem for path in (project_dir / "releases" / tag / "entries").glob("*.md")}
+
+
+def test_release_create_keeps_excluded_components_unreleased(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _write_component_project(project_dir, exclude=["node"])
+    _add_component_entry(runner, project_dir, "Shared Fix", entry_type="bugfix")
+    _add_component_entry(
+        runner, project_dir, "Node Breaking", entry_type="breaking", component="node"
+    )
+    _add_component_entry(
+        runner, project_dir, "Deployment Fix", entry_type="bugfix", component="deployment"
+    )
+
+    seed = runner.invoke(
+        cli,
+        ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"],
+    )
+    assert seed.exit_code == 0, seed.output
+    # The seed release consumed everything but the node entry.
+    assert _unreleased_ids(project_dir) == {"node-breaking"}
+
+    _add_component_entry(runner, project_dir, "Another Fix", entry_type="bugfix")
+    result = runner.invoke(cli, ["--root", str(project_dir), "release", "create", "--yes"])
+    assert result.exit_code == 0, result.output
+    # A breaking node entry must not select a major bump.
+    assert result.stdout.strip() == "v1.0.1"
+    assert "keeping 1 unreleased entry tagged node out of v1.0.1" in result.stderr
+    assert _release_entry_ids(project_dir, "v1.0.1") == {"another-fix"}
+    assert _unreleased_ids(project_dir) == {"node-breaking"}
+    notes = (project_dir / "releases" / "v1.0.1" / "notes.md").read_text(encoding="utf-8")
+    assert "Node Breaking" not in notes
+
+
+def test_release_create_exclude_component_flag_replaces_config(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _write_component_project(project_dir, exclude=["node"])
+    _add_component_entry(runner, project_dir, "Shared Fix", entry_type="bugfix")
+    _add_component_entry(runner, project_dir, "Node Fix", entry_type="bugfix", component="node")
+    _add_component_entry(runner, project_dir, "Deployment Feature", component="deployment")
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--exclude-component",
+            "Deployment",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert _release_entry_ids(project_dir, "v1.0.0") == {"shared-fix", "node-fix"}
+    assert _unreleased_ids(project_dir) == {"deployment-feature"}
+
+
+def test_release_create_rejects_unknown_exclude_component(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _write_component_project(project_dir)
+    _add_component_entry(runner, project_dir, "Shared Fix", entry_type="bugfix")
+
+    result = runner.invoke(
+        cli,
+        [
+            "--root",
+            str(project_dir),
+            "release",
+            "create",
+            "v1.0.0",
+            "--exclude-component",
+            "nod",
+            "--yes",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Unknown component filter(s): nod" in result.output
+    assert not (project_dir / "releases").exists()
+
+
+def test_release_create_rc_and_promotion_keep_excluded_components(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _write_component_project(project_dir, exclude=["node"])
+    _add_component_entry(runner, project_dir, "Shared Feature")
+    _add_component_entry(runner, project_dir, "Node Feature", component="node")
+
+    rc = runner.invoke(
+        cli, ["--root", str(project_dir), "release", "create", "v1.0.0", "--rc", "--yes"]
+    )
+    assert rc.exit_code == 0, rc.output
+    assert _release_entry_ids(project_dir, "v1.0.0-rc.1") == {"shared-feature"}
+
+    _add_component_entry(
+        runner, project_dir, "Late Node Fix", entry_type="bugfix", component="node"
+    )
+    promote = runner.invoke(cli, ["--root", str(project_dir), "release", "create", "--yes"])
+    assert promote.exit_code == 0, promote.output
+    assert _release_entry_ids(project_dir, "v1.0.0") == {"shared-feature"}
+    assert _unreleased_ids(project_dir) == {"node-feature", "late-node-fix"}
+
+
+def test_release_create_promotion_drops_entries_tagged_after_rc(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _write_component_project(project_dir, exclude=["node"])
+    _add_component_entry(runner, project_dir, "Shared Feature")
+    _add_component_entry(runner, project_dir, "Retagged Feature")
+
+    rc = runner.invoke(
+        cli, ["--root", str(project_dir), "release", "create", "v1.0.0", "--rc", "--yes"]
+    )
+    assert rc.exit_code == 0, rc.output
+    assert _release_entry_ids(project_dir, "v1.0.0-rc.1") == {
+        "shared-feature",
+        "retagged-feature",
+    }
+
+    retagged_path = project_dir / "unreleased" / "retagged-feature.md"
+    entry = read_entry(retagged_path)
+    metadata = dict(entry.metadata)
+    metadata["components"] = ["node"]
+    retagged_path.unlink()
+    write_entry(project_dir, metadata, body=entry.body, entry_id="retagged-feature")
+
+    promote = runner.invoke(cli, ["--root", str(project_dir), "release", "create", "--yes"])
+    assert promote.exit_code == 0, promote.output
+    assert _release_entry_ids(project_dir, "v1.0.0") == {"shared-feature"}
+    assert _unreleased_ids(project_dir) == {"retagged-feature"}
+
+
+def test_stats_next_version_ignores_excluded_components(tmp_path: Path) -> None:
+    runner = CliRunner()
+    project_dir = tmp_path / "project"
+    _write_component_project(project_dir, exclude=["node"])
+    _add_component_entry(runner, project_dir, "Shared Fix", entry_type="bugfix")
+    seed = runner.invoke(cli, ["--root", str(project_dir), "release", "create", "v1.0.0", "--yes"])
+    assert seed.exit_code == 0, seed.output
+    _add_component_entry(runner, project_dir, "Another Fix", entry_type="bugfix")
+    _add_component_entry(
+        runner, project_dir, "Node Breaking", entry_type="breaking", component="node"
+    )
+
+    result = runner.invoke(cli, ["--root", str(project_dir), "stats", "--json"])
+    assert result.exit_code == 0, result.output
+    stats = json.loads(result.stdout)
+    assert stats["parent"]["releases"]["next"] == "v1.0.1"

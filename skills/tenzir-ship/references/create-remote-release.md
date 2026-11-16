@@ -29,7 +29,9 @@ Inspect the workflow to understand its shape. The release workflow in this
 repository accepts these common inputs:
 
 - **intro**: Summarize unreleased entries in `changelog/unreleased/` into 1–2
-  sentences describing the release highlights.
+  sentences describing the release highlights. Skip entries tagged with a
+  component listed in the config's `release.exclude_components`; the release
+  leaves them unreleased.
 - **title**: Identify the lead topic—the single most important change from a
   user's perspective.
 - **bump**: Optional manual bump for a stable release (`patch`, `minor`, or

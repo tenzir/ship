@@ -276,3 +276,22 @@ def test_python_api_release_create_supports_implicit_release_candidates(tmp_path
 
     assert not (project_dir / "releases" / "v0.1.0-rc.1").exists()
     assert (project_dir / "releases" / "v0.1.0-rc.2").exists()
+
+
+def test_python_api_release_create_excludes_components(tmp_path: Path) -> None:
+    project_dir = _bootstrap_project(tmp_path)
+    client = Changelog(root=project_dir)
+
+    client.add(title="Shared", entry_type="feature", authors=["codex"], description="Body")
+    client.add(
+        title="Deployment only",
+        entry_type="feature",
+        authors=["codex"],
+        description="Body",
+        components=["deployment"],
+    )
+    client.release_create(version="v1.0.0", assume_yes=True, exclude_components=["deployment"])
+
+    released = {p.stem for p in (project_dir / "releases" / "v1.0.0" / "entries").glob("*.md")}
+    assert released == {"shared"}
+    assert {p.stem for p in (project_dir / "unreleased").glob("*.md")} == {"deployment-only"}

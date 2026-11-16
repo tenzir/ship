@@ -98,7 +98,17 @@
       "minLength": 1
     },
     "release": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "exclude_components": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "minLength": 1
+          }
+        }
+      }
     }
   }
 }

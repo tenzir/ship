@@ -52,6 +52,7 @@ from ._core import (
     _filter_entries_by_project,
     _normalize_component_filters,
     _filter_entries_by_component,
+    _exclude_entries_by_component,
 )
 from ._rendering import (
     IdentifierResolution,
@@ -169,6 +170,7 @@ def _collect_unused_entries_for_release(
     config: Config,
     *,
     include_prereleases: bool = False,
+    excluded_components: set[str] | None = None,
 ) -> list[Entry]:
     """Collect entries from the current unreleased namespace.
 
@@ -198,7 +200,7 @@ def _collect_unused_entries_for_release(
         }
         entries = [entry for entry in entries if entry.entry_id not in prerelease_entry_ids]
     filtered = [entry for entry in entries if entry.project is None or entry.project == config.id]
-    return filtered
+    return _exclude_entries_by_component(filtered, excluded_components or set())
 
 
 def _component_matches(entry: Entry, normalized_components: set[str]) -> bool:

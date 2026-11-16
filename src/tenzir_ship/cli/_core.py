@@ -70,6 +70,9 @@ __all__ = [
     "_filter_entries_by_project",
     "_normalize_component_filters",
     "_filter_entries_by_component",
+    "_resolve_excluded_components",
+    "_has_excluded_component",
+    "_exclude_entries_by_component",
     "_join_with_conjunction",
     "_collect_author_pr_text",
     "_format_author_line",
@@ -672,6 +675,28 @@ def _filter_entries_by_component(entries: Iterable[Entry], components: set[str])
             if normalized_entry_components & components:
                 filtered.append(entry)
     return filtered
+
+
+def _resolve_excluded_components(config: Config, overrides: Iterable[str] | None) -> set[str]:
+    """Return the lowercased component labels a release leaves in unreleased/.
+
+    Labels passed on the command line replace ``release.exclude_components``.
+    """
+    if overrides:
+        labels = _normalize_component_filters(overrides, config)
+    else:
+        labels = set(config.release.exclude_components)
+    return {label.lower() for label in labels}
+
+
+def _has_excluded_component(entry: Entry, excluded: set[str]) -> bool:
+    """Return True if the entry carries any excluded component (case-insensitive)."""
+    return any(component.lower() in excluded for component in entry.components)
+
+
+def _exclude_entries_by_component(entries: Iterable[Entry], excluded: set[str]) -> list[Entry]:
+    """Drop entries tagged with any excluded component."""
+    return [entry for entry in entries if not _has_excluded_component(entry, excluded)]
 
 
 def _join_with_conjunction(items: list[str]) -> str:

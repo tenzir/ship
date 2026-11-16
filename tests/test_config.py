@@ -355,3 +355,67 @@ def test_dump_config_includes_release_version_settings() -> None:
 
     assert payload["release"]["version_bump_mode"] == "off"
     assert payload["release"]["version_files"] == ["../package.json"]
+
+
+def test_load_config_release_exclude_components(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "id": "demo",
+            "name": "Demo",
+            "components": {"node": "v6 only", "deployment": "v7 only"},
+            "release": {"exclude_components": ["node"]},
+        },
+    )
+
+    config = load_config(config_path)
+
+    assert config.release.exclude_components == ["node"]
+    assert dump_config(config)["release"] == {"exclude_components": ["node"]}
+    assert not list(config_schema_validator().iter_errors(dump_config(config)))
+
+
+def test_load_config_rejects_undeclared_exclude_components(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "id": "demo",
+            "name": "Demo",
+            "components": {"node": "v6 only"},
+            "release": {"exclude_components": ["nodes"]},
+        },
+    )
+
+    with pytest.raises(ValueError, match="unknown component\\(s\\) 'nodes'"):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize("value", ["node", ["node", ""], [1]])
+def test_load_config_rejects_malformed_exclude_components(tmp_path: Path, value: object) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {"id": "demo", "name": "Demo", "release": {"exclude_components": value}},
+    )
+
+    with pytest.raises(ValueError, match="release.exclude_components"):
+        load_config(config_path)
+
+
+def test_load_package_config_release_exclude_components(tmp_path: Path) -> None:
+    package_path = tmp_path / "package.yaml"
+    write_yaml(
+        package_path,
+        {
+            "id": "pkg",
+            "name": "Package",
+            "components": {"node": "v6 only"},
+            "release": {"exclude_components": ["node"]},
+        },
+    )
+
+    config = load_package_config(package_path)
+
+    assert config.release.exclude_components == ["node"]

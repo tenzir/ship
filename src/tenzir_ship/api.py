@@ -123,8 +123,13 @@ class Changelog:
         assume_yes: bool = False,
         version_bump: Optional[str] = None,
         release_candidate: bool = False,
+        exclude_components: Optional[Sequence[str]] = None,
     ) -> None:
-        """Create or update a release manifest."""
+        """Create or update a release manifest.
+
+        ``exclude_components`` replaces ``release.exclude_components`` from the
+        config. Entries tagged with any of these components stay in unreleased/.
+        """
 
         create_release(
             self._ctx,
@@ -140,6 +145,7 @@ class Changelog:
             release_candidate=release_candidate,
             title_explicit=title is not None,
             compact_explicit=compact is not None,
+            exclude_components=exclude_components,
         )
 
     def release_version(self, *, bare: bool = False) -> str:

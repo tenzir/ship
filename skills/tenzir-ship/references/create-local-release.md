@@ -23,6 +23,11 @@ module (without publishing) and then proceed with releasing the parent project.
 
 Read unreleased entries to understand all changes for this release.
 
+Skip entries whose `components` include a label from the config's
+`release.exclude_components`, or from `--exclude-component` when you pass it.
+The release leaves those entries in `unreleased/`, so the intro and title must
+not mention them.
+
 ### Draft introduction
 
 The introduction summarizes the release in 2–3 sentences:
