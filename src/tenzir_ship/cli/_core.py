@@ -680,9 +680,10 @@ def _filter_entries_by_component(entries: Iterable[Entry], components: set[str])
 def _resolve_excluded_components(config: Config, overrides: Iterable[str] | None) -> set[str]:
     """Return the lowercased component labels a release leaves in unreleased/.
 
-    Labels passed on the command line replace ``release.exclude_components``.
+    ``overrides`` replaces ``release.exclude_components`` unless it is ``None``,
+    so an empty sequence releases every entry.
     """
-    if overrides:
+    if overrides is not None:
         labels = _normalize_component_filters(overrides, config)
     else:
         labels = set(config.release.exclude_components)

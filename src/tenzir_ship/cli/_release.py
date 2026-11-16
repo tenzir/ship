@@ -1601,7 +1601,8 @@ def release_create_cmd(
         release_candidate=release_candidate,
         title_explicit=title_explicit,
         compact_explicit=compact_explicit,
-        exclude_components=exclude_components,
+        # Without the flag, click passes an empty tuple; fall back to the config.
+        exclude_components=exclude_components or None,
     )
 
 

@@ -295,3 +295,28 @@ def test_python_api_release_create_excludes_components(tmp_path: Path) -> None:
     released = {p.stem for p in (project_dir / "releases" / "v1.0.0" / "entries").glob("*.md")}
     assert released == {"shared"}
     assert {p.stem for p in (project_dir / "unreleased").glob("*.md")} == {"deployment-only"}
+
+
+def test_python_api_release_create_empty_exclusion_overrides_config(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "config.yaml").write_text(
+        "id: project\nname: Project\ncomponents:\n  node: v6 only\n"
+        "release:\n  exclude_components: [node]\n",
+        encoding="utf-8",
+    )
+    client = Changelog(root=project_dir)
+
+    client.add(title="Shared", entry_type="feature", authors=["codex"], description="Body")
+    client.add(
+        title="Node only",
+        entry_type="feature",
+        authors=["codex"],
+        description="Body",
+        components=["node"],
+    )
+    client.release_create(version="v1.0.0", assume_yes=True, exclude_components=[])
+
+    released = {p.stem for p in (project_dir / "releases" / "v1.0.0" / "entries").glob("*.md")}
+    assert released == {"shared", "node-only"}
+    assert not list((project_dir / "unreleased").glob("*.md"))
